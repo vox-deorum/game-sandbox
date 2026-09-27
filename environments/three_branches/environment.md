@@ -82,6 +82,7 @@ Functions that inspect the village take `observation` first. `action` builds you
 | Village | `layout.doorway(observation, building_id)` | The nearest doorway position for a building, or `None` when the building or a doorway is absent. |
 | Village | `layout.spawn(observation)` | The village spawn position. |
 | Village | `layout.SPEED_LIMITS` | The maximum movement speed for each ground name. |
+| Village | `layout.BUILDING_SIZES` | Each building type's `(width, height)` footprint in cells, counted from the building's `cell` corner and including its walls. |
 | Geometry | `geometry.distance(first, second)` | Straight-line distance between two positions, in metres. |
 | Geometry | `geometry.heading_to(start, end)`, `geometry.wrap(heading)` | The heading toward a position, or a heading wrapped into `0.0` through `< 360.0`. |
 | Geometry | `geometry.in_cone(origin, heading, point, degrees_wide=geometry.VISION_DEGREES, reach=geometry.VISION_RANGE)` | Whether a point lies in a cone. The defaults match your vision cone but do not test walls. |

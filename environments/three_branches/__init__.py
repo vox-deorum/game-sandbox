@@ -17,7 +17,7 @@ from .env import default_action, make_env
 from .overlay import extract_overlay, extract_overlay_static
 
 ENV_ID = "three_branches"
-PUBLISHED_EXAMPLES = ()
+PUBLISHED_EXAMPLES = ("neighbor",)
 
 META = EnvironmentMeta(
     env_id=ENV_ID,

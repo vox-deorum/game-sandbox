@@ -64,11 +64,9 @@ class Dialogue:
         self.waiting = None
         self.invalidated = False
         try:
-            started = self.llm.request(model="small", messages=self._messages(line))
+            self.llm.request(model="small", messages=self._messages(line))
         except Exception:
             return {"to": "player_0", "text": FALLBACK}
-        if not started:
-            return None
         return None
 
     def _messages(self, visitor_line: str) -> list[dict[str, str]]:

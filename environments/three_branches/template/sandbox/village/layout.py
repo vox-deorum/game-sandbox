@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 
 from ._model import (
+    BUILDING_BY_TYPE,
     GROUND_BY_CODE,
     Model,
     cell,
@@ -19,6 +20,9 @@ from ._model import (
 from .geometry import BODY_RADIUS
 
 SPEED_LIMITS = {item["name"]: float(item["speed"]) for item in GROUND_BY_CODE.values()}
+BUILDING_SIZES = {
+    token: (int(item["width"]), int(item["height"])) for token, item in BUILDING_BY_TYPE.items()
+}
 
 
 def frame(observation: Mapping[str, object]):

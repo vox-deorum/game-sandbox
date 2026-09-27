@@ -1,29 +1,58 @@
-# Example: three_branches/neighbor
+# Days at Three Branches: Neighbor agent
 
-`neighbor` is the Season 4 starter example for Days at Three Branches. Each villager owns a separate memory dictionary, builds its route graph during `reset`, and follows the same static role table through dawn, morning, midday, evening, and night.
+Neighbor is the Season 4 starting point: ten residents who leave home, work across the village, gather at midday, light props in the evening, return home, and sleep at night. This branch is already a runnable agent repository. Edit `agent.py`, `routines.py`, and `dialogue.py` directly.
 
-Compose the example from the repository root, then use its normal local watch command:
+Start with the [Getting Started guide]({{DOCS_URL}}students/getting-started/). Then run these commands from this folder:
 
 ```console
-uv run python scripts/compose.py three_branches neighbor
-cd build/examples/three_branches/neighbor
-python -m sandbox watch
+python -m sandbox watch --preset season_4  # watch Neighbor's day beside the scripted visitor
+python -m sandbox play --preset season_4   # walk through the village as the visitor yourself
+python -m sandbox test                     # run the provided checks
+python -m sandbox eval                     # run repeatable automated days
 ```
 
-Use the Season 4 parameters when starting a local day. The ten residents leave home, work across the village, gather at midday, light props in the evening, return home, and sleep at night. The schedule is intentionally non-adaptive. `assign` in `agent.py` is the small seam to replace with a different village story. Lanterns are optional generation dressing, so a layout without them sends each lantern-tender back to that resident's unique role prop for the evening work period.
+The `season_4` preset runs ten villagers with day and night on. The [`environment.md`](environment.md) guide explains presets, the visitor, and the other command options.
 
-`routines.py` shows one working routing approach. It makes a graph from `layout.walkable`, `layout.can_step`, and `layout.ground_at` once in `reset`, then searches the cached graph during ticks. The graph includes every walkable village cell. Its cell resolution and route finder are example choices, not requirements.
+## How Neighbor works
 
-`dialogue.py` keeps one latest visitor line and uses the background LLM helper without blocking a routine tick. It sends a direct raw chat dictionary only while the visitor is still in hearing range with a clear line, and falls back to a canned reply when the request cannot run.
+- `agent.py` gives each villager a role from a static role table and picks a routine and goal for each phase of the day: dawn, morning, midday, evening, and night. It revisits that choice at phase boundaries and when the visitor comes near.
+- `routines.py` holds the routines, such as `go_to`, `tend`, `gather_at`, `greet`, and `sleep_at`. Each one returns an action for this tick, or `None` when it has nothing to do.
+- `dialogue.py` answers the latest thing the visitor said, using the optional LLM API in the background so a routine tick never waits for it. It only replies while the visitor can still hear, and falls back to a canned line when the request cannot run.
+- `tests/test_neighbor.py` checks each routine on constructed observations, the dialogue fallbacks, and a full Season 4 day in which every resident moves, works, and ends up asleep at home.
 
-## Run the repository demo
+Each villager keeps its own memory dictionary, because every villager runs in a separate `Agent` instance. Lanterns do not appear in every village, so a lantern-tender with no lantern goes back to that resident's own work prop for the evening.
 
-From the repository root, rebuild the end-to-end fixture and start the demo:
+### Routing
 
-```text
-npm run demo -- --rerun-e2e
+`build_graph` makes a graph of every walkable village cell once in `reset`, using `layout.walkable`, `layout.can_step`, and `layout.ground_at`. `go_to` then searches that cached graph on each tick. You may change the cell resolution or replace the route finder.
+
+## Your assignment
+
+The schedule never adapts: every resident follows the same table every day. `assign` in `agent.py` is a starting place to replace with a different village story. Decide who should do what, where, and when those choices should change as the day and the visitor move around them. You may also edit, extend, or replace the routines to make them more like your style.
+
+## Files you will use
+
+| Path | Purpose |
+| --- | --- |
+| `agent.py` | Assigns each villager a routine and goal, then runs it. |
+| `routines.py` | Defines Neighbor's routines and the cached route graph. |
+| `dialogue.py` | Replies to the visitor without blocking a routine tick. |
+| `environment.md` | Explains the village rules, helpers, observations, and settings. |
+| `manifest.json` | Names the agent class for a submission. |
+| `season.json` | Holds optional local season settings downloaded from My Submissions. |
+| `tests/` | Contains the checks your submission should pass. |
+| `sandbox/` | Provides the local game, commands, helpers, and observation types. Do not edit it. |
+
+Leave `sandbox/`, `requirements.in`, and `requirements.txt` unchanged. The pinned packages match the server. Ask your instructor before adding a package.
+
+When your agent is ready, follow the shared [submitting guide]({{DOCS_URL}}students/submitting/). For the optional `learn` and `chat` hooks, see the shared [agent interface]({{DOCS_URL}}students/agent-interface/).
+
+## Optional LLM API
+
+If your instructor enables model calls, follow [Using the LLM API](llm.md). Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
+
+Test the connection with:
+
+```console
+python -m sandbox llm
 ```
-
-This requires Docker and can take several minutes. Open <http://localhost:8080>, sign in with the printed student credentials, and open Days at Three Branches. Under `Play and Rate: Village Life`, choose the agent, select `Rate` or `Watch again`, then select `Start watching`.
-
-Later launches can use `npm run demo`, which reuses the generated fixture.

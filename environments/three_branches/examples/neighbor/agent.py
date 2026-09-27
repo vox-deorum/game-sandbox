@@ -37,7 +37,6 @@ SLOT_ROLE_CHOICES = (
 SLOT_JOB_OFFSETS = (0, 0, 0, 0, 0, 0, 1, 2, 0, 1)
 SLOT_LANTERN_OFFSETS = (9, 1, 13, 2, 4, 6, 5, 7, 0, 3)
 REACTION_TICKS = 40
-RETURN_HOME_TICK = 880
 SLOT_RETURN_HOME_TICKS = (840, 880, 760, 760, 880, 880, 880, 840, 840, 880)
 ROLE_JOBS = {
     "stallkeeper": "stall",
@@ -121,7 +120,6 @@ class Agent:
             "home": home,
             "home_point": routines.building_slot_goal(observation, home, slot),
             "graph": routines.build_graph(observation),
-            "phase": None,
             "schedule_mark": None,
             "visitor_nearby": False,
             "visitor_handled": False,
@@ -167,7 +165,6 @@ class Agent:
         routine, goal = assign(observation, self.memory)
         self.memory["routine"] = routine
         self.memory["goal"] = goal
-        self.memory["phase"] = day.phase(observation)
         self.memory["schedule_mark"] = _schedule_mark(observation)
         self.memory["visitor_nearby"] = any(
             person["id"] == "player_0" for person in people.nearby(observation)

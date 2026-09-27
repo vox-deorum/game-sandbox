@@ -28,7 +28,7 @@ The shipped table assigns the guaranteed pump, board, repair bench, hearth, and 
 
 Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent.py`, `routines.py`, `dialogue.py`, and `tests/test_neighbor.py` in the `marcher` and `vanguard` layout. Import modules at the top level. Imports inside `act` resolve against the last-loaded player directory and become shared across players.
 
-`neighbor` is a publication candidate. Keep `PUBLISHED_EXAMPLES` unchanged and record publication at Season 4 opening in the plan's Later work.
+`neighbor` is published: it is the environment's single entry in `PUBLISHED_EXAMPLES`, so the publisher pushes it to the `examples/three_branches/neighbor` branch of the student repository, while `sweeper` stays internal. Its `README.md` therefore describes the runnable checkout a student clones, not the composition step.
 
 A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, player id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `wander(goal)` on `None`, then stand if it also returns nothing.
 
@@ -73,9 +73,9 @@ Use a non-adaptive static schedule and document its approximations.
 
 ### CI wiring
 
-The Three Branches browser journey composes `neighbor`, submits it under the demo member, and leaves a Season 4 `Village Life` window open. A fresh full e2e database therefore lets `npm run demo` launch the worked example, while `PUBLISHED_EXAMPLES` remains empty.
+The Three Branches browser journey composes `neighbor`, submits it under the demo member, and leaves a Season 4 `Village Life` window open. A fresh full e2e database therefore lets `npm run demo` launch the worked example.
 
-Add `("three_branches", "neighbor")` to `scripts/tests/test_compose.py`'s example inventory. Add the example's `routines.py` and `dialogue.py` to `scripts/_envs.py`'s pyright set.
+Add `("three_branches", "neighbor")` to both the example inventory and the published allowlist in `scripts/tests/test_compose.py`. Add the example's `routines.py` and `dialogue.py` to `scripts/_envs.py`'s pyright set.
 
 ## Tests
 

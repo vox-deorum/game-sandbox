@@ -39,7 +39,7 @@ Give these silent-failure rules worked passages: use requires speed 0 and `props
 
 ### Worked example and CI
 
-Ship internal Season 1 example `sweeper` in the `marcher` and `vanguard` layout: `README.md`, `agent.py`, and `tests/test_sweeper.py`. Derive a catalog role and one of four village quarters from the first two `me.rng` draws. Midpoint cells belong east or north. Choose the first matching prop in layout order inside the quarter, then the first global match, otherwise stand. Use the target when it is the selected usable prop. Otherwise choose a valid north, east, south, or west neighbor that minimizes distance to the target, using that order to break ties, and walk toward its center while sweeping. This is a greedy local policy, not a pathfinder. Keep `PUBLISHED_EXAMPLES` empty.
+Ship internal Season 1 example `sweeper` in the `marcher` and `vanguard` layout: `README.md`, `agent.py`, and `tests/test_sweeper.py`. Derive a catalog role and one of four village quarters from the first two `me.rng` draws. Midpoint cells belong east or north. Choose the first matching prop in layout order inside the quarter, then the first global match, otherwise stand. Use the target when it is the selected usable prop. Otherwise choose a valid north, east, south, or west neighbor that minimizes distance to the target, using that order to break ties, and walk toward its center while sweeping. This is a greedy local policy, not a pathfinder. Keep `sweeper` out of `PUBLISHED_EXAMPLES`.
 
 Add `("three_branches", "sweeper")` to `scripts/tests/test_compose.py`'s example inventory and add `sandbox/village/` to `scripts/_envs.py`'s pyright set.
 
@@ -54,7 +54,7 @@ Add `("three_branches", "sweeper")` to `scripts/tests/test_compose.py`'s example
 - A reset-built whole-village graph pin uses `walkable` and `can_step`, leaves ample full-day episode budget, and reports reset and per-tick costs separately.
 - `template/tests/test_episode.py` follows the spades pattern and is inherited by composed examples.
 - The composed template and `sweeper` complete healthy days on both plans within per-decision and per-game budgets. Report cast_10 seconds per tick against the 250 millisecond cadence.
-- Docs CI publishes the copied canonical guide. Examples CI runs on composed output, pins empty `PUBLISHED_EXAMPLES`, and smoke-tests the composed template and `sweeper` with inherited tests.
+- Docs CI publishes the copied canonical guide. Examples CI runs on composed output, pins the `PUBLISHED_EXAMPLES` allowlist, and smoke-tests the composed template and `sweeper` with inherited tests.
 
 ## Done when
 

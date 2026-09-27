@@ -27,7 +27,7 @@ The design contracts own the details:
 
 Non-goals:
 
-- The two worked examples stay internal. `PUBLISHED_EXAMPLES` is empty.
+- `sweeper` stays internal. `neighbor` is the only published example.
 - `scripted_visitor` uses canned speech only. There is no LLM visitor.
 - Course materials beyond the canonical guide are pedagogy work, not platform work.
 
@@ -77,5 +77,5 @@ A student can clone the composed template, run helper pin tests, and play a loca
 
 ## Later work
 
-- Publish `neighbor` when Season 4 opens, plus any further worked examples.
+- Publish any further worked examples.
 - Run Season 5 and 6 course operations, including budget advice and rating prompts, as course material rather than platform work.

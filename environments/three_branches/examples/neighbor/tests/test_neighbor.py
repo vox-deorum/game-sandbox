@@ -38,7 +38,6 @@ def _example(scene):
         "home": home,
         "home_point": agent.routines.building_slot_goal(observation, home, 0),
         "graph": first.memory["graph"],
-        "phase": None,
         "schedule_mark": None,
         "visitor_nearby": False,
         "visitor_handled": False,
@@ -263,7 +262,7 @@ def test_dialogue_keeps_latest_capped_direct_lines_and_falls_back(scene):
 def test_dialogue_invalidates_for_hearing_loss_and_a_real_wall(scene):
     _example_agent, observation = _example(scene)
     home = next(item for item in layout.buildings(observation) if item["type"] == "home")
-    width, height = agent.routines._BUILDING_SIZES["home"]
+    width, height = layout.BUILDING_SIZES["home"]
     origin = home["cell"]
     blocked_pair = None
     for y in range(int(origin["y"]) + 1, int(origin["y"]) + height - 1):

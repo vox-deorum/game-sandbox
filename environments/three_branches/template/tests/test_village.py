@@ -69,6 +69,8 @@ def test_static_helpers_respect_the_boundary_and_do_not_cross_observations():
     assert layout.doorway(first, "not-a-building") is None
     assert layout.SPEED_LIMITS["road"] == 1.0
     assert layout.SPEED_LIMITS["water"] == 0.0
+    assert layout.BUILDING_SIZES == {"home": (8, 7), "inn": (12, 10), "shed": (8, 8)}
+    assert {item["type"] for item in layout.buildings(first)} <= set(layout.BUILDING_SIZES)
 
     # Build a cached model before mutating one player's isolated static mapping.
     assert layout.cell_at(first, here) is not None

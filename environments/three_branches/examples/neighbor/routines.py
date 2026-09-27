@@ -19,7 +19,6 @@ Graph = dict[Cell, tuple[tuple[Cell, float], ...]]
 
 _FORWARD_DIRECTIONS = ((0, 1), (1, 0))
 _COMFORT_DISTANCE = 3.0
-_BUILDING_SIZES = {"home": (8, 7), "inn": (12, 10), "shed": (8, 8)}
 
 
 def build_graph(observation: Mapping[str, object]) -> Graph:
@@ -99,7 +98,11 @@ def go_to(observation: Mapping[str, object], memory: dict[str, object], goal: ob
 
 
 def wander(observation: Mapping[str, object], memory: dict[str, object], goal: object):
-    """Drift toward a goal while changing heading periodically. This is the dispatch fallback."""
+    """Drift toward a goal while changing heading periodically. This is the dispatch fallback.
+
+    A building goal routes there instead, so a villager whose ``sleep_at`` finds it outside still
+    walks home, to its own interior point when the building is its home.
+    """
     if isinstance(goal, str) and layout.building(observation, goal) is not None:
         route_goal = memory.get("home_point", goal) if goal == memory.get("home") else goal
         return go_to(observation, memory, route_goal)
@@ -232,7 +235,7 @@ def sleep_at(observation: Mapping[str, object], memory: dict[str, object], goal:
     building = layout.building(observation, str(goal))
     if cell is None or building is None or layout.ground_at(observation, cell) != "interior":
         return None
-    width, height = _BUILDING_SIZES.get(str(building["type"]), (0, 0))
+    width, height = layout.BUILDING_SIZES[str(building["type"])]
     origin = building["cell"]
     if not (
         int(origin["x"]) < int(cell["x"]) < int(origin["x"]) + width - 1
@@ -253,7 +256,7 @@ def building_slot_goal(observation: Mapping[str, object], building_id: str, slot
     building = layout.building(observation, building_id)
     if building is None:
         return dict(me.position(observation))
-    width, height = _BUILDING_SIZES.get(str(building["type"]), (1, 1))
+    width, height = layout.BUILDING_SIZES[str(building["type"])]
     origin = building["cell"]
     second_resident = slot >= 5
     return {
@@ -443,7 +446,7 @@ def _prop_point(item: Mapping[str, object]) -> dict[str, float]:
 
 
 def _building_point(building: Mapping[str, object]) -> dict[str, float]:
-    width, height = _BUILDING_SIZES.get(str(building["type"]), (1, 1))
+    width, height = layout.BUILDING_SIZES[str(building["type"])]
     cell = cast(Mapping[str, float], building["cell"])
     return {"x": cell["x"] + width / 2, "y": cell["y"] + height / 2}
 
