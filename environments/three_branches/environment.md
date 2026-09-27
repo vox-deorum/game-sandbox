@@ -65,9 +65,11 @@ Functions that inspect the village take `observation` first. `action` builds you
 | Self | `me.rng(observation, session_seed)` | A stable, private `random.Random` stream for this player and session seed. |
 | Other villagers | `people.seen(observation)` | Villagers in your vision cone with no wall between you, including id, position, heading, previous movement, and expression. |
 | Other villagers | `people.nearby(observation)` | Villagers within hearing range and a clear line, with id and position only. |
+| Other villagers | `people.find(observation, player_id)` | The character with this id, taken from those you see first, then those you hear. `None` when you can neither see nor hear them. |
 | Other villagers | `people.roster(observation)` | Every villager's stable id and home. It does not show where they are now. |
 | Other villagers | `people.is_visitor(player_id)`, `people.is_npc(player_id)` | Whether an id is the visitor (`"player_0"`) or has the normal NPC id form. |
 | Props | `props.all(observation)` | Every static prop placement, in layout order, including id, type, cell, and facing. |
+| Props | `props.find(observation, prop_id)` | The static prop placement with this id, or `None` when there is no such prop. |
 | Props | `props.seen(observation)` | Visible prop records with a prop id and current state. A prop outside your vision cone or behind a wall is absent. |
 | Props | `props.state(observation, prop_id)` | The visible state string for one prop, or `None` when that prop is not visible. |
 | Props | `props.in_reach(observation)` | Static props close enough to use by distance alone. It does not test whether a wall is in the way. |
@@ -75,10 +77,14 @@ Functions that inspect the village take `observation` first. `action` builds you
 | Props | `props.TYPES` | Every available prop type token. |
 | Village | `layout.frame(observation)` | Grid dimensions and cell size as `cells_x`, `cells_y`, and `cell_size`. |
 | Village | `layout.cell_at(observation, position)`, `layout.ground_at(observation, cell)` | The grid cell containing a position, or `None` outside the village, and that cell's ground name, also `None` outside. |
+| Village | `layout.cell_center(observation, cell)` | The position at the middle of a cell, such as a prop's or building's `cell`. |
+| Village | `layout.nearest_walkable(observation, position)` | The walkable cell whose center is closest to a position, or `None` when no cell is walkable. Useful as a destination for a prop or a building center, which a body cannot stand on. |
 | Village | `layout.walkable(observation, cell)` | Whether a villager can stand in a cell, including ground, walls, blocking props, and scenery. |
 | Village | `layout.can_step(observation, start_cell, end_cell)` | Whether a cardinal one-cell move is clear and both cells are walkable. |
 | Village | `layout.line_of_sight(observation, start_pos, end_pos)` | Whether a straight line crosses no sight-blocking ground. It ignores props and vision-cone range, and returns `False` outside the village. |
 | Village | `layout.buildings(observation)`, `layout.building(observation, building_id)` | Every static building, or one building by id and `None` when it does not exist. |
+| Village | `layout.building_center(observation, building_id)` | The center of a building's footprint, or `None` when there is no such building. |
+| Village | `layout.building_at(observation, position)` | The id of the building whose floor holds a position, or `None` outdoors. Walls around the edge of a footprint are not floor. |
 | Village | `layout.doorway(observation, building_id)` | The nearest doorway position for a building, or `None` when the building or a doorway is absent. |
 | Village | `layout.spawn(observation)` | The village spawn position. |
 | Village | `layout.SPEED_LIMITS` | The maximum movement speed for each ground name. |

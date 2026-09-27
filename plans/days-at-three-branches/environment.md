@@ -196,9 +196,9 @@ The implementation includes the factory, default action, overlay extractor, regi
 | --- | --- |
 | `action` | `EMOTES`, `walk(heading, speed=1.0, expression="none")`, `stand(heading, expression="none")`. Both wrap heading and clamp speed; expression is `"none"`, an emote, or `"use"`. |
 | `me` | `player_id`, `position`, `heading`, `moved`, `expression`, `home`, `rng(observation, session_seed)`. |
-| `people` | `seen`, `nearby`, `roster`, `is_visitor(player_id)`, and `is_npc(player_id)`. |
-| `props` | `all`, `seen`, `state(observation, prop_id)`, `in_reach`, `usable`, and `TYPES` from `catalog.json`. `state` returns the visible state or `None` when that prop is absent from current perception. |
-| `layout` | `frame`, `cell_at`, `ground_at`, `walkable`, `can_step`, `line_of_sight`, `buildings`, `building`, `doorway`, `spawn`, `SPEED_LIMITS`, and `BUILDING_SIZES`. |
+| `people` | `seen`, `nearby`, `find(observation, player_id)`, `roster`, `is_visitor(player_id)`, and `is_npc(player_id)`. |
+| `props` | `all`, `find(observation, prop_id)`, `seen`, `state(observation, prop_id)`, `in_reach`, `usable`, and `TYPES` from `catalog.json`. `state` returns the visible state or `None` when that prop is absent from current perception. |
+| `layout` | `frame`, `cell_at`, `cell_center(observation, cell)`, `nearest_walkable(observation, position)`, `ground_at`, `walkable`, `can_step`, `line_of_sight`, `buildings`, `building`, `building_center(observation, building_id)`, `building_at(observation, position)`, `doorway`, `spawn`, `SPEED_LIMITS`, and `BUILDING_SIZES`. |
 | `geometry` | `BODY_RADIUS`, `VISION_RANGE`, `VISION_DEGREES`, `HEARING_RANGE`, `PROP_REACH`, `distance`, `heading_to`, `wrap`, and `in_cone`. |
 | `day` | `tick`, `phase`, `bell_ringing`, `parameters`. |
 

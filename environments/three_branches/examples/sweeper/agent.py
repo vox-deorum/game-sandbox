@@ -15,10 +15,6 @@ def _cell(item: object) -> dict[str, int]:
     return cell
 
 
-def _centre(cell: dict[str, int]) -> dict[str, float]:
-    return {"x": cell["x"] + 0.5, "y": cell["y"] + 0.5}
-
-
 def _quarter(cell: dict[str, int], frame: dict[str, int | float]) -> int:
     """Number village quarters southwest, southeast, northwest, northeast."""
 
@@ -61,19 +57,19 @@ class Agent:
         here_cell = layout.cell_at(observation, here)
         if here_cell is None:
             return action.stand(heading, "sweep")
-        goal = _centre(_cell(target))
+        goal = layout.cell_center(observation, _cell(target))
         best = here_cell
-        best_distance = geometry.distance(_centre(here_cell), goal)
+        best_distance = geometry.distance(layout.cell_center(observation, here_cell), goal)
         for dx, dy in DIRECTIONS:
             candidate = {"x": here_cell["x"] + dx, "y": here_cell["y"] + dy}
             if not layout.walkable(observation, candidate):
                 continue
             if not layout.can_step(observation, here_cell, candidate):
                 continue
-            distance = geometry.distance(_centre(candidate), goal)
+            distance = geometry.distance(layout.cell_center(observation, candidate), goal)
             if distance < best_distance:
                 best, best_distance = candidate, distance
 
         if best == here_cell:
             return action.stand(heading, "sweep")
-        return action.walk(geometry.heading_to(here, _centre(best)), 1.0, "sweep")
+        return action.walk(geometry.heading_to(here, layout.cell_center(observation, best)), 1.0, "sweep")

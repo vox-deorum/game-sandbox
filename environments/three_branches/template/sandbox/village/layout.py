@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from math import hypot
 
 from ._model import (
     BUILDING_BY_TYPE,
@@ -37,6 +38,38 @@ def cell_at(observation: Mapping[str, object], position: Mapping[str, object]):
     mapping, or ``None`` when the position is outside the village."""
     found = cell(model(observation), position)
     return None if found is None else {"x": found[0], "y": found[1]}
+
+
+def cell_center(observation: Mapping[str, object], cell_value: Mapping[str, object]) -> dict[str, float]:
+    """Return the position at the middle of a cell, such as a prop's or building's ``cell``."""
+    size = model(observation).cell_size
+    return {"x": (int(cell_value["x"]) + 0.5) * size, "y": (int(cell_value["y"]) + 0.5) * size}
+
+
+def nearest_walkable(observation: Mapping[str, object], position: Mapping[str, object]):
+    """Return the walkable cell whose center is closest to a position, as an ``{"x": int, "y": int}``
+    mapping, or ``None`` when no cell is walkable. Useful as the destination for a prop or a
+    building center, which a body cannot stand on."""
+    village_model = model(observation)
+    size = village_model.cell_size
+    px, py = float(position["x"]), float(position["y"])
+    x = min(max(int(px // size), 0), village_model.cells_x - 1)
+    y = min(max(int(py // size), 0), village_model.cells_y - 1)
+    best, best_distance = None, float("inf")
+    # Search square rings outward. No cell in ring r can be closer than r - 1 cells, so the search
+    # stops once that bound passes the best distance found.
+    for r in range(max(village_model.cells_x, village_model.cells_y)):
+        if (r - 1) * size > best_distance:
+            break
+        for cx in range(x - r, x + r + 1):
+            step = 1 if abs(cx - x) == r else 2 * r or 1
+            for cy in range(y - r, y + r + 1, step):
+                if (cx, cy) not in village_model.walkable_cells:
+                    continue
+                distance = hypot((cx + 0.5) * size - px, (cy + 0.5) * size - py)
+                if distance < best_distance:
+                    best, best_distance = (cx, cy), distance
+    return None if best is None else {"x": best[0], "y": best[1]}
 
 
 def ground_at(observation: Mapping[str, object], cell_value: Mapping[str, object]) -> str | None:
@@ -96,6 +129,34 @@ def building(observation: Mapping[str, object], building_id: str):
     """Return the building placement with the given id, or ``None`` when there is no such
     building."""
     return next((item for item in buildings(observation) if item["id"] == building_id), None)
+
+
+def building_center(observation: Mapping[str, object], building_id: str) -> dict[str, float] | None:
+    """Return the center of a building's footprint, or ``None`` when there is no such building."""
+    item = building(observation, building_id)
+    if item is None:
+        return None
+    width, height = BUILDING_SIZES[str(item["type"])]
+    size = model(observation).cell_size
+    return {
+        "x": (float(item["cell"]["x"]) + width / 2) * size,
+        "y": (float(item["cell"]["y"]) + height / 2) * size,
+    }
+
+
+def building_at(observation: Mapping[str, object], position: Mapping[str, object]) -> str | None:
+    """Return the id of the building whose floor holds a position, or ``None`` outdoors. A building's
+    walls take up the outermost ring of its footprint, so a position in a wall or doorway is not
+    on the floor."""
+    found = cell_at(observation, position)
+    if found is None:
+        return None
+    for item in buildings(observation):
+        width, height = BUILDING_SIZES[str(item["type"])]
+        x, y = int(item["cell"]["x"]), int(item["cell"]["y"])
+        if x < found["x"] < x + width - 1 and y < found["y"] < y + height - 1:
+            return str(item["id"])
+    return None
 
 
 def doorway(observation: Mapping[str, object], building_id: str) -> dict[str, float] | None:

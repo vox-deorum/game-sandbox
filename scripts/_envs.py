@@ -143,7 +143,7 @@ def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
     pyright_example_files = (
         ("blocks.py",)
         if package_dir.name == "skirmish_crane"
-        else ("routines.py", "dialogue.py")
+        else ("routines.py", "routing.py", "dialogue.py")
         if package_dir.name == "three_branches"
         else ()
     )

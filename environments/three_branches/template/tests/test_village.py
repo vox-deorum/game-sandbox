@@ -225,6 +225,56 @@ def test_props_state_returns_a_visible_prop_state_or_none():
     assert props.state(observation, "not-visible") is None
 
 
+def test_find_helpers_return_records_by_id_and_prefer_sight_over_hearing():
+    _env, observations = _observations()
+    observation = copy.deepcopy(observations["player_1"])
+    prop = props.all(observation)[0]
+    assert props.find(observation, prop["id"]) is prop
+    assert props.find(observation, "not-a-prop") is None
+
+    seen = {"id": "player_3", "position": {"x": 1.0, "y": 1.0}}
+    heard = {"id": "player_4", "position": {"x": 2.0, "y": 2.0}}
+    observation["seen"] = (seen,)
+    observation["nearby"] = (dict(seen), heard)
+    assert people.find(observation, "player_3") is seen
+    assert people.find(observation, "player_4") is heard
+    assert people.find(observation, "player_9") is None
+
+
+def test_center_and_floor_helpers_follow_cells_and_building_footprints():
+    _env, observations = _observations()
+    observation = observations["player_1"]
+    assert layout.cell_center(observation, {"x": 3, "y": 7}) == {"x": 3.5, "y": 7.5}
+
+    building = layout.buildings(observation)[0]
+    width, height = layout.BUILDING_SIZES[building["type"]]
+    x, y = int(building["cell"]["x"]), int(building["cell"]["y"])
+    assert layout.building_center(observation, building["id"]) == {"x": x + width / 2, "y": y + height / 2}
+    assert layout.building_center(observation, "not-a-building") is None
+    assert layout.building_at(observation, {"x": x + 1.5, "y": y + 1.5}) == building["id"]
+    assert layout.building_at(observation, {"x": x + 0.5, "y": y + 1.5}) is None  # the wall ring
+    assert layout.building_at(observation, {"x": -1.0, "y": 0.0}) is None
+
+
+def test_nearest_walkable_matches_a_full_scan_of_walkable_cells():
+    _env, observations = _observations()
+    observation = observations["player_1"]
+    walkable = village_model.model(observation).walkable_cells
+    blocked_prop = next(
+        item for item in props.all(observation) if not layout.walkable(observation, item["cell"])
+    )
+    points = [
+        layout.cell_center(observation, blocked_prop["cell"]),
+        *(layout.building_center(observation, item["id"]) for item in layout.buildings(observation)),
+        me.position(observation),
+    ]
+    for point in points:
+        found = layout.nearest_walkable(observation, point)
+        assert found is not None and layout.walkable(observation, found)
+        best = min(geometry.distance({"x": cx + 0.5, "y": cy + 0.5}, point) for cx, cy in walkable)
+        assert geometry.distance(layout.cell_center(observation, found), point) == pytest.approx(best)
+
+
 def test_doorway_returns_none_or_the_nearest_deterministic_multi_cell_run():
     _env, observations = _observations()
     observation = copy.deepcopy(observations["player_1"])

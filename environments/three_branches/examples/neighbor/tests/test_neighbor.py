@@ -35,16 +35,9 @@ def _example(scene):
     return example, observation
 
 
-def _schedule_memory(observation, role, slot):
-    """Return the memory keys ``assign`` reads, for a resident with no plan yet."""
-    return {
-        "role": role,
-        "slot": slot,
-        "home": me.home(observation),
-        "home_point": {"x": 1.5, "y": 1.5},
-        "goal": None,
-        "visitor_handled": False,
-    }
+def _visitor_at(position):
+    """Return a record of the visitor standing at a position, as seen or heard."""
+    return {"id": "player_0", "position": dict(position), "expression": {"type": "none", "target": "none"}}
 
 
 class _FakeLLM:
@@ -76,59 +69,57 @@ def test_reset_keeps_private_graphs_and_returns_a_legal_first_action(scene):
     assert env.action_space("player_1").contains(first.act(observations["player_1"]))
 
 
-def test_schedule_spreads_roles_and_reassigns_for_visitor_and_home(scene, monkeypatch):
+def test_residents_find_their_own_work_props_and_follow_the_day(scene, monkeypatch):
     _env, observations, _first, _second = scene
-    observation = copy.deepcopy(observations["player_1"])
-    observation["phase"] = "morning"
+    residents = {player: agent.Agent() for player in observations if player != "player_0"}
+    for player, resident in residents.items():
+        resident.reset(9, observations[player])
+    work_props = [resident.memory["work_prop"] for resident in residents.values()]
+    assert len(set(work_props)) == 10
+    types = {item["id"]: item["type"] for item in props.all(observations["player_1"])}
+    assert [types[prop] for prop in work_props] == [resident.work for resident in agent.RESIDENTS]
+
+    example = residents["player_6"]
+    memory = example.memory
+    observation = copy.deepcopy(observations["player_6"])
     monkeypatch.setattr(people, "nearby", lambda _observation: ())
-    goals = []
+    for phase, plan in (
+        ("dawn", ("go_to", memory["work_prop"])),
+        ("morning", ("tend", memory["work_prop"])),
+        ("midday", ("gather_at", "inn")),
+        ("evening", ("tend", memory["work_prop"])),
+        ("night", ("sleep_at", memory["home"])),
+    ):
+        observation["phase"] = phase
+        assert agent.assign(observation, memory) == plan
 
-    for slot, resident in enumerate(agent.RESIDENTS):
-        assert len({agent.ROLES[role].work for role in resident.roles}) == 1
-        routine, goal = agent.assign(observation, _schedule_memory(observation, resident.roles[0], slot))
-        assert routine == "tend"
-        assert goal is not None
-        goals.append(goal)
-
-    assert len(set(goals)) == 10
-    target_types = [
-        next(item for item in props.all(observation) if item["id"] == goal)["type"] for goal in goals
-    ]
-    assert sorted(target_types) == [
-        "bell",
-        "board",
-        "hearth",
-        "plot",
-        "plot",
-        "pump",
-        "repair_bench",
-        "stall",
-        "stall",
-        "stall",
-    ]
-
-    memory = _schedule_memory(observation, "stallkeeper", 5)
-    monkeypatch.setattr(
-        people,
-        "nearby",
-        lambda _observation: ({"id": "player_0", "position": {"x": 2.0, "y": 2.0}},),
-    )
+    observation["phase"] = "morning"
+    monkeypatch.setattr(people, "nearby", lambda _observation: (_visitor_at(me.position(observation)),))
     assert agent.assign(observation, memory) == ("greet", "player_0")
 
-    monkeypatch.setattr(people, "nearby", lambda _observation: ())
-    observation["phase"] = "evening"
-    for slot, boundary in ((2, 760), (7, 840), (1, 880)):
-        home_memory = dict(memory, slot=slot)
-        observation["tick"] = boundary - 1
-        assert agent.assign(observation, home_memory)[0] == "tend"
-        observation["tick"] = boundary
-        assert agent.assign(observation, home_memory) == ("go_to", home_memory["home_point"])
+
+def test_a_resident_moves_on_when_its_work_prop_is_taken(scene):
+    example, observation = _example(scene)
+    example.memory.update(work_props=["stall_1", "stall_4"], work_prop="stall_1", goal="stall_1")
+
+    # The last use worked, so the resident keeps its stall.
+    observation["self"]["expression"] = {"type": "use", "target": "stall_1"}
+    example.memory["tried_use"] = True
+    example._find_free_work_prop(observation)
+    assert example.memory["work_prop"] == "stall_1"
+
+    # The last use did not work, so somebody else holds the stall. The list wraps around.
+    observation["self"]["expression"] = {"type": "none", "target": "none"}
+    example._find_free_work_prop(observation)
+    assert example.memory["work_prop"] == "stall_4"
+    example.memory["goal"] = "stall_4"
+    example._find_free_work_prop(observation)
+    assert example.memory["work_prop"] == "stall_1"
 
 
 def test_visitor_reaction_lasts_its_window_and_repeats_on_the_next_visit(scene, monkeypatch):
     example, observation = _example(scene)
     observation["phase"] = "morning"
-    visitor = {"id": "player_0", "position": dict(me.position(observation))}
     heard = []
     monkeypatch.setattr(people, "nearby", lambda _observation: tuple(heard))
     monkeypatch.setattr(people, "seen", lambda _observation: tuple(heard))
@@ -139,10 +130,10 @@ def test_visitor_reaction_lasts_its_window_and_repeats_on_the_next_visit(scene, 
         return example.memory["routine"], order["action"]
 
     wave = action.stand(0.0, "wave")["action"]
-    example.memory.update(role="stallkeeper", routine=None, goal=None)
+    example.memory.update(routine=None, goal=None)
     assert run(100)[0] == "tend"
     for arrival in (101, 200):
-        heard[:] = [visitor]
+        heard[:] = [_visitor_at(me.position(observation))]
         assert run(arrival) == ("greet", wave)
         assert run(arrival + agent.REACTION_TICKS - 1)[0] == "greet"
         assert run(arrival + agent.REACTION_TICKS)[0] == "tend"
@@ -188,13 +179,7 @@ def test_documented_routine_menu_returns_its_expected_orders(scene, monkeypatch)
     orders["follow"] = agent.routines.follow(observation, example.memory, "player_0")
     orders["avoid"] = agent.routines.avoid(observation, example.memory, pump["id"])
     orders["watch"] = agent.routines.watch(observation, example.memory, pump["id"])
-    monkeypatch.setattr(agent.routines.layout, "cell_at", lambda _observation, _position: {"x": 2, "y": 2})
-    monkeypatch.setattr(agent.routines.layout, "ground_at", lambda _observation, _cell: "interior")
-    monkeypatch.setattr(
-        agent.routines.layout,
-        "building",
-        lambda _observation, _goal: {"type": "home", "cell": {"x": 1, "y": 1}},
-    )
+    monkeypatch.setattr(agent.routines.layout, "building_at", lambda _observation, _position: "home_0")
     orders["sleep_at"] = agent.routines.sleep_at(observation, example.memory, "home_0")
 
     assert set(orders) == {
@@ -229,10 +214,9 @@ def test_go_to_replans_after_a_stalled_position(scene, monkeypatch):
         destination: ((east, 1.0), ((2, 1), 1.0)),
     }
     monkeypatch.setattr(agent.routines.me, "position", lambda _observation: {"x": 0.5, "y": 0.5})
+    monkeypatch.setattr(agent.routines.layout, "cell_at", lambda _observation, _position: {"x": 0, "y": 0})
     monkeypatch.setattr(
-        agent.routines.layout,
-        "cell_at",
-        lambda _observation, _position: {"x": 0, "y": 0},
+        agent.routines.layout, "nearest_walkable", lambda _observation, _position: {"x": 2, "y": 0}
     )
     routes = iter(([start, east, destination], [start, north, (1, 1), (2, 1), destination]))
     calls = []
@@ -241,7 +225,7 @@ def test_go_to_replans_after_a_stalled_position(scene, monkeypatch):
         calls.append((route_start, route_destination))
         return list(next(routes))
 
-    monkeypatch.setattr(agent.routines, "_route", reroute)
+    monkeypatch.setattr(agent.routines.routing, "path", reroute)
     goal = {"x": 2.5, "y": 0.5}
 
     assert agent.routines.go_to(observation, example.memory, goal)["heading"] == 0.0
@@ -252,24 +236,66 @@ def test_go_to_replans_after_a_stalled_position(scene, monkeypatch):
 def test_dialogue_keeps_latest_capped_direct_lines_and_falls_back(scene):
     _example_agent, observation = _example(scene)
     nearby = copy.deepcopy(observation)
-    nearby["nearby"] = ({"id": "player_0", "position": dict(me.position(observation))},)
+    nearby["nearby"] = (_visitor_at(me.position(observation)),)
     conversation = dialogue.Dialogue("the baker")
     conversation.llm = fake = _FakeLLM()
     conversation.observe(nearby)
-    conversation.receive([{"from": "player_0", "text": "current"}])
-    assert conversation.reply() is None
+    conversation.receive([{"from": "player_0", "to": None, "text": "current"}])
+    assert conversation.messages() == []
     conversation.receive(
-        [{"from": "player_0", "text": "older"}, {"from": "player_0", "text": "  newest line  "}]
+        [
+            {"from": "player_0", "to": None, "text": "older"},
+            {"from": "player_0", "to": None, "text": "  newest line  "},
+        ]
     )
     fake.answer = "Current reply."
-    assert conversation.reply() == {"to": "player_0", "text": "Current reply."}
-    assert conversation.reply() is None
+    assert conversation.messages() == [{"to": "player_0", "text": "Current reply."}]
+    assert conversation.messages() == []
     assert fake.requests[-1]["messages"][-1]["content"] == "newest line"
     fake.answer = "x" * 250
-    assert conversation.reply() == {"to": "player_0", "text": "x" * 200}
-    conversation.receive([{"from": "player_0", "text": "One more"}])
+    assert conversation.messages() == [{"to": "player_0", "text": "x" * 200}]
+    conversation.receive([{"from": "player_0", "to": "player_1", "text": "One more"}])
+    assert conversation.messages() == []
     fake.error = RuntimeError("budget exhausted")
-    assert conversation.reply() == {"to": "player_0", "text": dialogue.FALLBACK}
+    assert conversation.messages() == [{"to": "player_0", "text": dialogue.FALLBACK}]
+
+
+def test_dialogue_answers_neighbors_with_a_script_and_ends_the_exchange(scene):
+    _example_agent, observation = _example(scene)
+    here = me.position(observation)
+    nearby = copy.deepcopy(observation)
+    nearby["nearby"] = (
+        {"id": "player_3", "position": dict(here)},
+        {"id": "player_4", "position": dict(here)},
+    )
+    conversation = dialogue.Dialogue("the baker")
+    conversation.llm = fake = _FakeLLM()
+    conversation.observe(nearby)
+
+    # A neighbor's line to everyone is overheard, and a line to this resident gets the canned answer.
+    conversation.receive(
+        [
+            {"from": "player_4", "to": None, "text": "Lovely weather."},
+            {"from": "player_3", "to": "player_1", "text": dialogue.GOOD_DAY},
+        ]
+    )
+    assert conversation.messages() == [{"to": "player_3", "text": dialogue.GOOD_DAY_REPLY}]
+    assert conversation.messages() == []
+    assert fake.requests == []
+
+    # Opening a conversation: one line per listener per tick, and the answer ends it.
+    assert conversation.say("player_4", dialogue.GOOD_DAY)
+    assert not conversation.say("player_4", "Again.")
+    assert not conversation.say("player_9", "Nobody hears this.")
+    assert conversation.messages() == [{"to": "player_4", "text": dialogue.GOOD_DAY}]
+    conversation.receive([{"from": "player_4", "to": "player_1", "text": dialogue.GOOD_DAY_REPLY}])
+    assert conversation.messages() == []
+
+    # Once the neighbor walks away and comes back, a new conversation can start.
+    conversation.observe(dict(nearby, nearby=()))
+    conversation.observe(nearby)
+    conversation.receive([{"from": "player_4", "to": "player_1", "text": dialogue.GOOD_DAY}])
+    assert conversation.messages() == [{"to": "player_4", "text": dialogue.GOOD_DAY_REPLY}]
 
 
 def test_dialogue_invalidates_for_hearing_loss_and_a_real_wall(scene):
@@ -299,21 +325,21 @@ def test_dialogue_invalidates_for_hearing_loss_and_a_real_wall(scene):
     ):
         clear = copy.deepcopy(observation)
         clear["self"]["position"] = observer_position
-        clear["nearby"] = ({"id": "player_0", "position": observer_position},)
+        clear["nearby"] = (_visitor_at(observer_position),)
         conversation = dialogue.Dialogue("the baker")
         conversation.llm = fake = _FakeLLM()
         conversation.observe(clear)
-        conversation.receive([{"from": "player_0", "text": "Can you hear me?"}])
-        assert conversation.reply() is None
+        conversation.receive([{"from": "player_0", "to": None, "text": "Can you hear me?"}])
+        assert conversation.messages() == []
 
         invalid = copy.deepcopy(observation)
         invalid["self"]["position"] = observer_position
         invalid["nearby"] = ()
-        invalid["seen"] = ({"id": "player_0", "position": visitor_position},)
+        invalid["seen"] = (_visitor_at(visitor_position),)
         conversation.observe(invalid)
         fake.answer = "This reply is stale."
-        assert conversation.reply() is None
-        assert conversation.waiting is None
+        assert conversation.messages() == []
+        assert conversation.waiting == {}
 
 
 def test_seeded_season_four_day_moves_works_and_sleeps_with_legal_actions():

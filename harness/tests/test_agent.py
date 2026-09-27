@@ -144,6 +144,9 @@ def test_three_branches_starter_prioritizes_benches_then_doorways_then_pumps_and
     monkeypatch.setattr(module.layout, "ground_at", lambda _observation, _cell: "ground")
     monkeypatch.setattr(module.people, "seen", lambda _observation: ({"id": "player_0"},))
     monkeypatch.setattr(module.props, "all", lambda _observation: (pump,))
+    monkeypatch.setattr(
+        module.layout, "cell_center", lambda _observation, cell: {"x": cell["x"] + 0.5, "y": cell["y"] + 0.5}
+    )
     assert example.act(observation) == module.action.walk(
         module.geometry.heading_to(here, {"x": 5.5, "y": 6.5}), 1.0, "wave"
     )

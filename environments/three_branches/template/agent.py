@@ -4,12 +4,6 @@ from sandbox.observation_types import ThreeBranchesAction, ThreeBranchesObservat
 from sandbox.village import action, geometry, layout, me, people, props
 
 
-def _cell_centre(cell: dict[str, int]) -> dict[str, float]:
-    """Return the point at the centre of one village cell."""
-
-    return {"x": cell["x"] + 0.5, "y": cell["y"] + 0.5}
-
-
 class Agent:
     """Walks out of its home, visits the pump, and acknowledges people it sees."""
 
@@ -38,7 +32,9 @@ class Agent:
 
         pump = next((prop for prop in props.all(observation) if prop["type"] == "pump"), None)
         if pump is not None:
-            return action.walk(geometry.heading_to(here, _cell_centre(pump["cell"])), 1.0, expression)
+            return action.walk(
+                geometry.heading_to(here, layout.cell_center(observation, pump["cell"])), 1.0, expression
+            )
         return action.walk(heading, 0.0, expression)
 
     # Optional: messaging. On your turn, chat receives messages addressed to your player since

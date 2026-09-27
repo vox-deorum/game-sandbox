@@ -21,6 +21,14 @@ def nearby(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...
     return cast(tuple[Mapping[str, object], ...], observation["nearby"])
 
 
+def find(observation: Mapping[str, object], player_id: object) -> Mapping[str, object] | None:
+    """Return the character with this id from ``seen``, else from ``nearby``, or ``None`` when you
+    can neither see nor hear them. Only a seen record carries heading, movement, and expression."""
+    return next(
+        (person for person in (*seen(observation), *nearby(observation)) if person["id"] == player_id), None
+    )
+
+
 def roster(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
     """Return every character's stable id and home building id. Standing knowledge, identical for
     all characters and constant for the whole day."""

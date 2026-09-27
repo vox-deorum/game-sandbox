@@ -20,6 +20,11 @@ def all(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
     return cast(tuple[Mapping[str, object], ...], observation["village"]["props"])
 
 
+def find(observation: Mapping[str, object], prop_id: object) -> Mapping[str, object] | None:
+    """Return the static prop placement with this id, or ``None`` when there is no such prop."""
+    return next((prop for prop in all(observation) if prop["id"] == prop_id), None)
+
+
 def seen(observation: Mapping[str, object]) -> tuple[Mapping[str, object], ...]:
     """Return the dynamic states of props in the current vision cone."""
     return cast(tuple[Mapping[str, object], ...], observation["props"])

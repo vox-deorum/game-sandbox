@@ -1,6 +1,6 @@
 # AGENTS.md
 
-NEVER STAGE YOUR CHANGES UNLESS EXPLICITLY ASKED! However, if a change gets externally staged, it is from the human reviewer. 
+NEVER STAGE YOUR CHANGES UNLESS EXPLICITLY ASKED! However, if a change gets externally staged, it is from the human reviewer.
 
 When asking questions, come with a clear, plain description with an example. Do not assume the owner knows every detail in your context. DO NOT ASK asynchronous questions.
 
@@ -11,6 +11,7 @@ Delegate less critical/lower-level BATCH work to subagents with less capabilitie
 Use OpenCode delegation if such a skill exists, with clear, bounded instructions. If OpenCode does not work, switch back to native subagents.
 
 DO NOT use weak models for complex diagnosis. For independent review, use OpenCode. For exploration and simple implementation task:
+
 - Claude Code: always delegate to OpenCode. Never use Sonnet or Haiku.
 - Codex: always delegate to OpenCode or GPT-6-Luna. Never use Sol.
 
