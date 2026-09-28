@@ -75,9 +75,11 @@ The environment's [metadata](environment.md) selects timing:
 | --- | --- | --- | --- |
 | Sequential turn-based | None | Advance when the acting player's action arrives or the move clock expires. The clock runs only while the acting player holds the controls. | The next turn begins after the action finishes. |
 | Sequential real-time | Set | Advance on the existing target cadence, using the latest input or the default action. | The scheduler retains its target sequence. |
-| Simultaneous | Set (required) | Treat each cadence boundary as the earliest start of one joint tick, using the latest latched human input or its default action. | Schedule the next boundary one full interval after completion. Never skip a player or run catch-up ticks. |
+| Simultaneous | Set (required) | Treat each cadence boundary as the earliest start of one joint tick, using the latest latched human input or its default action. | Boundaries keep a fixed cadence, so tick work does not stretch the period. A tick that completes at or past its next boundary restarts the cadence one interval after that completion. Never skip a player or run catch-up ticks. |
 
 Real-time input takes effect after a network round trip, so supported games use moderate cadences rather than timing that depends on immediate reactions.
+
+A watch session plays frames one per view cadence, a short fixed lead (150 ms) behind the first frame that reaches an idle buffer. A frame that arrives up to that lead late still lands on its slot. A later frame holds the picture once, then starts a fresh lead so playout realigns behind it. The waiting indicator appears only after the buffer has run dry and nothing has arrived for 400 ms, so ordinary jitter never flashes it. Human sessions never use this lead, so it adds no delay to a person's own input.
 
 A recorded state's `started_at` is its action or cadence boundary. Its duration ends after participant hooks, the environment transition, learning, and overlay extraction, immediately before state construction and serialization. Recording and relay work (serialization and input/output) is outside that duration. Environment transition time is platform work and is not charged to a participant.
 

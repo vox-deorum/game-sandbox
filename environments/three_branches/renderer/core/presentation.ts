@@ -350,7 +350,7 @@ export interface HearthsideStyle {
   atlases: unknown
   thumbnail: ThreeBranchesThumbnailAsset
   palette: HearthsidePalette
-  transition: { naturalMs: number; settleGraceMs: number; headroom: number }
+  transition: { naturalMs: number; settleGraceMs: number; minMarginMs: number; maxMarginMs: number }
   terrain: {
     fills: Readonly<Record<string, TerrainFillTreatment>>
     contours: TerrainContourTreatment
@@ -427,46 +427,118 @@ export function groundColor(name: string): string {
   return PALETTE[name as keyof typeof PALETTE] ?? PALETTE.ground
 }
 
-/** Resolve one transition duration from transport timing and the natural presentation duration. */
+/**
+ * What sizes an unpaced live glide. The server's own step spacing (`timing.started_at`) says when the
+ * next frame is due, and the arrival jitter says how much later than that it may land. Both are
+ * smoothed across consecutive landed ticks.
+ */
+export interface GlideClock {
+  /** The last landed tick measured, or null when the next frame starts a fresh measurement. */
+  tick: number | null
+  /** That tick's server boundary, when its state carried one. */
+  startedAtMs: number | null
+  /** When that tick arrived in the browser. */
+  arrivedAtMs: number | null
+  /** The smoothed server gap between ticks, or null before the first measured pair. */
+  serverGapMs: number | null
+  /** The smoothed distance between the arrival gap and the server gap. */
+  jitterMs: number
+}
+
+/** The glide clock before any live frame has landed. */
+export const INITIAL_GLIDE_CLOCK: GlideClock = {
+  tick: null,
+  startedAtMs: null,
+  arrivedAtMs: null,
+  serverGapMs: null,
+  jitterMs: 0,
+}
+
+/** One landed live frame, as the glide clock samples it. */
+export interface GlideSample {
+  tick: number
+  startedAtMs: number | undefined
+  arrivedAtMs: number
+}
+
+/**
+ * Fold one delivery into the glide clock. Only consecutive ticks are measured. A snap, a paced host,
+ * or a skipped tick starts a fresh measurement but keeps the smoothed estimates, and a same-tick
+ * re-delivery changes nothing. A server gap missing from the state falls back to the arrival gap.
+ */
+export function observeGlideClock(
+  clock: GlideClock,
+  sample: GlideSample,
+  options?: RenderOptions,
+  style: Pick<HearthsideStyle, 'transition'> = HEARTHSIDE_STYLE,
+): GlideClock {
+  if (options?.snap === true || options?.transitionScale !== undefined) {
+    return { ...clock, tick: null, startedAtMs: null, arrivedAtMs: null }
+  }
+  if (sample.tick === clock.tick) return clock
+  const startedAtMs =
+    sample.startedAtMs !== undefined && Number.isFinite(sample.startedAtMs)
+      ? sample.startedAtMs
+      : null
+  const next = { ...clock, tick: sample.tick, startedAtMs, arrivedAtMs: sample.arrivedAtMs }
+  if (clock.tick === null || clock.arrivedAtMs === null || sample.tick !== clock.tick + 1) {
+    return next
+  }
+  const arrivalGapMs = sample.arrivedAtMs - clock.arrivedAtMs
+  const serverGapMs =
+    startedAtMs !== null && clock.startedAtMs !== null
+      ? startedAtMs - clock.startedAtMs
+      : arrivalGapMs
+  // One sample is capped at the widest margin, so a single long stall cannot hold the margin open.
+  const jitterSampleMs = Math.min(
+    Math.abs(arrivalGapMs - serverGapMs),
+    style.transition.maxMarginMs,
+  )
+  return {
+    ...next,
+    serverGapMs: smoothedDeliveryGapMs(clock.serverGapMs, serverGapMs),
+    jitterMs: smoothedDeliveryGapMs(clock.jitterMs, jitterSampleMs),
+  }
+}
+
+/** The slack added past the expected next arrival: twice the smoothed jitter, within the configured bounds. */
+export function glideMarginMs(
+  jitterMs: number,
+  style: Pick<HearthsideStyle, 'transition'> = HEARTHSIDE_STYLE,
+): number {
+  return Math.min(
+    Math.max(2 * jitterMs, style.transition.minMarginMs),
+    style.transition.maxMarginMs,
+  )
+}
+
+/**
+ * Resolve one transition duration. A paced host passes its own scale. An unpaced live frame glides
+ * until its successor is due plus the jitter margin, so a slightly late frame still meets a moving
+ * glide rather than a stopped world. Before any gap is measured the natural duration applies.
+ */
 export function transitionDurationMs(
   options?: RenderOptions,
-  deliveryGapMs?: number | null,
+  clock: GlideClock = INITIAL_GLIDE_CLOCK,
   style: Pick<HearthsideStyle, 'transition'> = HEARTHSIDE_STYLE,
 ): number {
   if (options?.snap === true) return 0
   if (options?.transitionScale !== undefined) {
     return style.transition.naturalMs * transitionScaleOf(options)
   }
-  return deliveryGapMs !== undefined &&
-    deliveryGapMs !== null &&
-    Number.isFinite(deliveryGapMs) &&
-    deliveryGapMs >= 0
-    ? Math.min(deliveryGapMs * style.transition.headroom, style.transition.naturalMs)
+  const gapMs = clock.serverGapMs
+  return gapMs !== null && Number.isFinite(gapMs) && gapMs >= 0
+    ? Math.min(gapMs + glideMarginMs(clock.jitterMs, style), style.transition.naturalMs)
     : style.transition.naturalMs
 }
 
-/** Smooth one measured delivery gap into the running estimate, giving recent gaps the most weight. */
+/** Smooth one measured gap into the running estimate, giving recent gaps the most weight. */
 export function smoothedDeliveryGapMs(
   previousEstimateMs: number | null,
   measuredGapMs: number,
 ): number {
   if (previousEstimateMs === null) return measuredGapMs
   return previousEstimateMs * 0.75 + measuredGapMs * 0.25
-}
-
-/** Measure only consecutive unpaced deliveries, resetting the clock across snaps and paced hosts. */
-export function measureDeliveryGap(
-  previousMs: number | null,
-  deliveredAtMs: number,
-  options?: RenderOptions,
-): { gapMs: number | undefined; nextMs: number | null } {
-  if (options?.snap === true || options?.transitionScale !== undefined) {
-    return { gapMs: undefined, nextMs: null }
-  }
-  return {
-    gapMs: previousMs === null ? undefined : deliveredAtMs - previousMs,
-    nextMs: deliveredAtMs,
-  }
 }
 
 /** Resolve one complete prop-still scale from the validated visual calibration. */
@@ -521,7 +593,8 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   const transitionSource = exactRecord(source.transition, 'presentation.transition', [
     'naturalMs',
     'settleGraceMs',
-    'headroom',
+    'minMarginMs',
+    'maxMarginMs',
   ])
   const transition = {
     naturalMs: positiveNumber(transitionSource.naturalMs, 'presentation.transition.naturalMs'),
@@ -529,7 +602,17 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       transitionSource.settleGraceMs,
       'presentation.transition.settleGraceMs',
     ),
-    headroom: positiveNumber(transitionSource.headroom, 'presentation.transition.headroom'),
+    minMarginMs: nonnegativeNumber(
+      transitionSource.minMarginMs,
+      'presentation.transition.minMarginMs',
+    ),
+    maxMarginMs: nonnegativeNumber(
+      transitionSource.maxMarginMs,
+      'presentation.transition.maxMarginMs',
+    ),
+  }
+  if (transition.maxMarginMs < transition.minMarginMs) {
+    throw new Error('presentation.transition.maxMarginMs must not be below minMarginMs')
   }
 
   const terrainFrames = framesFor(atlases, 'terrain')

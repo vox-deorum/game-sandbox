@@ -38,9 +38,10 @@ import {
 // core/
 import { runArtLoad } from './core/art-loading.js'
 import {
+  type GlideClock,
   HEARTHSIDE_STYLE,
-  measureDeliveryGap,
-  smoothedDeliveryGapMs,
+  INITIAL_GLIDE_CLOCK,
+  observeGlideClock,
   THREE_BRANCHES_PRESENTATION,
   transitionDurationMs,
 } from './core/presentation.js'
@@ -61,8 +62,10 @@ import { type CollisionLayer, createCollisionLayer } from './map/collision-layer
 import { drawMap, drawUpperWalls, type MapLayerView } from './map/map-layer.js'
 import {
   advanceWalkDistance,
+  applyMovement,
   buildStaticScene,
   computeScene,
+  type FrameGlide,
   interpolateScene,
   movementAction,
   sceneCharactersMoved,
@@ -108,13 +111,6 @@ const CONTENT_SIZE = {
 const MANUAL_CAMERA_QUIET_MS = 200
 const VISITOR_PLAYER = 'player_0'
 
-interface MovementTransition {
-  from: FrameScene
-  to: FrameScene
-  elapsedMs: number
-  durationMs: number
-}
-
 /** The configurable watch and replay renderer for Days at Three Branches. */
 export class ThreeBranchesRenderer extends PixiRenderer {
   /** Fixed logical drawing surface advertised to the host layout. */
@@ -150,12 +146,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private correctedOpeningTarget = false
   private currentScene: FrameScene | null = null
   private presentedScene: FrameScene | null = null
-  private movement: MovementTransition | null = null
+  private movement: FrameGlide | null = null
   private settleRemainingMs = 0
   private collisionTextZoom = Number.NaN
-  private lastDeliveryAtMs: number | null = null
-  /** EMA-smoothed delivery gap that paces character motion, or null before the first measured gap. */
-  private gapEstimateMs: number | null = null
+  /** Server step spacing and arrival jitter, which size an unpaced live glide. */
+  private glideClock: GlideClock = INITIAL_GLIDE_CLOCK
   /** Whether the previous frame drew a bubble, so the frame that retires the last one still repaints. */
   private wasSpeaking = false
   private visitorInput: VisitorInputController | null = null
@@ -278,11 +273,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   }
 
   protected update(state: StepState, options?: RenderOptions): void {
-    const delivery = measureDeliveryGap(this.lastDeliveryAtMs, performance.now(), options)
-    if (delivery.gapMs !== undefined) {
-      this.gapEstimateMs = smoothedDeliveryGapMs(this.gapEstimateMs, delivery.gapMs)
-    }
-    this.lastDeliveryAtMs = delivery.nextMs
+    this.glideClock = observeGlideClock(
+      this.glideClock,
+      { tick: state.tick, startedAtMs: state.timing.started_at, arrivedAtMs: performance.now() },
+      options,
+    )
     // A connection that re-delivers the current recorded tick re-presents the same frame, so it
     // must neither advance the walk phase nor disturb an in-flight movement; the roof keeps the
     // same guard. Snap frames (resize, redraw, seek) are not re-deliveries: they must still
@@ -315,7 +310,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     // and asset redraws retain the current bubble ages.
     if (options?.seek === true) this.annotations.clear()
     this.annotations.deliver(readSpeech(state, this.expectedIds))
-    const durationMs = transitionDurationMs(options, this.gapEstimateMs)
+    const durationMs = transitionDurationMs(options, this.glideClock)
     // A snap re-presentation is not a landed state, so it must not move expression marker tails.
     if (options?.snap !== true) {
       this.annotations.observeExpressions(
@@ -324,7 +319,6 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       )
     }
     this.props.reconcile(scene)
-    this.props.advance(scene)
     this.collision.drawStatic(
       collisionWithPropStates(this.staticCollisionShapes, scene),
       this.worldTextResolution(),
@@ -343,36 +337,16 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       movement: this.movement,
       scene,
     })
-    const presented = this.presentedScene
-    const glide = this.movement
     this.settleRemainingMs = 0
-    if (action === 'start' && presented !== null) {
-      // Movement always follows the renderer transport. It deliberately does not inspect the
-      // reduced-motion media query, since continuous character movement is core game state here.
-      this.movement = {
-        from: presented,
-        to: scene,
-        elapsedMs: 0,
-        durationMs,
-      }
-      this.presentScene(interpolateScene(presented, scene, 0))
-    } else if (action === 'settle' && glide !== null) {
-      // A stopped frame landed while its movement was still gliding: aim the remaining glide at
-      // the stop frame so the sprite settles its last stretch with resting feet instead of popping
-      // the leftover distance. The stop frame reads moved 0, so the feet rest while the remaining
-      // stretch completes, and the camera's return keeps following that motion until it settles.
-      this.movement = {
-        from: glide.from,
-        to: scene,
-        elapsedMs: glide.elapsedMs,
-        durationMs: glide.durationMs,
-      }
-    } else if (action === 'snap') {
-      this.movement = null
-      this.presentScene(scene)
-    }
-    // The hold action (a same-tick re-delivery) leaves any in-flight glide untouched; the external
-    // layers were reconciled above, and onFrame keeps presenting the glide.
+    // Movement always follows the renderer transport. It deliberately does not inspect the
+    // reduced-motion media query, since continuous character movement is core game state here. A
+    // settle keeps the camera's return following the remaining stretch until it rests, and a hold
+    // (a same-tick re-delivery) leaves the glide for onFrame to keep presenting.
+    const step = applyMovement(action, this.presentedScene, this.movement, scene, durationMs)
+    this.movement = step.glide
+    if (step.present !== null) this.presentScene(step.present)
+    // Prop effects follow the scene on screen, which mid-glide is still between two ticks.
+    this.props.advance(this.presentedScene ?? scene)
     this.updateProbes(state, scene)
     if (!snapLike) this.landedScene = scene
   }

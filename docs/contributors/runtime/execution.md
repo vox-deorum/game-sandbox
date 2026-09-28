@@ -216,7 +216,7 @@ The finalizer stores the result, notifies clients, kills the container if needed
 Live pacing keeps separate scheduler branches:
 
 - Sequential paced environments retain their target cadence and use the latest latched human input.
-- Simultaneous environments emit an opening state, wait one full interval before tick 0, and schedule every later boundary one interval after the previous tick completes. They never issue catch-up ticks.
+- Simultaneous environments emit an opening state, wait one full interval before tick 0, and then start ticks on a fixed cadence one interval apart, so tick work does not stretch the period. When a tick completes at or past its next boundary, the cadence restarts one interval after that completion. They never issue catch-up ticks.
 - Sequential environments without a pace interval block for the acting human, and the move clock accumulates only while the browser reports the controls held. A browser that never reports them waits indefinitely, backstopped by the session's idle timeout and duration limit.
 
 A session pause uses a `PausableClock`, so cadence and decision-time accounting stop together. A playback pause does not reach the stepping loop, which keeps stepping while the browser holds its own frames. Through `clock`, however, it reaches a turn-based move clock: pausing while you hold the controls stops your held time from accumulating until you resume. Headless runs do not construct this live loop.

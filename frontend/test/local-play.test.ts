@@ -227,12 +227,14 @@ describe('LocalPlayPage', () => {
       const watched = flappyState(0, 1)
       handlers.onState(watched)
       handlers.onState(flappyState(1, 2))
-      handlers.onState(flappyState(2, 3)) // fills the lead (150 ms / 50 ms cadence = 3 frames)
+      handlers.onState(flappyState(2, 3))
 
+      // Playout starts after the 150 ms lead, then the next frame follows one 50 ms cadence later.
       expect(drawn).toEqual([])
-      vi.advanceTimersByTime(50)
-      await Promise.resolve()
+      await vi.advanceTimersByTimeAsync(150)
       expect(drawn).toEqual([watched])
+      await vi.advanceTimersByTimeAsync(50)
+      expect(drawn).toHaveLength(2)
     } finally {
       vi.useRealTimers()
     }

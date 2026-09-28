@@ -1244,17 +1244,17 @@ describe('SessionPage', () => {
     vi.useFakeTimers()
     try {
       handlers.onHeader(HEADER)
-      // Two frames sit below the lead (150 ms / 50 ms cadence = 3), so playout has not begun: even
-      // after time passes nothing draws — the buffer is still filling to absorb network jitter.
+      // Playout runs 150 ms behind the first frame, so a slightly late frame still lands on time.
+      // Until that lead has passed nothing draws.
       handlers.onState(flappyState(0, 1))
       handlers.onState(flappyState(1, 2))
-      await vi.advanceTimersByTimeAsync(200)
+      handlers.onState(flappyState(2, 3))
+      await vi.advanceTimersByTimeAsync(149)
       expect(drawn).toHaveLength(0)
 
-      // A third frame fills the lead; playout begins with the frame at the head of the buffer and
-      // then plays the rest one per cadence.
-      handlers.onState(flappyState(2, 3))
-      await vi.advanceTimersByTimeAsync(0)
+      // Playout then begins with the frame at the head of the buffer and plays the rest one per
+      // cadence.
+      await vi.advanceTimersByTimeAsync(1)
       expect(drawn).toHaveLength(1)
       expect(screen.queryByText('Game over')).toBeNull()
 
@@ -1310,7 +1310,7 @@ describe('SessionPage', () => {
     }
   })
 
-  it('shows a waiting indicator when the jitter buffer underruns, and clears it when frames resume', async () => {
+  it('shows a waiting indicator when the watch stream goes quiet, and clears it when a frame arrives', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('viewer'))
     vi.mocked(getSession).mockResolvedValue(scriptedRow())
     await renderSession()
@@ -1320,23 +1320,26 @@ describe('SessionPage', () => {
     try {
       handlers.onHeader(HEADER)
       handlers.onSessionStatus?.('running')
-      // Fill the lead (3 frames) so playout begins, then drain all three.
+      // Playout starts after the 150 ms lead and plays the three frames one cadence apart.
       handlers.onState(flappyState(0, 1))
       handlers.onState(flappyState(1, 2))
       handlers.onState(flappyState(2, 3))
-      await vi.advanceTimersByTimeAsync(100)
+      await vi.advanceTimersByTimeAsync(250)
       expect(drawn).toHaveLength(3)
 
-      // Once the last of them has served its cadence the buffer is empty with the stream still live,
-      // so the indicator appears over the held frame.
-      await vi.advanceTimersByTimeAsync(50)
+      // The buffer runs dry once the last frame has served its cadence. A short gap is ordinary jitter,
+      // so the indicator appears only after 400 ms with nothing arriving.
+      await vi.advanceTimersByTimeAsync(449)
+      expect(screen.queryByText('Waiting…')).toBeNull()
+      await vi.advanceTimersByTimeAsync(1)
       expect(screen.getByText('Waiting…')).toBeInTheDocument()
 
-      // A fresh frame restarts playout and clears the indicator.
+      // A fresh frame clears the indicator at once and plays after a fresh lead.
       handlers.onState(flappyState(3, 4))
       await vi.advanceTimersByTimeAsync(0)
-      expect(drawn).toHaveLength(4)
       expect(screen.queryByText('Waiting…')).toBeNull()
+      await vi.advanceTimersByTimeAsync(150)
+      expect(drawn).toHaveLength(4)
     } finally {
       vi.useRealTimers()
     }
@@ -1613,14 +1616,13 @@ describe('SessionPage', () => {
       handlers.onState(
         playerState(1, { messages: [{ from: 'player_0', to: null, text: 'hello table' }] }),
       )
-      // Below the lead (150 ms / 50 ms = 3 frames): nothing has played out, so the message is hidden.
-      await vi.advanceTimersByTimeAsync(200)
+      // Within the 150 ms lead nothing has played out, so the message is hidden.
+      await vi.advanceTimersByTimeAsync(149)
       expect(drawn).toHaveLength(0)
       expect(screen.queryByText('hello table')).toBeNull()
 
-      // A third frame fills the lead; playout begins with frame 0, which carries no message.
-      handlers.onState(playerState(2))
-      await vi.advanceTimersByTimeAsync(0)
+      // Playout begins with frame 0, which carries no message.
+      await vi.advanceTimersByTimeAsync(1)
       expect(drawn).toHaveLength(1)
       expect(screen.queryByText('hello table')).toBeNull()
 

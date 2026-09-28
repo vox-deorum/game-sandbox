@@ -1242,7 +1242,8 @@
   "transition": {
     "naturalMs": 1000,
     "settleGraceMs": 100,
-    "headroom": 1.1
+    "minMarginMs": 30,
+    "maxMarginMs": 100
   },
   "terrain": {
     "fills": {

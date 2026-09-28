@@ -5,6 +5,7 @@ import type { CharacterDrawable, FrameScene } from '../core/types.js'
 import { expectedCharacterIds, RULES, readDynamic, readStatic } from '../ui/overlay.js'
 import {
   advanceWalkDistance,
+  applyMovement,
   buildStaticScene,
   computeScene,
   expressionIconFor,
@@ -112,6 +113,42 @@ describe('Three Branches pure scene', () => {
     expect(halfway.presentationTick).toBeCloseTo((from.presentationTick + to.presentationTick) / 2)
     expect(halfway.static).toBe(scene)
     expect(to).toEqual(computeScene(states[1] as (typeof states)[number], scene, roster))
+  })
+})
+
+describe('applyMovement', () => {
+  const { header, states } = fixtureRecording()
+  const scene = buildStaticScene(readStatic(header))
+  const roster = expectedCharacterIds(header)
+  const frame = (index: number) =>
+    computeScene(states[index] as (typeof states)[number], scene, roster)
+  const [first, second, third] = [frame(0), frame(1), frame(2)]
+  const midGlide = { from: first, to: second, elapsedMs: 140, durationMs: 280 }
+  const onScreen = interpolateScene(first, second, 0.5)
+
+  it('starts a new glide from the in-between scene, so props stay on the tick on screen', () => {
+    const step = applyMovement('start', onScreen, midGlide, third, 280)
+    expect(step.glide).toEqual({ from: onScreen, to: third, elapsedMs: 0, durationMs: 280 })
+    expect(step.present?.presentationTick).toBeCloseTo(onScreen.presentationTick)
+    expect(step.present?.presentationTick).not.toBe(third.presentationTick)
+  })
+
+  it('re-aims a settling glide at the stop frame and keeps the screen', () => {
+    const step = applyMovement('settle', onScreen, midGlide, third, 280)
+    expect(step).toEqual({ glide: { ...midGlide, to: third }, present: null })
+  })
+
+  it('holds the glide on a re-delivery, and snaps otherwise', () => {
+    expect(applyMovement('hold', onScreen, midGlide, second, 280)).toEqual({
+      glide: midGlide,
+      present: null,
+    })
+    expect(applyMovement('snap', onScreen, midGlide, third, 0)).toEqual({
+      glide: null,
+      present: third,
+    })
+    // With nothing on screen yet there is nothing to glide from.
+    expect(applyMovement('start', null, null, first, 280)).toEqual({ glide: null, present: first })
   })
 })
 

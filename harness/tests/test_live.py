@@ -810,47 +810,85 @@ def test_paced_with_no_input_keeps_moving_on_defaults(tmp_path: Path):
     assert _recorded_actions(recording) == [DEFAULT_ACTION] * 4
 
 
-def test_simultaneous_live_cadence_waits_after_each_completed_tick():
+class _LateFirstWakeSleeper(AdvancingSleeper):
+    """Advances like :class:`AdvancingSleeper`, except the first sleep oversleeps to ``wake_at``."""
+
+    def __init__(self, base: ManualClock, wake_at: int) -> None:
+        super().__init__(base)
+        self._wake_at = wake_at
+
+    def sleep_ms(self, ms: int) -> None:
+        if self.calls == 0:
+            self.calls += 1
+            self._base.advance(self._wake_at - self._base.now_ms())
+            return
+        super().sleep_ms(ms)
+
+
+def _simultaneous_run(
+    work_ms: list[int],
+    *,
+    interval_ms: int = 50,
+    sleeper_for: Any = AdvancingSleeper,
+    during_first_tick: Any = None,
+) -> tuple[list[int], list[dict[str, int]]]:
+    """Run the three-tick parallel fixture paced at ``interval_ms``, spending ``work_ms[i]`` inside
+    tick ``i``. Returns each tick's start time and its action map."""
     base = ManualClock(0)
     clock = PausableClock(base)
     control = SessionControl(clock)
     starts: list[int] = []
+    actions_seen: list[dict[str, int]] = []
 
     class TimedParallelEnv(ThreePlayerParallelEnv):
         def step(self, actions):
             starts.append(base.now_ms())
-            base.advance(20)
+            actions_seen.append(dict(actions))
+            if len(starts) == 1 and during_first_tick is not None:
+                during_first_tick(control)
+            base.advance(work_ms[len(starts) - 1])
             return super().step(actions)
 
     entry = replace(make_parallel_entry(), make=lambda _parameters: TimedParallelEnv())
-    for player, action in (("player_0", 1), ("player_1", 2), ("player_2", 0)):
-        control.handle_line(json.dumps({"kind": "input", "player": player, "action": action}))
-    sleeper = AdvancingSleeper(base)
+    sleeper = sleeper_for(base)
     players = {
         player: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
         for player in entry.meta.human_players
     }
-
-    with Episode(
-        entry,
-        players,
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=clock,
-    ) as episode:
+    with Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=clock) as episode:
         assert episode.opening_state() is not None
-        run_live_loop(
-            episode,
-            pace_interval_ms=50,
-            control=control,
-            clock=clock,
-            sleeper=sleeper,
-        )
+        run_live_loop(episode, pace_interval_ms=interval_ms, control=control, clock=clock, sleeper=sleeper)
         assert episode.result().ticks == 3
+    return starts, actions_seen
 
-    # Tick zero gets a full input window. Every 20 ms overrun then starts a fresh 50 ms wait instead
-    # of immediately catching up to the preceding target.
-    assert starts == [50, 120, 190]
+
+def test_simultaneous_live_cadence_keeps_a_fixed_rate_despite_tick_work():
+    # Tick zero gets a full input window. The 20 ms of work inside each tick does not stretch the period.
+    starts, _actions = _simultaneous_run([20, 20, 20])
+    assert starts == [50, 100, 150]
+
+
+def test_simultaneous_live_cadence_restarts_one_interval_after_an_overrun():
+    # Tick zero finishes at 120, past the 100 boundary, so the next tick waits a full interval.
+    starts, _actions = _simultaneous_run([70, 20, 20])
+    assert starts == [50, 170, 220]
+
+
+def test_simultaneous_live_cadence_never_catches_up_after_a_late_wakeup():
+    # Scheduled for 250, the first tick wakes at 800 and finishes at 820. The 500 boundary has passed,
+    # so the next tick runs at 1070 rather than at once.
+    starts, _actions = _simultaneous_run(
+        [20, 20, 20], interval_ms=250, sleeper_for=lambda base: _LateFirstWakeSleeper(base, 800)
+    )
+    assert starts == [800, 1070, 1320]
+
+
+def test_simultaneous_live_input_sent_during_a_tick_is_used_by_the_next_tick():
+    def send(control: SessionControl) -> None:
+        control.handle_line(json.dumps({"kind": "input", "player": "player_2", "action": 2}))
+
+    _starts, actions = _simultaneous_run([20, 20, 20], during_first_tick=send)
+    assert [tick["player_2"] for tick in actions] == [0, 2, 0]
 
 
 def test_simultaneous_live_cadence_stays_paused_until_resume():

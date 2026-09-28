@@ -9,9 +9,10 @@ emitted at the end.
 
 The live loop and headless ``run_episode`` both call :meth:`Episode.advance`, which dispatches to
 one sequential AEC step or one simultaneous parallel tick. Sequential pacing retains its target
-cadence. Simultaneous pacing waits one full interval after each completed tick, so slow work slips
-the cadence without a catch-up burst. Pause is a cooperative wait shared by both, and because the
-injected :class:`PausableClock` freezes while paused, cadence and measured durations freeze with it.
+cadence. Simultaneous pacing starts ticks one interval apart, and a tick that runs past its next
+boundary restarts the cadence from its completion without a catch-up burst. Pause is a cooperative
+wait shared by both, and because the injected :class:`PausableClock` freezes while paused, cadence
+and measured durations freeze with it.
 
 Module-level imports stay free of environment packages so :func:`main` can claim stdout
 *before* anything imports a game; the environment is loaded only inside :func:`main`,
@@ -645,8 +646,9 @@ def run_live_loop(
 
     A thin loop over :meth:`Episode.advance`. Sequential environments retain their target-based
     scheduler. Both simultaneous modes wait cooperatively while paused. A paced simultaneous session
-    waits one full interval after every completed tick, while headless mode otherwise advances back to
-    back. A ``stop`` command ends the run with reason ``stopped``.
+    starts ticks on a fixed cadence one interval apart. A tick that completes at or past its next
+    boundary restarts the cadence one interval after that completion, so no catch-up tick ever runs.
+    Headless mode advances back to back. A ``stop`` command ends the run with reason ``stopped``.
     """
     if episode.stepping == "simultaneous":
         # Only read when paced: the first tick waits one full input window before advancing.
@@ -662,8 +664,13 @@ def run_live_loop(
                 break
             episode.advance()
             if pace_interval_ms is not None:
-                # A long participant hook or environment transition slips the following tick. Never catch up.
-                next_instant = clock.now_ms() + pace_interval_ms
+                # Tick work and sleep overshoot must not stretch the period, or every frame lands late.
+                next_instant += pace_interval_ms
+                completed = clock.now_ms()
+                if completed >= next_instant:
+                    # A slow tick or a late wakeup passed the boundary. Restart the cadence instead of
+                    # running a catch-up tick at once.
+                    next_instant = completed + pace_interval_ms
         return
 
     # Preserve the original AEC target-based scheduler byte-for-byte apart from dispatching through

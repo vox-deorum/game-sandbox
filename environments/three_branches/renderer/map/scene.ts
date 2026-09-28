@@ -285,6 +285,47 @@ export interface MovementGlide {
   durationMs: number
 }
 
+/** A glide in flight together with the scene it started from. */
+export interface FrameGlide extends MovementGlide {
+  from: FrameScene
+}
+
+/** The outcome of one delivered frame: the glide left in flight, and any scene to present now. */
+export interface MovementStep {
+  glide: FrameGlide | null
+  /** The scene to put on screen now, or null to keep the one already presented. */
+  present: FrameScene | null
+}
+
+/**
+ * Apply a {@link MovementAction} to the glide in flight. A new glide starts from the scene already on
+ * screen, which may be between two ticks, so the first painted frame stays where the picture was. A
+ * settle re-aims the glide and keeps the screen. A snap lands on the frame. A hold changes nothing.
+ * The renderer advances prop effects with whatever scene is on screen afterwards, so they never jump
+ * ahead to the landed tick for one painted frame.
+ */
+export function applyMovement(
+  action: MovementAction,
+  presented: FrameScene | null,
+  glide: FrameGlide | null,
+  scene: FrameScene,
+  durationMs: number,
+): MovementStep {
+  if (action === 'hold') return { glide, present: null }
+  if (action === 'start' && presented !== null) {
+    return {
+      glide: { from: presented, to: scene, elapsedMs: 0, durationMs },
+      present: interpolateScene(presented, scene, 0),
+    }
+  }
+  if (action === 'settle' && glide !== null) {
+    // Aim the remaining glide at the stopped frame so the sprite settles its last stretch with
+    // resting feet instead of popping the leftover distance.
+    return { glide: { ...glide, to: scene }, present: null }
+  }
+  return { glide: null, present: scene }
+}
+
 /** The inputs the renderer needs to choose one {@link MovementAction}. */
 export interface MovementActionInput {
   /** Whether this delivery re-presents the current recorded tick on a connect (never a snap). */

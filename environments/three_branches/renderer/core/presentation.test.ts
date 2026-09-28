@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   bellStrikerTreatment,
+  type GlideClock,
   HEARTHSIDE_STYLE,
-  measureDeliveryGap,
+  INITIAL_GLIDE_CLOCK,
+  observeGlideClock,
   propEffectAnchor,
   readHearthsideStyle,
   smoothedDeliveryGapMs,
@@ -125,46 +127,109 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(extraKey)).toThrow('opacityAnimation keys do not match')
   })
 
-  it('uses explicit host pace and scales unpaced delivery gaps by headroom, capped at natural', () => {
-    expect(transitionDurationMs({ snap: true }, 400)).toBe(0)
-    expect(transitionDurationMs({ transitionScale: 0 }, 400)).toBe(0)
-    expect(transitionDurationMs({ transitionScale: 0.5 }, 900)).toBe(500)
-    expect(transitionDurationMs(undefined, 240)).toBe(264)
-    expect(transitionDurationMs(undefined, 1_400)).toBe(1_000)
-    expect(transitionDurationMs()).toBe(1_000)
-    expect(transitionDurationMs(undefined, Number.NaN)).toBe(1_000)
-  })
+  describe('live glide timing', () => {
+    /** Feed consecutive ticks 250 ms apart on the server, each arriving `lateness[i]` ms late. */
+    function feed(lateness: number[], clock: GlideClock = INITIAL_GLIDE_CLOCK): GlideClock {
+      return lateness.reduce(
+        (current, late, index) =>
+          observeGlideClock(current, {
+            tick: index + 1,
+            startedAtMs: (index + 1) * 250,
+            arrivedAtMs: (index + 1) * 250 + late,
+          }),
+        clock,
+      )
+    }
 
-  it('smooths the delivery gap with an EMA and applies headroom', () => {
-    expect(smoothedDeliveryGapMs(null, 240)).toBe(240)
-    expect(smoothedDeliveryGapMs(200, 240)).toBe(210)
-    expect(smoothedDeliveryGapMs(220, 260)).toBe(230)
-    expect(transitionDurationMs(undefined, 210)).toBeCloseTo(231)
-    expect(transitionDurationMs(undefined, 10_000)).toBe(1_000)
-  })
-
-  it('requires a positive transition headroom', () => {
-    const zeroHeadroom = structuredClone(HEARTHSIDE_STYLE) as any
-    zeroHeadroom.transition.headroom = 0
-    expect(() => readHearthsideStyle(zeroHeadroom)).toThrow('transition.headroom')
-
-    const missingHeadroom = structuredClone(HEARTHSIDE_STYLE) as any
-    delete missingHeadroom.transition.headroom
-    expect(() => readHearthsideStyle(missingHeadroom)).toThrow('keys do not match')
-  })
-
-  it('measures consecutive unpaced deliveries and resets the clock on snaps and pacing', () => {
-    expect(measureDeliveryGap(null, 100)).toEqual({ gapMs: undefined, nextMs: 100 })
-    expect(measureDeliveryGap(100, 340)).toEqual({ gapMs: 240, nextMs: 340 })
-    expect(measureDeliveryGap(340, 500, { snap: true })).toEqual({
-      gapMs: undefined,
-      nextMs: null,
+    it('uses the host scale when paced, and the natural duration before any gap is measured', () => {
+      expect(transitionDurationMs({ snap: true })).toBe(0)
+      expect(transitionDurationMs({ transitionScale: 0 })).toBe(0)
+      expect(transitionDurationMs({ transitionScale: 0.5 })).toBe(500)
+      expect(transitionDurationMs()).toBe(1_000)
     })
-    expect(measureDeliveryGap(null, 700)).toEqual({ gapMs: undefined, nextMs: 700 })
-    expect(measureDeliveryGap(700, 900, { transitionScale: 0.5 })).toEqual({
-      gapMs: undefined,
-      nextMs: null,
+
+    it('glides for the server gap plus twice the jitter, within the 30 to 100 ms margin', () => {
+      const clock = (serverGapMs: number, jitterMs: number): GlideClock => ({
+        ...INITIAL_GLIDE_CLOCK,
+        serverGapMs,
+        jitterMs,
+      })
+      expect(transitionDurationMs(undefined, clock(250, 0))).toBe(280)
+      expect(transitionDurationMs(undefined, clock(250, 40))).toBe(330)
+      expect(transitionDurationMs(undefined, clock(250, 80))).toBe(350)
+      expect(transitionDurationMs(undefined, clock(1_400, 0))).toBe(1_000)
     })
+
+    it('keeps the server gap steady while arrivals jitter around it', () => {
+      // Arrivals alternate 0 and 20 ms late, so every arrival gap is 20 ms off the server's 250.
+      const clock = feed(Array.from({ length: 40 }, (_, index) => (index % 2) * 20))
+      expect(clock.serverGapMs).toBe(250)
+      expect(clock.jitterMs).toBeCloseTo(20)
+      expect(transitionDurationMs(undefined, clock)).toBeCloseTo(290)
+    })
+
+    it('stays at the minimum margin on a steady link', () => {
+      expect(transitionDurationMs(undefined, feed(Array(10).fill(3)))).toBe(280)
+    })
+
+    it('caps one long stall so it cannot hold the margin open', () => {
+      const steady = feed(Array(10).fill(0))
+      const stalled = observeGlideClock(steady, {
+        tick: 11,
+        startedAtMs: 11 * 250,
+        arrivedAtMs: 10 * 250 + 5_000,
+      })
+      expect(stalled.jitterMs).toBe(25)
+    })
+
+    it('measures only consecutive ticks, and starts afresh after a skip or a snap', () => {
+      const steady = feed(Array(10).fill(0))
+      // A skipped tick measures nothing but keeps the estimates for the next consecutive pair.
+      const skipped = observeGlideClock(steady, { tick: 12, startedAtMs: 0, arrivedAtMs: 0 })
+      expect(skipped).toMatchObject({ tick: 12, serverGapMs: 250, jitterMs: 0 })
+      // A snap or a paced host drops the last sample, so the next frame only sets a new base.
+      for (const options of [{ snap: true }, { transitionScale: 0.25 }]) {
+        const reset = observeGlideClock(
+          steady,
+          { tick: 11, startedAtMs: 0, arrivedAtMs: 0 },
+          options,
+        )
+        expect(reset).toMatchObject({ tick: null, serverGapMs: 250 })
+      }
+      // A same-tick re-delivery changes nothing.
+      expect(observeGlideClock(steady, { tick: 10, startedAtMs: 0, arrivedAtMs: 9_999 })).toBe(
+        steady,
+      )
+    })
+
+    it('falls back to the arrival gap when a state carries no server boundary', () => {
+      const first = observeGlideClock(INITIAL_GLIDE_CLOCK, {
+        tick: 1,
+        startedAtMs: undefined,
+        arrivedAtMs: 100,
+      })
+      const second = observeGlideClock(first, { tick: 2, startedAtMs: undefined, arrivedAtMs: 340 })
+      expect(second).toMatchObject({ serverGapMs: 240, jitterMs: 0 })
+    })
+
+    it('smooths each gap with an EMA', () => {
+      expect(smoothedDeliveryGapMs(null, 240)).toBe(240)
+      expect(smoothedDeliveryGapMs(200, 240)).toBe(210)
+    })
+  })
+
+  it('requires ordered, nonnegative glide margins', () => {
+    const inverted = structuredClone(HEARTHSIDE_STYLE) as any
+    inverted.transition.maxMarginMs = 10
+    expect(() => readHearthsideStyle(inverted)).toThrow('maxMarginMs')
+
+    const negative = structuredClone(HEARTHSIDE_STYLE) as any
+    negative.transition.minMarginMs = -1
+    expect(() => readHearthsideStyle(negative)).toThrow('transition.minMarginMs')
+
+    const missing = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missing.transition.maxMarginMs
+    expect(() => readHearthsideStyle(missing)).toThrow('keys do not match')
   })
 
   it('rejects an out-of-range fill detail shift, an invalid tint mix, and unknown fill keys', () => {

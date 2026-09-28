@@ -19,14 +19,17 @@
  * ahead of them are still animating out of the queue below, and it is what makes pausing on your own
  * turn safe.
  *
- * A watch (scripted) run plays through a client-side jitter buffer. The container runs as fast as it
- * can and the carrier delivers frames unevenly, in bursts with stalls, so rendering them on arrival
- * makes the animation race ahead and snap to the result. Instead the client buffers frames, waits for
- * a small lead to accumulate (so a late or bursty frame does not starve playback), then plays them out
- * one at a time; an underrun simply holds the last frame until more arrive rather than stuttering. The
- * end facts (the `ended` status and the `result`) ride at the tail of the buffer: they are held until
- * the last buffered frame has finished playing, so the animation plays out fully and only then reveals
- * game over.
+ * A watch (scripted) run plays through a client-side jitter buffer. The carrier delivers frames
+ * unevenly, in bursts with stalls, so rendering them on arrival makes the animation race ahead and
+ * snap. Instead playout runs a short, fixed time behind the stream. When a frame reaches an idle
+ * buffer, playout starts {@link JITTER_BUFFER_LEAD_MS} later and then plays one frame per cadence, so
+ * any frame that arrives up to that lead late still lands on its slot. If a frame is later than that,
+ * the buffer runs dry, the last frame holds, and the late frame starts a fresh lead, which realigns
+ * playout behind it. The waiting indicator is about the network rather than the pump: it appears only
+ * when nothing has arrived for {@link STARVATION_NOTICE_MS} after an underrun, so a brief refill never
+ * flashes it. The end facts (the `ended` status and the `result`) ride at the tail of the buffer: they
+ * are held until the last buffered frame has finished playing, so the animation plays out fully and
+ * only then reveals game over.
  *
  * A human session renders its owner's own move the instant it arrives — the owner needs immediate
  * feedback to their input. But when a turn-based env declares a `live_interval_ms`, the *other* players'
@@ -73,10 +76,13 @@ function delay(ms: number): Promise<void> {
 /** How often the health verdict is recomputed while no frame arrives, so staleness can advance. */
 const HEALTH_TICK_MS = 1000
 
-/** How much playback to buffer before starting, to absorb network jitter. The added startup latency
- *  is irrelevant for a non-interactive watch run, and it keeps a late or bursty frame from starving
- *  the very first cadence ticks. */
+/** How far watch playout runs behind the first frame that reaches an idle buffer. A frame up to this
+ *  late still lands on its cadence slot. It stays small because it is also added latency. */
 const JITTER_BUFFER_LEAD_MS = 150
+
+/** How long a watch buffer may stay dry before the page shows its waiting indicator. Shorter gaps are
+ *  ordinary network jitter, and flashing an indicator over them is the flicker this avoids. */
+const STARVATION_NOTICE_MS = 400
 
 /** The recording frames the page wires to its renderer. */
 export interface SessionFrameHandlers {
@@ -132,8 +138,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   // policy such as chat must follow the harness immediately even while the renderer animates older
   // queued frames.
   const latestState = shallowRef<StepState | null>(null)
-  // True while playout has begun but the jitter buffer has run dry awaiting more frames, so the page
-  // can show a waiting indicator over the held last frame. Only ever set in buffered (watch) mode.
+  // True once the watch buffer has run dry and nothing has arrived for STARVATION_NOTICE_MS, so the
+  // page can show a waiting indicator over the held last frame. The next arrival clears it.
   const buffering = ref(false)
   // Why the picture is standing still, derived from the per-step timing every state already carries
   // (see lib/session-health.ts). The measured verdict is kept apart from the gate so that pausing or
@@ -148,13 +154,15 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   let connectionId = 0
 
   // --- paced playout ---
-  // The queue of frames awaiting their turn, whether the pump is running, whether playout has begun at
-  // all (the watch buffer waits for its lead to fill), and the end facts held back until the queue
-  // empties so the result lands with the final frame, not ahead of it.
+  // The queue of frames awaiting their turn, whether the pump is running, whether watch playout is
+  // under way (it stops on an underrun or a pause, and restarts after a fresh lead), the two watch
+  // timers, and the end facts held back until the queue empties so the result lands with the final
+  // frame, not ahead of it.
   let pacing = false
   let cadence = DEFAULT_WATCH_CADENCE_MS
-  let leadFrames = 1
   let playing = false
+  let leadTimer: ReturnType<typeof setTimeout> | null = null
+  let starvationTimer: ReturnType<typeof setTimeout> | null = null
   const frameQueue: StepState[] = []
   /** Bumped whenever playout is retired, so a pump from a superseded run stops at its next step. */
   let playoutId = 0
@@ -222,15 +230,39 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     return pacing ? cadence : liveMs
   }
 
-  /** Begin playout once the lead buffer has filled, or immediately once the stream has ended so a run
-   *  shorter than the lead still plays. After the first start the buffer is allowed to underrun (the
-   *  pump simply holds the last frame), so this only ever flips playout on. */
-  function maybeStart(streamEnded: boolean): void {
-    if (!playing && !(streamEnded || frameQueue.length >= leadFrames)) {
+  /** Start watch playout {@link JITTER_BUFFER_LEAD_MS} from now, unless it is already running or
+   *  waiting, or there is nothing to play. */
+  function scheduleLead(): void {
+    if (playing || leadTimer !== null || paused.value || frameQueue.length === 0) {
+      return
+    }
+    leadTimer = setTimeout(startPlayout, JITTER_BUFFER_LEAD_MS)
+  }
+
+  /** Start watch playout now. An ended stream calls this directly, so its tail plays without a lead. */
+  function startPlayout(): void {
+    cancelLead()
+    if (paused.value) {
       return
     }
     playing = true
     startPump()
+  }
+
+  function cancelLead(): void {
+    if (leadTimer !== null) {
+      clearTimeout(leadTimer)
+      leadTimer = null
+    }
+  }
+
+  /** Stop waiting on the network: a frame arrived, or playout paused or retired. */
+  function settleStarvation(): void {
+    if (starvationTimer !== null) {
+      clearTimeout(starvationTimer)
+      starvationTimer = null
+    }
+    buffering.value = false
   }
 
   /** Run the playout pump unless one is already running. */
@@ -247,25 +279,34 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     playoutId += 1
     pumping = false
     framePending = Promise.resolve()
+    cancelLead()
+    settleStarvation()
   }
 
   /**
    * Play queued frames one at a time, each waiting for the cadence floor and the previous frame's
    * transition together. Draining the queue ends the pump: a later arrival starts it again, so a watch
-   * underrun simply holds the last frame under the waiting indicator. Once the stream has ended the
-   * pump waits out the final frame before revealing game over, so the result never lands over its
-   * own animation.
+   * underrun simply holds the last frame. Once the stream has ended the pump waits out the final frame
+   * before revealing game over, so the result never lands over its own animation.
    */
   async function pump(generation: number): Promise<void> {
     while (true) {
       await framePending
       if (generation !== playoutId) return
-      if (paused.value) break
+      // A watch pause ends playout, so a pump still waiting out its frame stops here even if the viewer
+      // has already resumed. The next frame then waits for both that frame and the fresh lead.
+      if (paused.value || (pacing && !playing)) break
       const state = frameQueue.shift()
       if (state === undefined) {
         if (!endHeld) {
-          // An empty queue with the stream still live is an underrun; the watch buffer says so.
-          if (pacing) buffering.value = true
+          // An empty queue with the stream still live is an underrun. The next arrival starts a fresh
+          // lead, and the waiting indicator shows only if the network stays silent.
+          if (pacing && starvationTimer === null) {
+            starvationTimer = setTimeout(() => {
+              starvationTimer = null
+              buffering.value = true
+            }, STARVATION_NOTICE_MS)
+          }
           break
         }
         // The queue is empty and the frame before it has already served both its cadence and its
@@ -273,9 +314,9 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         applyEnd(heldEndReason)
         return
       }
-      buffering.value = false
       framePending = deliver(state, { transitionScale: paceMs() / NATURAL_CADENCE_MS })
     }
+    playing = false
     pumping = false
   }
 
@@ -307,7 +348,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     startHealth()
     syncClock()
     if (pacing) {
-      maybeStart(endHeld)
+      if (endHeld) startPlayout()
+      else scheduleLead()
       return
     }
     if (liveMs > 0) {
@@ -372,7 +414,6 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     frameQueue.length = 0
     pacing = false
     cadence = DEFAULT_WATCH_CADENCE_MS
-    leadFrames = 1
     playing = false
     endHeld = false
     heldEndReason = null
@@ -416,7 +457,6 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       pacing && typeof options.paceMs === 'number' && options.paceMs > 0
         ? options.paceMs
         : DEFAULT_WATCH_CADENCE_MS
-    leadFrames = Math.max(1, Math.ceil(JITTER_BUFFER_LEAD_MS / cadence))
     // The live human throttle is the alternative to watch pacing (never both); off unless the env
     // declares a positive cadence.
     liveMs = !pacing && !paceWhenSpectating ? requestedLiveMs : 0
@@ -440,7 +480,6 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
               pacing && typeof options.paceMs === 'number' && options.paceMs > 0
                 ? options.paceMs
                 : DEFAULT_WATCH_CADENCE_MS
-            leadFrames = Math.max(1, Math.ceil(JITTER_BUFFER_LEAD_MS / cadence))
             liveMs = pacing ? 0 : requestedLiveMs
           }
           frames.onHeader(header)
@@ -461,7 +500,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         }
         if (pacing) {
           frameQueue.push(state)
-          maybeStart(false)
+          settleStarvation()
+          scheduleLead()
         } else if (liveMs > 0) {
           onLiveState(state)
         } else if (paused.value) {
@@ -509,7 +549,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
         if (pacing) {
           endHeld = true
           heldEndReason = reason ?? null
-          if (!paused.value) maybeStart(true)
+          startPlayout()
           return
         }
         // Live throttle: hold while something is still playing out — a burst is queued, or the
@@ -531,6 +571,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       onPause: () => {
         if (connectionId === activeConnectionId) {
           paused.value = true
+          holdWatchPlayout()
           retireHealth()
           if (awaitingStart.value && runningAwaitingStartSeen) {
             // Receiving a relay frame proves this socket is live. The explicit connection-state
@@ -619,6 +660,14 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     syncClock()
   }
 
+  /** A pause holds the picture, so watch playout stops, a pending lead waits for resume, and the waiting
+   *  indicator, which the paused banner replaces, goes away. The pump itself stops at its next step. */
+  function holdWatchPlayout(): void {
+    playing = false
+    cancelLead()
+    settleStarvation()
+  }
+
   /** Whether this session's pause reaches the container. A watch run always pauses playout locally, so
    *  does an environment whose `human_pause` asks for it, and so does any session whose stream has
    *  already ended, since no command can reach a container that is already gone. */
@@ -642,6 +691,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
       resumePlayout()
     } else {
       paused.value = true
+      holdWatchPlayout()
       retireHealth()
       // A playback pause stops only this viewer's picture, so the container has to be told separately
       // that its human let go of the controls; that is what makes pausing on your own turn safe.

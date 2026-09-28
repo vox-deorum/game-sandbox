@@ -1,7 +1,7 @@
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, nextTick, watch } from 'vue'
 import type { SessionSocketHandlers } from '../src/api/socket.js'
 import type { RenderOptions } from '../src/renderers/types.js'
 
@@ -39,6 +39,7 @@ import { useSessionSocket } from '../src/composables/useSessionSocket.js'
 function mountSessionSocket(deferred = false) {
   let session!: ReturnType<typeof useSessionSocket>
   const drawn: Array<{ state: StepState; options?: RenderOptions }> = []
+  const drawnAt: number[] = []
   const finish: Array<() => void> = []
   const wrapper = mount(
     defineComponent({
@@ -47,6 +48,7 @@ function mountSessionSocket(deferred = false) {
           onHeader: () => {},
           onState: (state, options) => {
             drawn.push({ state, options })
+            drawnAt.push(Date.now())
             if (!deferred) return
             return new Promise<void>((resolve) => finish.push(resolve))
           },
@@ -57,6 +59,7 @@ function mountSessionSocket(deferred = false) {
   )
   return {
     drawn,
+    drawnAt,
     session,
     wrapper,
     /** Complete every transition handed out so far. */
@@ -299,8 +302,10 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(0))
     handlers?.onState(state(1))
 
-    // The lead has filled, so playout begins with the frame at the head of the buffer.
-    await vi.advanceTimersByTimeAsync(0)
+    // Once the lead has passed, playout begins with the frame at the head of the buffer.
+    await vi.advanceTimersByTimeAsync(149)
+    expect(drawn).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
     expect(drawn).toEqual([{ state: state(0), options: scale(100) }])
     await vi.advanceTimersByTimeAsync(100)
     expect(drawn).toHaveLength(2)
@@ -337,7 +342,7 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(0))
     handlers?.onState(state(1))
 
-    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(150)
     expect(drawn).toEqual([{ state: state(0), options: scale(100) }])
     wrapper.unmount()
   })
@@ -410,7 +415,8 @@ describe('useSessionSocket', () => {
     const handlers = socketDouble.handlers[0]
     handlers?.onState(state(0))
     handlers?.onState(state(1))
-    await vi.advanceTimersByTimeAsync(200)
+    // The 150 ms lead, then one cadence for each frame.
+    await vi.advanceTimersByTimeAsync(350)
     expect(drawn).toHaveLength(2)
 
     handlers?.onResult?.({ scores: { player_0: 7 }, ticks: 2, reason: 'terminated' })
@@ -456,8 +462,8 @@ describe('useSessionSocket', () => {
     const handlers = socketDouble.handlers[0]
     handlers?.onState(state(0))
     handlers?.onState(state(1))
-    handlers?.onState(state(2)) // fills the lead (150 ms / 50 ms cadence = 3 frames)
-    await vi.advanceTimersByTimeAsync(0)
+    handlers?.onState(state(2))
+    await vi.advanceTimersByTimeAsync(150)
     expect(drawn).toHaveLength(1)
 
     session.togglePause()
@@ -473,34 +479,169 @@ describe('useSessionSocket', () => {
     session.togglePause()
     expect(socketDouble.sent).toEqual([])
     expect(session.paused.value).toBe(false)
-    await vi.advanceTimersByTimeAsync(0)
+    // Resuming starts a fresh lead before the backlog plays.
+    await vi.advanceTimersByTimeAsync(150)
     expect(drawn).toHaveLength(2)
     // Nothing was dropped while paused: the whole backlog still plays out in order.
-    await vi.advanceTimersByTimeAsync(150)
+    await vi.advanceTimersByTimeAsync(100)
     expect(drawn.map((entry) => entry.state.tick)).toEqual([0, 1, 2, 3])
 
     wrapper.unmount()
   })
 
-  it('holds the last frame under a waiting indicator when the buffer underruns', async () => {
-    vi.useFakeTimers()
-    const { drawn, session, wrapper } = mountSessionSocket()
+  // --- the watch jitter buffer ---
+  //
+  // Frames reach a watch viewer unevenly. Playout runs a fixed 150 ms behind the stream, so a frame up to
+  // that late still lands on its slot, and the waiting indicator appears only when the network has
+  // really gone quiet. These record when each frame is drawn, since a visible pause is a gap in time.
 
-    session.connect({ pace: true, paceMs: 50 })
-    const handlers = socketDouble.handlers[0]
-    handlers?.onState(state(0))
-    handlers?.onState(state(1))
-    handlers?.onState(state(2))
-    await vi.advanceTimersByTimeAsync(200)
-    expect(drawn).toHaveLength(3)
-    expect(session.buffering.value).toBe(true)
+  describe('the watch jitter buffer', () => {
+    const CADENCE = 250
 
-    // A late frame restarts the pump and clears the indicator rather than stuttering.
-    handlers?.onState(state(3))
-    await vi.advanceTimersByTimeAsync(0)
-    expect(drawn).toHaveLength(4)
-    expect(session.buffering.value).toBe(false)
-    wrapper.unmount()
+    /** A watch session whose `buffering` flag is watched synchronously, so even a flash is caught. */
+    function watchSession() {
+      vi.useFakeTimers()
+      vi.setSystemTime(0)
+      const mounted = mountSessionSocket()
+      mounted.session.connect({ pace: true, paceMs: CADENCE })
+      const handlers = socketDouble.handlers[0]
+      const bufferingSeen: number[] = []
+      watch(
+        mounted.session.buffering,
+        (value) => {
+          if (value) bufferingSeen.push(Date.now())
+        },
+        { flush: 'sync' },
+      )
+      /** Advance fake time to `at`, then deliver the frame for `tick`. */
+      async function arrive(at: number, tick: number) {
+        await vi.advanceTimersByTimeAsync(at - Date.now())
+        handlers?.onState(state(tick))
+      }
+      /** Advance fake time to `at`. */
+      async function until(at: number) {
+        await vi.advanceTimersByTimeAsync(at - Date.now())
+      }
+      return { ...mounted, handlers, bufferingSeen, arrive, until }
+    }
+
+    /** The time between consecutive draws. */
+    function gaps(times: number[]): number[] {
+      return times.slice(1).map((time, index) => time - (times[index] as number))
+    }
+
+    /** A small deterministic generator, so the jitter is varied but every run sees the same values. */
+    function seededLateness(count: number, low: number, high: number): number[] {
+      let seed = 7
+      return Array.from({ length: count }, () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648
+        return low + (seed % (high - low + 1))
+      })
+    }
+
+    it('keeps an exact cadence while every frame is at most 140 ms late', async () => {
+      const { drawn, drawnAt, handlers, bufferingSeen, arrive, until, wrapper } = watchSession()
+      const lateness = seededLateness(20, 0, 140)
+
+      for (const [tick, late] of lateness.entries()) await arrive(tick * CADENCE + late, tick)
+      handlers?.onSessionStatus?.('ended', 'terminated')
+      await until(20 * CADENCE + 1_000)
+
+      expect(drawn.map((entry) => entry.state.tick)).toEqual([...Array(20).keys()])
+      expect(gaps(drawnAt)).toEqual(Array(19).fill(CADENCE))
+      expect(bufferingSeen).toEqual([])
+      wrapper.unmount()
+    })
+
+    it('pauses once for a frame beyond the lead, then holds the cadence behind it', async () => {
+      const { drawnAt, handlers, bufferingSeen, arrive, until, wrapper } = watchSession()
+      // Frame 3 is 300 ms late, and every frame after it is also late by 100 to 300 ms.
+      const lateness = [0, 90, 140, 300, ...seededLateness(8, 100, 300)]
+
+      for (const [tick, late] of lateness.entries()) await arrive(tick * CADENCE + late, tick)
+      handlers?.onSessionStatus?.('ended', 'terminated')
+      await until(lateness.length * CADENCE + 1_000)
+
+      // The one visible pause is 250 + 300 ms: the part of the lateness past the lead, plus a fresh lead.
+      expect(gaps(drawnAt)).toEqual([CADENCE, CADENCE, 550, ...Array(8).fill(CADENCE)])
+      expect(bufferingSeen).toEqual([])
+      wrapper.unmount()
+    })
+
+    it('does not flash the indicator when a frame refills the buffer during its lead', async () => {
+      const { drawnAt, bufferingSeen, arrive, until, wrapper } = watchSession()
+
+      await arrive(0, 0)
+      // Drawn at 150, and the buffer runs dry at 400 once that frame has served its cadence.
+      await arrive(700, 1)
+      await until(1_000)
+
+      expect(drawnAt).toEqual([150, 850])
+      expect(bufferingSeen).toEqual([])
+      wrapper.unmount()
+    })
+
+    it('shows the indicator after 400 ms of silence and clears it on the next frame', async () => {
+      const { session, drawnAt, arrive, until, wrapper } = watchSession()
+
+      await arrive(0, 0)
+      await until(799)
+      expect(session.buffering.value).toBe(false)
+      await until(800)
+      expect(session.buffering.value).toBe(true)
+
+      await arrive(1_400, 1)
+      expect(session.buffering.value).toBe(false)
+      await until(1_550)
+      expect(drawnAt).toEqual([150, 1_550])
+      wrapper.unmount()
+    })
+
+    it('clears the indicator on pause, and plays after a fresh lead on resume', async () => {
+      const { session, drawnAt, arrive, until, wrapper } = watchSession()
+
+      await arrive(0, 0)
+      await until(800)
+      expect(session.buffering.value).toBe(true)
+
+      session.togglePause()
+      expect(session.buffering.value).toBe(false)
+      await arrive(1_000, 1)
+      await until(1_400)
+      expect(drawnAt).toEqual([150])
+      expect(session.buffering.value).toBe(false)
+
+      session.togglePause()
+      await until(1_549)
+      expect(drawnAt).toEqual([150])
+      await until(1_550)
+      expect(drawnAt).toEqual([150, 1_550])
+      wrapper.unmount()
+    })
+
+    // Frame 0 is drawn at 150 and holds its cadence until 400. The pause and resume both fall inside it,
+    // and frame 1 waits for whichever ends later: that cadence, or the fresh lead from the resume.
+    it.each([
+      { resumeAt: 300, expected: [150, 450, 700] },
+      { resumeAt: 170, expected: [150, 400, 650] },
+    ])('after a resume at $resumeAt, waits for both the current frame and a fresh lead', async ({
+      resumeAt,
+      expected,
+    }) => {
+      const { session, drawnAt, arrive, until, wrapper } = watchSession()
+
+      await arrive(0, 0)
+      await arrive(10, 1)
+      await arrive(20, 2)
+      await until(160)
+      session.togglePause()
+      await until(resumeAt)
+      session.togglePause()
+      await until(1_000)
+
+      expect(drawnAt).toEqual(expected)
+      wrapper.unmount()
+    })
   })
 
   it("holds a watch session's end while paused, revealing it only once resumed and the buffer drains", async () => {
