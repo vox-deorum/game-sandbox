@@ -2,7 +2,7 @@
 
 Status: complete.
 
-Part of [the plan](../README.md). This closing build-order step extends [step 7](7-template-and-materials.md)'s helpers into one worked example named `neighbor`, which serves the [Season 4](../pedagogy.md#season-4-village-life-week-4) and [Season 5](../pedagogy.md#season-5-the-conversation-week-5) starter material. It builds on the reset contract from [step 1](1-platform-expansions.md) and the human visitor from [step 6](6-human-play.md). Review a ten-villager day that remains believable around a visitor and can hold an in-character conversation.
+Part of [the plan](../README.md). This closing build-order step extends [step 7](7-template-and-materials.md)'s helpers into one worked example named `neighbor`, which is the starter code for [Season 5](../pedagogy.md#season-5-the-conversation-week-5) and [Season 6](../pedagogy.md). It builds on the reset contract from [step 1](1-platform-expansions.md) and the human visitor from [step 6](6-human-play.md). Review a ten-villager day that remains believable around a visitor and can hold an in-character conversation.
 
 ## Why this is its own seam
 
@@ -10,7 +10,7 @@ Routines and dialogue ship together: each villager continues its day while it ta
 
 ## The agent the library serves
 
-Season 4 uses `cast_10` with daynight on. The shipped day is deliberately plain, so the example teaches the interface without steering students toward one village design. On every tick a villager asks `assign` for a routine and goal from phase and perception, starts a new plan whenever that pair changes, then asks the routine for the tick's action. Students replace the schedule with their own design.
+Season 5 uses `cast_10` with daynight on and the LLM API enabled. The shipped day is deliberately plain, so the example teaches the interface without steering students toward one village design. On every tick a villager asks `assign` for a routine and goal from phase and perception, starts a new plan whenever that pair changes, then asks the routine for the tick's action. Students replace the schedule with their own design.
 
 1. **Dawn:** walk from home to the villager's work prop with `go_to`.
 2. **Morning:** work there with `tend`.
@@ -28,7 +28,7 @@ Villagers discover their own arrangements rather than reading hand-tuned per-slo
 
 Create `environments/three_branches/examples/neighbor/` with `README.md`, `agent.py`, `routines.py`, `routing.py`, `dialogue.py`, and `tests/test_neighbor.py` in the `marcher` and `vanguard` layout. Import modules at the top level. Imports inside `act` resolve against the last-loaded player directory and become shared across players.
 
-`neighbor` is published: it is the environment's single entry in `PUBLISHED_EXAMPLES`, so the publisher pushes it to the `examples/three_branches/neighbor` branch of the student repository, while `sweeper` stays internal. Its `README.md` therefore describes the runnable checkout a student clones, not the composition step.
+`neighbor` is published: it is the environment's single entry in `PUBLISHED_EXAMPLES`, so the publisher pushes it to the `examples/three_branches/neighbor` branch of the student repository, while `sweeper` stays internal. The `season_5` and `season_6` presets name it with `example="neighbor"`, so the seeded seasons give students that branch in their setup commands. Its `README.md` therefore describes the runnable checkout a student clones under `--preset season_5`, not the composition step.
 
 A routine is `decide(observation, memory, goal)`: return a helper-built action Dict or `None` when inapplicable. It may change only supplied villager-instance memory, including namespaced routine state and cached routing data. A goal is a position, prop id, player id, or `None`. Do not hide shared state in classes. In `agent.py`, run the assigned routine, then `go_to(goal)` on `None`. That fallback is how a villager reaches the inn before `gather_at` finds company and walks home before `sleep_at` can start. A new plan clears its routine's namespaced state, so, for example, `greet` waves again on each visit.
 
@@ -55,7 +55,7 @@ The shipped example uses one graph node for every walkable cell. The village hel
 | watch(goal) | Stand still facing the goal and let the village come to it | Never |
 | sleep_at(goal) | Inside the goal building, walk toward its middle, then stand still with the sleep emote | Not inside the goal building |
 
-`assign(observation, memory)` returns `(routine, goal)` and is explicitly the Season 4 design seam. One editable table drives it: `RESIDENTS` holds a `Resident` row per slot, and the README shows how to add a field (such as a per-resident visitor reaction) and read it in `assign`. `assign` runs on every tick, so a student's new condition takes effect without a separate replanning trigger. The shipped day exercises `go_to`, `tend`, `gather_at`, `greet`, and `sleep_at`. The remaining routines support student schedules.
+`assign(observation, memory)` returns `(routine, goal)` and is explicitly the students' design seam. One editable table drives it: `RESIDENTS` holds a `Resident` row per slot, and the README shows how to add a field (such as a per-resident visitor reaction) and read it in `assign`. `assign` runs on every tick, so a student's new condition takes effect without a separate replanning trigger. The shipped day exercises `go_to`, `tend`, `gather_at`, `greet`, and `sleep_at`. The remaining routines support student schedules.
 
 ### Dialogue layer
 
@@ -76,8 +76,6 @@ Use a non-adaptive static schedule and document its approximations.
 
 ### CI wiring
 
-The Three Branches browser journey composes `neighbor`, submits it under the demo member, and leaves a Season 4 `Village Life` window open. A fresh full e2e database therefore lets `npm run demo` launch the worked example.
-
 Add `("three_branches", "neighbor")` to both the example inventory and the published allowlist in `scripts/tests/test_compose.py`. Add the example's `routines.py`, `routing.py`, and `dialogue.py` to `scripts/_envs.py`'s pyright set.
 
 ## Tests
@@ -90,10 +88,10 @@ Add `("three_branches", "neighbor")` to both the example inventory and the publi
 - A visitor test covers the 40-tick reaction window and a fresh greeting on a later visit.
 - One constructed routine-menu test covers all ten routines, with a focused stalled-route replan regression.
 - Fake-proxy dialogue tests cover latest-line replacement, direct capped replies, fallbacks, hearing loss, and a real within-range wall blocking line of sight. A neighbor test covers canned answers, overheard broadcasts, `say` refusals, the turn cap, and a fresh exchange after the neighbor returns.
-- One pinned full Season 4 `cast_10` day keeps every action in space, requires every resident to move, realizes every commanded use, observes morning and evening work, and finishes with every resident sleeping at home.
+- One pinned full Season 5 `cast_10` day keeps every action in space, requires every resident to move, realizes every commanded use, observes morning and evening work, and finishes with every resident sleeping at home.
 
 The resident table, the midday building, and the follow and avoid distance bands are defaults the day-arc test may adjust.
 
 ## Done when
 
-Under Season 4 parameters, `neighbor` plays a coherent browser day: villagers leave at dawn, work in morning, gather and greet each other at midday, work again in evening, and sleep at night while noticing the visitor. In a local day, a villager converses with the visitor in character and falls back to canned lines when its budget ends. Routine, routing, and dialogue tests pass, the example composes in CI, and the plan is complete end to end.
+Under Season 5 parameters, `neighbor` plays a coherent browser day: villagers leave at dawn, work in morning, gather and greet each other at midday, work again in evening, and sleep at night while noticing the visitor. In a local day, a villager converses with the visitor in character and falls back to canned lines when its budget ends. Routine, routing, and dialogue tests pass, the example composes in CI, and the plan is complete end to end.

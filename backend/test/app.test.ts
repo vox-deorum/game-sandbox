@@ -71,10 +71,10 @@ describe('HTTP API', () => {
     await storage.setSubmissionStatus(playSeasonId, 'closed')
     const submissionSeason = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
     await storage.setSubmissionStatus(submissionSeason.id, 'open')
-    await storage.setSeasonTemplateRepoUrl(
-      submissionSeason.id,
-      'https://example.test/course-template',
-    )
+    await storage.setSeasonTemplateRepository(submissionSeason.id, {
+      url: 'https://example.test/course-template',
+      branch: null,
+    })
 
     const res = await app.inject({
       method: 'GET',
@@ -120,7 +120,10 @@ describe('HTTP API', () => {
       fixture.config.templateRepoUrl,
       `${fixture.config.templateRepoUrl}/`,
     ]) {
-      await storage.setSeasonTemplateRepoUrl(playSeasonId, templateRepoUrl)
+      await storage.setSeasonTemplateRepository(playSeasonId, {
+        url: templateRepoUrl,
+        branch: null,
+      })
 
       const response = await app.inject({
         method: 'GET',
@@ -132,6 +135,29 @@ describe('HTTP API', () => {
         (response.json() as { play: { template_repo: { url: string; branch: string | null } } })
           .play.template_repo,
       ).toEqual({ url: templateRepoUrl, branch: 'templates/flappy_bird' })
+    }
+  })
+
+  it('serves a saved branch on the deployment or a custom repository', async () => {
+    for (const [url, expectedUrl] of [
+      [null, fixture.config.templateRepoUrl],
+      ['https://example.test/course-template', 'https://example.test/course-template'],
+    ] as const) {
+      await storage.setSeasonTemplateRepository(playSeasonId, {
+        url,
+        branch: 'examples/flappy_bird/hello',
+      })
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/environments/flappy_bird/season-settings',
+      })
+
+      expect(response.statusCode).toBe(200)
+      expect(
+        (response.json() as { play: { template_repo: { url: string; branch: string | null } } })
+          .play.template_repo,
+      ).toEqual({ url: expectedUrl, branch: 'examples/flappy_bird/hello' })
     }
   })
 

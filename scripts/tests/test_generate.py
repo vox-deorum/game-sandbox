@@ -228,6 +228,20 @@ def test_published_example_declarations_require_valid_immediate_example_director
             _envs._published_examples(package, module)
 
 
+def test_preset_examples_must_be_published(tmp_path: Path):
+    package = tmp_path / "example"
+    meta = SimpleNamespace(
+        presets=(
+            SimpleNamespace(name="season_1", example=None),
+            SimpleNamespace(name="season_2", example="known"),
+        )
+    )
+
+    _envs._check_preset_examples(package, meta, ("known",))
+    with pytest.raises(RuntimeError, match="preset 'season_2' names example 'known'"):
+        _envs._check_preset_examples(package, meta, ())
+
+
 def test_current_student_surfaces_exclude_retired_card_player_names():
     roots = [
         REPO_ROOT / "templates" / "base",

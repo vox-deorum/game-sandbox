@@ -204,7 +204,7 @@ The implementation includes the factory, default action, overlay extractor, regi
 
 `layout.line_of_sight` walks the ground grid and only wall cells block it. `can_step` checks a straight static-map step against impassable ground, catalog prop and scenery shapes, and the boundary, ignoring characters. `walkable` checks whether a body can stand at a point. Both use the engine's grid and catalog shapes.
 
-No helper chooses a behavioral destination or companion. `props.usable` mirrors the engine's pre-action prop candidate, but no controller or pathfinder is published. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. Season 4's starter example owns routing.
+No helper chooses a behavioral destination or companion. `props.usable` mirrors the engine's pre-action prop candidate, but no controller or pathfinder is published. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. The `neighbor` worked example, Season 5's starter template, owns routing.
 
 `me.rng` seeds `random.Random` through a stable hash of session seed and player id. The same pair yields the same stream, different ids yield different streams, and streams are stable across runs. `people.is_visitor` accepts only `player_0`; `people.is_npc` accepts canonical positive-number player ids and does not imply current roster membership.
 

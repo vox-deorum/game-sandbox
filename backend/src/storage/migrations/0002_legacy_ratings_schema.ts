@@ -1,9 +1,9 @@
 /**
- * Version 1 to 2: the pending forward migration for deployed application databases.
+ * Version 1 to 2: the frozen forward migration for deployed version 1 databases.
  *
- * Append every version 2 schema update here until the project owner directs another version bump.
- * Each step must be safe to retry because SQLite runs migrations outside a transaction. This file
- * becomes immutable when the next version is created.
+ * This file is immutable. It describes the version 2 shape only, so later schema updates belong to
+ * the latest migration named in `index.ts`. Each step is safe to retry because SQLite runs
+ * migrations outside a transaction.
  */
 import { type Kysely, sql } from 'kysely'
 import type { Migration } from 'kysely/migration'

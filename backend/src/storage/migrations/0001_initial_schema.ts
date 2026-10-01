@@ -25,7 +25,7 @@ import type { Database } from '../schema.js'
  * The schema version this fresh migration builds. Change it only when the project owner directs a
  * version bump. Schema updates within the current version extend the latest migration instead.
  */
-export const CURRENT_SCHEMA_VERSION = 2
+export const CURRENT_SCHEMA_VERSION = 3
 
 /** Build the current ratings indexes for a fresh database. */
 async function createRatingsIndexes(db: Kysely<Database>): Promise<void> {
@@ -136,6 +136,8 @@ export const initialSchema: Migration = {
       .addColumn('label', 'text')
       .addColumn('description_markdown', 'text')
       .addColumn('template_repo_url', 'text')
+      .addColumn('template_repo_branch', 'text')
+      .addColumn('template_repo_operator_owned', 'integer', (col) => col.notNull().defaultTo(0))
       .addColumn('config', 'text', (col) => col.notNull())
       .addColumn('rating_prompt', 'text')
       .addColumn('created_at', 'text', (col) => col.notNull())

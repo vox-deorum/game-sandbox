@@ -12,8 +12,11 @@
  *
  * - Version 1: the former rating shape with one hard-coded builtin identity and no written
  *   feedback. Databases from this era predate the marker and read `user_version` 0.
- * - Version 2: the current shape. `0001_initial_schema` builds it directly;
- *   `0002_legacy_ratings_schema` upgrades a version 1 database to it.
+ * - Version 2: named builtin ratings with written feedback. `0002_legacy_ratings_schema` upgrades a
+ *   version 1 database to it and is frozen.
+ * - Version 3: the current shape, adding each season's optional template repository branch.
+ *   `0001_initial_schema` builds it directly; `0003_season_template_branch` upgrades a version 2
+ *   database to it and is the pending migration.
  */
 import type { Kysely } from 'kysely'
 import { type Migration, type MigrationProvider, Migrator } from 'kysely/migration'
@@ -21,13 +24,15 @@ import { type Migration, type MigrationProvider, Migrator } from 'kysely/migrati
 import type { Database } from '../schema.js'
 import { initialSchema } from './0001_initial_schema.js'
 import { legacyRatingsSchema } from './0002_legacy_ratings_schema.js'
+import { seasonTemplateBranch } from './0003_season_template_branch.js'
 
 export { CURRENT_SCHEMA_VERSION } from './0001_initial_schema.js'
 
-/** The fresh schema followed by the pending deployed-database upgrade. */
+/** The fresh schema followed by the deployed-database upgrades, oldest first. */
 export const migrations: Record<string, Migration> = {
   '0001_initial_schema': initialSchema,
   '0002_legacy_ratings_schema': legacyRatingsSchema,
+  '0003_season_template_branch': seasonTemplateBranch,
 }
 
 /** Serves {@link migrations} from memory, so there is no migration folder to read at runtime. */

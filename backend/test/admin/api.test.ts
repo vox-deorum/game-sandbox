@@ -10,7 +10,7 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createGunzip } from 'node:zlib'
 
-import { TEMPLATE_REPO_URL_MAX } from '@game-sandbox/schema/seasons'
+import { TEMPLATE_REPO_BRANCH_MAX, TEMPLATE_REPO_URL_MAX } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance } from 'fastify'
 import tar from 'tar-fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -1107,39 +1107,53 @@ describe('admin API', () => {
         method: 'PUT',
         url: `/api/admin/seasons/${id}/template-repository`,
         headers: OPERATOR,
-        payload: { template_repo_url: ' https://example.test/template ' },
+        payload: {
+          template_repo_url: ' https://example.test/template ',
+          template_repo_branch: ' examples/flappy_bird/hello ',
+        },
       })
       expect(saved.statusCode).toBe(200)
-      expect((saved.json() as { template_repo_url: string }).template_repo_url).toBe(
-        'https://example.test/template',
-      )
-      expect((await storage.getSeason(id))?.template_repo_url).toBe('https://example.test/template')
+      expect(saved.json()).toMatchObject({
+        template_repo_url: 'https://example.test/template',
+        template_repo_branch: 'examples/flappy_bird/hello',
+      })
+      // The save hands the repository to the operator, and that seed bookkeeping stays off the wire.
+      expect(saved.json()).not.toHaveProperty('template_repo_operator_owned')
+      expect(await storage.getSeason(id)).toMatchObject({
+        template_repo_url: 'https://example.test/template',
+        template_repo_branch: 'examples/flappy_bird/hello',
+        template_repo_operator_owned: 1,
+      })
 
       const cleared = await app.inject({
         method: 'PUT',
         url: `/api/admin/seasons/${id}/template-repository`,
         headers: OPERATOR,
-        payload: { template_repo_url: '   ' },
+        payload: { template_repo_url: '   ', template_repo_branch: '' },
       })
       expect(cleared.statusCode).toBe(200)
-      expect((cleared.json() as { template_repo_url: string | null }).template_repo_url).toBeNull()
+      expect(cleared.json()).toMatchObject({ template_repo_url: null, template_repo_branch: null })
     })
 
     it('rejects an invalid body and returns 404 for an unknown season', async () => {
       const id = await declare()
+      const branch = { template_repo_branch: null }
       for (const payload of [
         {},
-        { template_repo_url: 123 },
-        { template_repo_url: 'git@example.test:template.git' },
-        { template_repo_url: 'ftp://example.test/template' },
-        { template_repo_url: 'https://user:secret@example.test/template' },
-        { template_repo_url: 'https://example.test/template?token=secret' },
-        { template_repo_url: 'https://example.test/template#main' },
-        { template_repo_url: 'https://example.test/template;echo' },
-        { template_repo_url: 'https://example.test/%USERNAME%' },
-        { template_repo_url: 'https://example.test/template name' },
-        { template_repo_url: `https://example.test/${'a'.repeat(TEMPLATE_REPO_URL_MAX)}` },
-        { template_repo_url: 'https://example.test', extra: true },
+        { template_repo_url: 123, ...branch },
+        { template_repo_url: 'git@example.test:template.git', ...branch },
+        { template_repo_url: 'ftp://example.test/template', ...branch },
+        { template_repo_url: 'https://user:secret@example.test/template', ...branch },
+        { template_repo_url: 'https://example.test/template?token=secret', ...branch },
+        { template_repo_url: 'https://example.test/template#main', ...branch },
+        { template_repo_url: 'https://example.test/template;echo', ...branch },
+        { template_repo_url: 'https://example.test/%USERNAME%', ...branch },
+        { template_repo_url: 'https://example.test/template name', ...branch },
+        {
+          template_repo_url: `https://example.test/${'a'.repeat(TEMPLATE_REPO_URL_MAX)}`,
+          ...branch,
+        },
+        { template_repo_url: 'https://example.test', ...branch, extra: true },
       ]) {
         const invalid = await app.inject({
           method: 'PUT',
@@ -1150,11 +1164,35 @@ describe('admin API', () => {
         expect(invalid.statusCode).toBe(400)
         expect(invalid.json()).toMatchObject({ code: 'invalid_template_repo_url' })
       }
+      for (const templateRepoBranch of [
+        7,
+        '-starter',
+        'starter branch',
+        'starter;echo',
+        'a..b',
+        'starter/',
+        '/starter',
+        'starter//x',
+        '.hidden',
+        'starter.lock',
+        'starter.',
+        '$(id)',
+        'a'.repeat(TEMPLATE_REPO_BRANCH_MAX + 1),
+      ]) {
+        const invalid = await app.inject({
+          method: 'PUT',
+          url: `/api/admin/seasons/${id}/template-repository`,
+          headers: OPERATOR,
+          payload: { template_repo_url: null, template_repo_branch: templateRepoBranch },
+        })
+        expect(invalid.statusCode, String(templateRepoBranch)).toBe(400)
+        expect(invalid.json()).toMatchObject({ code: 'invalid_template_repo_branch' })
+      }
       const missing = await app.inject({
         method: 'PUT',
         url: '/api/admin/seasons/does-not-exist/template-repository',
         headers: OPERATOR,
-        payload: { template_repo_url: 'https://example.test/template' },
+        payload: { template_repo_url: 'https://example.test/template', ...branch },
       })
       expect(missing.statusCode).toBe(404)
     })

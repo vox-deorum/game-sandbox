@@ -173,7 +173,7 @@ At Gate B, compare the pinned fixture first, then generated villages to expose d
 
 During each unit, run focused renderer and frontend checks for the changed contract. Update [5.0](5-0-atlas.md) only when the compiler or catalog contract changes, and update [5.1](5-1-art-style.md) only when the visual direction changes. Tests protect behavior, not subjective appearance. Do not stage changes.
 
-The documented `three-branches` Playwright group is not present in the current `frontend/e2e/` tree. Use manual fixture captures and focused renderer tests during this provisional comparison. Keep the group command as the intended focused Gate B check once that journey exists, and run the complete browser suite at the final gate.
+Three Branches has no Playwright group, so use manual fixture captures and focused renderer tests during each comparison, and run the complete browser suite at the final gate.
 
 After the final Gate B, run:
 
@@ -181,7 +181,6 @@ After the final Gate B, run:
 npm run atlas --workspace @game-sandbox/frontend -- check three_branches
 uv run python scripts/ci.py check
 uv run python scripts/ci.py test
-uv run python scripts/ci.py frontend-e2e --group three-branches --fast
 uv run python scripts/ci.py frontend-e2e
 ```
 

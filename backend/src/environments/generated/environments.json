@@ -343,6 +343,7 @@
         }
       },
       {
+        "example": "banner",
         "llm": false,
         "name": "season_4",
         "title": "Season 4: The Commander",
@@ -355,6 +356,7 @@
         }
       },
       {
+        "example": "banner",
         "llm": false,
         "name": "season_5",
         "title": "Season 5: The General",
@@ -367,6 +369,7 @@
         }
       },
       {
+        "example": "banner",
         "llm": false,
         "name": "season_6",
         "title": "Season 6: The Rivals",
@@ -627,6 +630,7 @@
         }
       },
       {
+        "example": "neighbor",
         "llm": true,
         "name": "season_5",
         "title": "Season 5: Village dialogue",
@@ -636,6 +640,7 @@
         }
       },
       {
+        "example": "neighbor",
         "llm": true,
         "name": "season_6",
         "title": "Season 6: Living village",

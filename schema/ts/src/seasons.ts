@@ -42,3 +42,6 @@ export function seasonDescriptionViolation(
 
 /** A template repository URL must stay short enough for the local setup command and operator UI. */
 export const TEMPLATE_REPO_URL_MAX = 300
+
+/** A template repository branch name follows the same reasoning as the URL limit. */
+export const TEMPLATE_REPO_BRANCH_MAX = 200

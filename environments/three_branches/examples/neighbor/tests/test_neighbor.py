@@ -1,4 +1,4 @@
-"""High-signal checks for the Season 4 neighbor example."""
+"""High-signal checks for the Season 5 neighbor example."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from sandbox.env import META, make_env
 from sandbox.harness.environment import resolve_parameters
 from sandbox.village import action, geometry, layout, me, people, props
 
-SEASON_4 = {"seat_plan": "cast_10", "daynight": True}
+SEASON_5 = {"seat_plan": "cast_10", "daynight": True}
 
 
 @pytest.fixture(scope="module")
 def scene():
-    env = make_env(resolve_parameters(META, SEASON_4))
+    env = make_env(resolve_parameters(META, SEASON_5))
     observations, _ = env.reset(seed=9)
     first, second = agent.Agent(), agent.Agent()
     first.reset(9, observations["player_1"])
@@ -342,8 +342,8 @@ def test_dialogue_invalidates_for_hearing_loss_and_a_real_wall(scene):
         assert conversation.waiting == {}
 
 
-def test_seeded_season_four_day_moves_works_and_sleeps_with_legal_actions():
-    env = make_env(resolve_parameters(META, SEASON_4))
+def test_seeded_season_five_day_moves_works_and_sleeps_with_legal_actions():
+    env = make_env(resolve_parameters(META, SEASON_5))
     observations, _ = env.reset(seed=0)
     residents = {player: agent.Agent() for player in observations if player != "player_0"}
     for player, resident in residents.items():

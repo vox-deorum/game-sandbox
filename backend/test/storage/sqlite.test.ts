@@ -57,6 +57,12 @@ describe('SQLite schema version', () => {
          'owner-1', 4, '2026-06-01T00:00:00.000Z', '2026-06-02T00:00:00.000Z'),
         ('builtin-rating', 'season-1', 'flappy_bird', 'rater-1', 'builtin-naive', NULL,
          NULL, 3, '2026-06-03T00:00:00.000Z', '2026-06-04T00:00:00.000Z');
+      CREATE TABLE seasons (
+        id TEXT PRIMARY KEY,
+        env_id TEXT NOT NULL,
+        template_repo_url TEXT
+      );
+      INSERT INTO seasons VALUES ('season-1', 'flappy_bird', NULL);
       CREATE TABLE kysely_migration (
         name VARCHAR(255) NOT NULL PRIMARY KEY,
         timestamp VARCHAR(255) NOT NULL
@@ -98,12 +104,51 @@ describe('SQLite schema version', () => {
       },
     ])
     expect(handle.sqlite.pragma('user_version', { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
+    expect(handle.sqlite.prepare('SELECT * FROM seasons').all()).toEqual([
+      {
+        id: 'season-1',
+        env_id: 'flappy_bird',
+        template_repo_url: null,
+        template_repo_branch: null,
+        template_repo_operator_owned: 0,
+      },
+    ])
     expect(
       handle.sqlite
         .prepare('SELECT name FROM kysely_migration ORDER BY name')
         .all()
         .map((row) => (row as { name: string }).name),
-    ).toEqual(['0001_initial_schema', '0002_legacy_ratings_schema'])
+    ).toEqual(['0001_initial_schema', '0002_legacy_ratings_schema', '0003_season_template_branch'])
+    await handle.storage.close()
+  })
+
+  it('adds the template branch and ownership to a version 2 database without losing seasons', async () => {
+    const path = databasePath()
+    const fresh = await openSqlite(path)
+    const season = await fresh.storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+    await fresh.storage.setSeasonTemplateRepository(season.id, {
+      url: 'https://example.test/template',
+      branch: null,
+    })
+    await fresh.storage.close()
+
+    // Recreate the version 2 shape: no branch or ownership column, and 0003 not yet recorded.
+    const previous = new BetterSqlite3(path)
+    previous.exec(`
+      ALTER TABLE seasons DROP COLUMN template_repo_branch;
+      ALTER TABLE seasons DROP COLUMN template_repo_operator_owned;
+      DELETE FROM kysely_migration WHERE name = '0003_season_template_branch';
+      PRAGMA user_version = 2;
+    `)
+    previous.close()
+
+    const handle = await openSqlite(path)
+    expect(handle.sqlite.pragma('user_version', { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
+    expect(await handle.storage.getSeason(season.id)).toMatchObject({
+      template_repo_url: 'https://example.test/template',
+      template_repo_branch: null,
+      template_repo_operator_owned: 1,
+    })
     await handle.storage.close()
   })
 })

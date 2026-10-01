@@ -59,11 +59,9 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 
 **Unlocks:** The `daynight` variant and visible day phase. See [ruleset phases](ruleset.md#the-daynight-variant-season-4-onward).
 
-**Starter material:** A course-distributed worked example provides routine-library routing among village places, day-phase schedules, and visitor reactions. Students may copy, edit, replace, or ignore it in favor of Season 3 behavior.
-
 **Design issue:** A village that follows a daily life while staying reactive. Season 3 peer feedback identifies gaps between intended and perceived behavior.
 
-**Core:** Day schedules built on the starter routine library, with routes among home, well, and market; revised reactions.
+**Core:** Day schedules with routes among home, well, and market; revised reactions.
 
 **Optional:** Per-NPC memory of repeat encounters; rumors spreading through messages.
 
@@ -72,6 +70,8 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 ### Season 5: The Conversation (Week 5)
 
 **Unlocks:** Platform LLM access with a per-student budget. Freeform visitor chat already exists; the new capability is an in-character answer.
+
+**Starter material:** The season starts students from the published `neighbor` worked example: a plain ten-villager day built on a routine library, A\* routing among village places, visitor reactions, and a non-blocking dialogue layer. Students may copy, edit, replace, or ignore it in favor of their Season 4 village.
 
 **Design issue:** Grounded dialogue that stays in character and refers only to true world state.
 
@@ -84,6 +84,8 @@ The human-rating board is the meaningful leaderboard. Each student writes a shor
 ### Season 6: The Living Village (Week 6)
 
 **Unlocks:** Nothing new. Routines, reactions, memory, and chat operate together.
+
+**Starter material:** The `neighbor` worked example again, for students who want a fresh start.
 
 **Design issue:** An open brief combining the reactive village from Seasons 3 and 4 with Season 5 dialogue. Students define what “more interactive” means for their village.
 

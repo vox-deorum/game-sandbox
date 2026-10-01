@@ -29,6 +29,7 @@ import {
   normalizeSeasonDescription,
   RATING_PROMPT_MAX,
   seasonDescriptionViolation,
+  TEMPLATE_REPO_BRANCH_MAX,
   TEMPLATE_REPO_URL_MAX,
 } from '@game-sandbox/schema/seasons'
 import type { FastifyInstance, FastifyReply } from 'fastify'
@@ -37,7 +38,7 @@ import { z } from 'zod'
 import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import { DEPS_VERSION } from '../build/deps-version.js'
-import { isSafeTemplateRepoUrl } from '../config/config.js'
+import { isSafeTemplateBranch, isSafeTemplateRepoUrl } from '../config/config.js'
 import { resolveSeasonParameters } from '../environments/parameters.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
@@ -128,10 +129,17 @@ const SeasonDescriptionBodySchema = z.strictObject({
   markdown: z.string().nullable(),
 })
 
-/** The body accepted when setting or clearing a season-specific template repository. */
+/** The body accepted when setting or clearing a season's template repository and branch. */
 const TemplateRepositoryBodySchema = z.strictObject({
   template_repo_url: z.string().max(TEMPLATE_REPO_URL_MAX).nullable(),
+  template_repo_branch: z.string().max(TEMPLATE_REPO_BRANCH_MAX).nullable(),
 })
+
+/** Trim an optional text field, treating an empty value as absent. */
+function blankToNull(value: string | null): string | null {
+  const trimmed = value?.trim() ?? ''
+  return trimmed === '' ? null : trimmed
+}
 
 /** Whether a run is still in progress, so a re-run is refused and a cancel is meaningful. */
 const IN_PROGRESS_RUN = new Set(['pending', 'running'])
@@ -663,24 +671,36 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         async (request, reply) => {
           const parsed = TemplateRepositoryBodySchema.safeParse(request.body)
           if (!parsed.success) {
+            // Report a branch problem only when the branch is the sole thing wrong with the body.
+            const branchIssue = parsed.error.issues.every(
+              (issue) => issue.path[0] === 'template_repo_branch',
+            )
             return reply.code(400).send({
-              error: 'invalid template repository URL',
-              code: 'invalid_template_repo_url',
+              error: branchIssue
+                ? 'invalid template repository branch'
+                : 'invalid template repository URL',
+              code: branchIssue ? 'invalid_template_repo_branch' : 'invalid_template_repo_url',
               reason: zodReason(parsed.error),
             })
           }
-          const raw = parsed.data.template_repo_url
-          const templateRepoUrl = raw === null || raw.trim() === '' ? null : raw.trim()
-          if (templateRepoUrl !== null && !isSafeTemplateRepoUrl(templateRepoUrl)) {
+          const url = blankToNull(parsed.data.template_repo_url)
+          if (url !== null && !isSafeTemplateRepoUrl(url)) {
             return reply.code(400).send({
               error: 'invalid template repository URL',
               code: 'invalid_template_repo_url',
             })
           }
-          const updated = await deps.storage.setSeasonTemplateRepoUrl(
-            request.params.id,
-            templateRepoUrl,
-          )
+          const branch = blankToNull(parsed.data.template_repo_branch)
+          if (branch !== null && !isSafeTemplateBranch(branch)) {
+            return reply.code(400).send({
+              error: 'invalid template repository branch',
+              code: 'invalid_template_repo_branch',
+            })
+          }
+          const updated = await deps.storage.setSeasonTemplateRepository(request.params.id, {
+            url,
+            branch,
+          })
           if (updated === undefined) {
             return reply.code(404).send({ error: 'no such season' })
           }

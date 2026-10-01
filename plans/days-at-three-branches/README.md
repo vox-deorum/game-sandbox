@@ -27,7 +27,7 @@ The design contracts own the details:
 
 Non-goals:
 
-- `sweeper` stays internal. `neighbor` is the only published example.
+- `sweeper` stays internal. `neighbor` is the only published example and the starter template of the seeded Season 5 and Season 6.
 - `scripted_visitor` uses canned speech only. There is no LLM visitor.
 - Course materials beyond the canonical guide are pedagogy work, not platform work.
 
@@ -69,7 +69,7 @@ Cast size and day length stay fixed throughout: `cast_5` in Season 1, `cast_10` 
    - The three signed parts merge after owner sign-off. Outcome: the pinned fixture reads clearly at fitted scale, replays in final style, and supports close exploration.
 6. **[Human play](stages/6-human-play.md).** Add pointer and keyboard locomotion, expression preview and palette, chat, and local parity. Outcome: a person plays the visitor in the browser and locally.
 7. **[Template, helpers, guide, and worked example](stages/7-template-and-materials.md).** Deliver `sandbox.village`, starter agent, canonical guide, and `sweeper`, pin-tested against the engine. Outcome: the full student flow from clone to a local day beside the scripted visitor.
-8. **[Starter village routines and dialogue example](stages/8-starter-village-routines.md).** Deliver `neighbor`, the routine library, routing, and dialogue layer before Season 4. Outcome: the starter village routines are ready for the course.
+8. **[Starter village routines and dialogue example](stages/8-starter-village-routines.md).** Deliver `neighbor`, the routine library, routing, and dialogue layer before Season 5. Outcome: the starter village routines are ready for the course.
 
 ## Done when
 

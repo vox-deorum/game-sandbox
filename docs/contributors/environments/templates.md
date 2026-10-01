@@ -34,7 +34,7 @@ A student's repository, the CI checks, and the session container that runs the a
 
 `templates/base/manifest.json` is the canonical template value. `scripts/bump_template_version.py` updates every coupled touchpoint, and CI runs it with `--check` to catch drift.
 
-The backend's `TEMPLATE_REPO_URL` setting must name the same repository as `DEFAULT_TARGET_REPO` in `scripts/publish_template.py`. My Submissions uses that setting and the branches created by the publisher when a season does not provide its own repository URL.
+The backend's `TEMPLATE_REPO_URL` setting must name the same repository as `DEFAULT_TARGET_REPO` in `scripts/publish_template.py`. My Submissions uses that setting and the branches created by the publisher when a season does not provide its own repository URL. A season may also name a branch, such as a published `examples/<env>/<name>` branch, so retiring an example from `PUBLISHED_EXAMPLES` breaks the setup commands of any season still pointing at it.
 
 Edit `templates/base/requirements.in` to change dependencies, then regenerate `templates/base/requirements.txt` with `uv pip compile`. Do not hand-edit the pinned file.
 

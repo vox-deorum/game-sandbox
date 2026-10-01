@@ -222,6 +222,16 @@ def _published_examples(package_dir: Path, module: Any) -> tuple[str, ...]:
     return published_examples
 
 
+def _check_preset_examples(package_dir: Path, meta: Any, published_examples: tuple[str, ...]) -> None:
+    """Reject a preset whose starter example is not published, since its branch would not exist."""
+    for preset in meta.presets:
+        if preset.example is not None and preset.example not in published_examples:
+            raise RuntimeError(
+                f"environment package {package_dir.name!r} preset {preset.name!r} names example "
+                f"{preset.example!r}, which is not in PUBLISHED_EXAMPLES"
+            )
+
+
 def discover_environments() -> dict[str, DiscoveredEnvironment]:
     """Import every recognized package and return it keyed by its metadata environment id."""
     discovered: dict[str, DiscoveredEnvironment] = {}
@@ -236,10 +246,9 @@ def discover_environments() -> dict[str, DiscoveredEnvironment]:
             raise RuntimeError(f"environment package {package_dir.name!r} has metadata id {env_id!r}")
         if env_id in discovered:
             raise RuntimeError(f"duplicate environment id {env_id!r}")
+        published_examples = _published_examples(package_dir, module)
+        _check_preset_examples(package_dir, meta, published_examples)
         discovered[env_id] = DiscoveredEnvironment(
-            env_id,
-            entry,
-            _template_spec(package_dir, entry),
-            _published_examples(package_dir, module),
+            env_id, entry, _template_spec(package_dir, entry), published_examples
         )
     return dict(sorted(discovered.items()))

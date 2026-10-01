@@ -27,13 +27,15 @@ function seasonSettings(
   llmOptions: ResolveLlmOptions,
 ) {
   const url = season.template_repo_url ?? templateRepoUrl
+  // A saved branch always wins. Otherwise the deployment repository serves this environment's
+  // template branch, and a custom repository is cloned from its default branch.
+  const branch =
+    season.template_repo_branch ??
+    (sameTemplateRepository(url, templateRepoUrl) ? `templates/${meta.env_id}` : null)
   return {
     season_id: season.id,
     season_label: season.label,
-    template_repo: {
-      url,
-      branch: sameTemplateRepository(url, templateRepoUrl) ? `templates/${meta.env_id}` : null,
-    },
+    template_repo: { url, branch },
     ...resolveSeasonDisplaySettings(meta, season, llmOptions),
   }
 }

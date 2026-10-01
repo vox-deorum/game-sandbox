@@ -1,17 +1,17 @@
 # Days at Three Branches: Neighbor agent
 
-Neighbor is the Season 4 starting point: ten residents who walk to work at dawn, work through the morning, meet at the inn at midday, work again in the evening, and walk home to sleep at night. They greet the visitor and say good day to each other. The day is deliberately plain. It shows how the pieces fit together, not what a good village looks like, which is yours to design. This branch is already a runnable agent repository. Edit `agent.py`, `routines.py`, `routing.py`, and `dialogue.py` directly.
+Neighbor is the Season 5 starting point: ten residents who walk to work at dawn, work through the morning, meet at the inn at midday, work again in the evening, and walk home to sleep at night. They greet the visitor and say good day to each other. The day is deliberately plain. It shows how the pieces fit together, not what a good village looks like, which is yours to design. This branch is already a runnable agent repository. Edit `agent.py`, `routines.py`, `routing.py`, and `dialogue.py` directly.
 
 Start with the [Getting Started guide]({{DOCS_URL}}students/getting-started/). Then run these commands from this folder:
 
 ```console
-python -m sandbox watch --preset season_4  # watch Neighbor's day beside the scripted visitor
-python -m sandbox play --preset season_4   # walk through the village as the visitor yourself
+python -m sandbox watch --preset season_5  # watch Neighbor's day beside the scripted visitor
+python -m sandbox play --preset season_5   # walk through the village as the visitor yourself
 python -m sandbox test                     # run the provided checks
 python -m sandbox eval                     # run repeatable automated days
 ```
 
-The `season_4` preset runs ten villagers with day and night on. The [`environment.md`](environment.md) guide explains presets, the visitor, and the other command options.
+The `season_5` preset runs ten villagers with day and night on, and Season 5 enables the LLM API. The [`environment.md`](environment.md) guide explains presets, the visitor, and the other command options.
 
 ## How Neighbor works
 
@@ -21,7 +21,7 @@ On every tick, each villager asks `assign` in `agent.py` what to do right now. T
 - `routines.py` holds the routines, such as `go_to`, `tend`, `gather_at`, `greet`, and `sleep_at`. Each one returns an action for this tick, or `None` when it cannot do its job right now. On `None`, the villager walks toward its goal with `go_to` instead. `wander`, `follow`, `avoid`, `rest`, and `watch` are there for you to use, although the plain day does not.
 - `routing.py` finds walking paths for `go_to` with A\* search over a graph of the village's walkable cells.
 - `dialogue.py` handles every conversation, with the visitor and between villagers. It answers the visitor through the optional LLM API in the background, so a routine tick never waits for it, and answers other villagers with canned lines.
-- `tests/test_neighbor.py` checks each routine on constructed observations, the visitor reaction, finding a free work prop, both kinds of conversation, and a full Season 4 day in which every resident moves, works, and ends up asleep at home.
+- `tests/test_neighbor.py` checks each routine on constructed observations, the visitor reaction, finding a free work prop, both kinds of conversation, and a full Season 5 day in which every resident moves, works, and ends up asleep at home.
 
 Each villager keeps its own memory dictionary, because every villager runs in a separate `Agent` instance. So villagers work things out for themselves instead of sharing a plan:
 
@@ -49,7 +49,7 @@ The day never adapts: every resident follows the same schedule every day. Replac
 
 A good order to work in:
 
-1. **Change the table.** Edit the rows of `RESIDENTS` in `agent.py`, for example to send some residents to a different building at midday. Run `python -m sandbox watch --preset season_4` to see the result.
+1. **Change the table.** Edit the rows of `RESIDENTS` in `agent.py`, for example to send some residents to a different building at midday. Run `python -m sandbox watch --preset season_5` to see the result.
 2. **Add fields to the table.** Each field of `Resident` is one way residents can differ. To add one, give `Resident` a new field, fill it in on the rows, and read it in `assign`. For example, to give each resident its own reaction to the visitor:
 
    ```python
@@ -87,7 +87,7 @@ When your agent is ready, follow the shared [submitting guide]({{DOCS_URL}}stude
 
 ## Optional LLM API
 
-If your instructor enables model calls, follow [Using the LLM API](llm.md). Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
+Season 5 enables model calls, so follow [Using the LLM API](llm.md) to set them up. Copy `.env.example` to `.env`, add the endpoint and key, and never commit either secret.
 
 Test the connection with:
 

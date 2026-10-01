@@ -976,8 +976,10 @@ export interface SeasonView {
   rating_prompt: string | null
   /** A short, one-paragraph inline Markdown summary shown on public season cards. */
   description_markdown: string | null
-  /** The optional starter template chosen by an operator. */
+  /** The optional starter template repository chosen by an operator. */
   template_repo_url?: string | null
+  /** The optional branch of the starter template repository, such as a published example's. */
+  template_repo_branch?: string | null
   created_at: string
   released_at: string | null
 }
@@ -997,6 +999,8 @@ export type PublicSeasonView = Pick<
 > & {
   /** The operator-selected starter repository, exposed only as a URL to public season readers. */
   template_repo_url?: string | null
+  /** The operator-selected starter branch, if any. */
+  template_repo_branch?: string | null
   /** Active participant submissions, excluding superseded attempts. */
   submission_count: number
   /** Games in the season's latest completed automated run — what the released Scoreboard aggregates. */
@@ -1496,26 +1500,37 @@ export async function setSeasonDescription(
   return { ok: false, reason }
 }
 
+/** A season's starter repository and branch. Null fields use the deployment defaults. */
+export interface TemplateRepositoryInput {
+  template_repo_url: string | null
+  template_repo_branch: string | null
+}
+
 /** The outcome of setting an optional starter-template repository for a season. */
 export type SetSeasonTemplateRepositoryResult =
   | { ok: true; season: SeasonView }
-  | { ok: false; reason: 'invalid' | 'failed' }
+  | { ok: false; reason: 'invalid' | 'invalid_branch' | 'failed' }
 
-/** Set or clear the repository participants use to begin local work for a season. */
+/** Set or clear the repository and branch participants use to begin local work for a season. */
 export async function setSeasonTemplateRepository(
   seasonId: string,
-  templateRepositoryUrl: string | null,
+  repository: TemplateRepositoryInput,
 ): Promise<SetSeasonTemplateRepositoryResult> {
   const res = await request(`/admin/seasons/${encodeURIComponent(seasonId)}/template-repository`, {
     method: 'PUT',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ template_repo_url: templateRepositoryUrl }),
+    body: JSON.stringify(repository),
   })
   if (res.ok) return { ok: true, season: (await res.json()) as SeasonView }
   const body = (await res.json().catch(() => ({}))) as { code?: string }
   return {
     ok: false,
-    reason: body.code === 'invalid_template_repo_url' ? 'invalid' : 'failed',
+    reason:
+      body.code === 'invalid_template_repo_url'
+        ? 'invalid'
+        : body.code === 'invalid_template_repo_branch'
+          ? 'invalid_branch'
+          : 'failed',
   }
 }
 

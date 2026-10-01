@@ -38,7 +38,7 @@ The additions join the canonical guide's helpers table and reach every student a
 
 ### The example package
 
-`environments/skirmish_crane/examples/banner/` follows the marcher and vanguard layout: `README.md`, `agent.py`, `blocks.py`, and `tests/test_banner.py`. Banner is published: it is the environment's single entry in `PUBLISHED_EXAMPLES`, so the publisher pushes it to the `examples/skirmish_crane/banner` branch of the student repository, while marcher and vanguard stay internal.
+`environments/skirmish_crane/examples/banner/` follows the marcher and vanguard layout: `README.md`, `agent.py`, `blocks.py`, and `tests/test_banner.py`. Banner is published: it is the environment's single entry in `PUBLISHED_EXAMPLES`, so the publisher pushes it to the `examples/skirmish_crane/banner` branch of the student repository, while marcher and vanguard stay internal. The `season_4`, `season_5`, and `season_6` presets name it with `example="banner"`, so the seeded seasons from Season 4 onward give students that branch in their setup commands.
 
 `agent.py` imports `blocks` at module top. The harness isolates top-level imports per player, while an import inside `act` would resolve against the last-loaded player's directory and be shared across players.
 

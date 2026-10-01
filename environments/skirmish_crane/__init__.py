@@ -123,6 +123,7 @@ META = EnvironmentMeta(
                 "unit_abilities": True,
                 "capture_zones": 1,
             },
+            example="banner",
         ),
         EnvPreset(
             "season_5",
@@ -134,6 +135,7 @@ META = EnvironmentMeta(
                 "unit_abilities": True,
                 "capture_zones": 3,
             },
+            example="banner",
         ),
         EnvPreset(
             "season_6",
@@ -146,6 +148,7 @@ META = EnvironmentMeta(
                 "unit_abilities": True,
                 "capture_zones": 3,
             },
+            example="banner",
         ),
     ),
 )

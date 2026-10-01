@@ -59,6 +59,7 @@ function registry(): EnvironmentRegistry {
             title: 'Season 2: The Band',
             values: { seat_plan: 'band', terrain: true },
             llm: true,
+            example: 'trail',
           },
         ],
       }),
@@ -107,6 +108,8 @@ describe('seedOpenSeasons template seasons', () => {
       "Season 1: The Walk. This season uses the game's default settings.",
     )
     expect(decodeSeasonConfig(walk?.config ?? '{}').overrides).toBeUndefined()
+    expect(walk?.template_repo_url).toBeNull()
+    expect(walk?.template_repo_branch).toBeNull()
 
     const band = plateau.find((season) => season.label === 'Season 2: The Band')
     expect(band?.description_markdown).toBe(
@@ -115,6 +118,41 @@ describe('seedOpenSeasons template seasons', () => {
     const bandConfig = decodeSeasonConfig(band?.config ?? '{}')
     expect(bandConfig.overrides?.parameters).toEqual({ seat_plan: 'band', terrain: true })
     expect(bandConfig.overrides?.llm).toEqual({ enabled: true })
+    expect(band?.template_repo_url).toBeNull()
+    expect(band?.template_repo_branch).toBe('examples/plateau/trail')
+  })
+
+  it('follows a preset example change only until an operator saves the repository', async () => {
+    await seedOpenSeasons(storage, plateauOnly(), 1)
+    const before = await storage.listSeasons({ envId: 'plateau', scope: 'all' })
+    const walk = before.find((season) => season.label === 'Season 1: The Walk')
+    const band = before.find((season) => season.label === 'Season 2: The Band')
+    if (walk === undefined || band === undefined) throw new Error('templates missing from setup')
+    // A blank URL with a hand-picked branch is still the operator's choice.
+    await storage.setSeasonTemplateRepository(band.id, { url: null, branch: 'templates/plateau' })
+
+    const plateau = registry().get('plateau')
+    if (plateau === undefined) throw new Error('plateau missing from the test registry')
+    const changed = EnvironmentRegistry.parse(
+      JSON.stringify([
+        {
+          ...plateau,
+          presets: (plateau.presets ?? []).map((preset) => ({ ...preset, example: 'summit' })),
+        },
+      ]),
+    )
+    await seedOpenSeasons(storage, changed, 1)
+
+    // The untouched walk follows its preset's new example. The band keeps the branch its operator
+    // saved, even though it still points at the deployment repository.
+    expect(await storage.getSeason(walk.id)).toMatchObject({
+      template_repo_url: null,
+      template_repo_branch: 'examples/plateau/summit',
+    })
+    expect(await storage.getSeason(band.id)).toMatchObject({
+      template_repo_url: null,
+      template_repo_branch: 'templates/plateau',
+    })
   })
 
   it('leaves preset-less environments with only the Playground season', async () => {

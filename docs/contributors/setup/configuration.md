@@ -75,7 +75,7 @@ Leaderboard runs read Docker's CPU count and total RAM when execution starts, in
 | `GOOGLE_ANALYTICS_ID` | unset | Optional Google Analytics 4 measurement ID, such as `G-G98YR1FFWX`. When set, the served `index.html` carries the gtag.js loader, so it is applied at startup with no frontend rebuild; unset leaves the bundle untouched |
 | `DOCS_DIR` | `docs` | Documentation root for shared in-app student guides; only its `students/` subtree is served |
 | `DOCS_INDEX_FILE` | unset | Optional markdown file that replaces the documentation landing page; unset serves `docs/students/index.md` |
-| `TEMPLATE_REPO_URL` | `https://github.com/vox-deorum/game-agent-template` | Published student template repository used when a season has no repository URL. When this fallback is used, the setup dialog selects its `templates/<environment>` branch. A season-specific URL uses its default branch. |
+| `TEMPLATE_REPO_URL` | `https://github.com/vox-deorum/game-agent-template` | Published student template repository used when a season has no repository URL. When this fallback is used, the setup dialog selects the season's branch, or `templates/<environment>` when the season names none. A season-specific URL uses the season's branch or its default branch, except that a URL matching this one apart from trailing slashes still falls back to `templates/<environment>`. |
 
 ## Recordings
 

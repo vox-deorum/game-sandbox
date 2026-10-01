@@ -630,7 +630,12 @@ describe('api client', () => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({ id: 'iter-1', template_repo_url: 'https://example.test/template' }),
     )
-    expect(await setSeasonTemplateRepository('iter 1', 'https://example.test/template')).toEqual({
+    expect(
+      await setSeasonTemplateRepository('iter 1', {
+        template_repo_url: 'https://example.test/template',
+        template_repo_branch: 'starter',
+      }),
+    ).toEqual({
       ok: true,
       season: { id: 'iter-1', template_repo_url: 'https://example.test/template' },
     })
@@ -639,14 +644,23 @@ describe('api client', () => {
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body as string)).toEqual({
       template_repo_url: 'https://example.test/template',
+      template_repo_branch: 'starter',
     })
 
-    vi.unstubAllGlobals()
-    stubFetch(async () => jsonResponse({ code: 'invalid_template_repo_url' }, 400))
-    expect(await setSeasonTemplateRepository('iter-1', 'https://bad.test/repo;echo')).toEqual({
-      ok: false,
-      reason: 'invalid',
-    })
+    for (const [code, reason] of [
+      ['invalid_template_repo_url', 'invalid'],
+      ['invalid_template_repo_branch', 'invalid_branch'],
+      ['something_else', 'failed'],
+    ] as const) {
+      vi.unstubAllGlobals()
+      stubFetch(async () => jsonResponse({ code }, 400))
+      expect(
+        await setSeasonTemplateRepository('iter-1', {
+          template_repo_url: null,
+          template_repo_branch: 'bad branch',
+        }),
+      ).toEqual({ ok: false, reason })
+    }
   })
 
   it('sends ?force=true on a forced config edit and maps the unforced conflict', async () => {

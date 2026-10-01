@@ -69,11 +69,20 @@ function decodeSnapshot(run: SeasonRun): AgentRef[] {
 }
 
 /** A season row with its `config` column decoded into the structured {@link SeasonConfig}. */
-export type SeasonView = Omit<Season, 'config' | 'template_source'> & { config: SeasonConfig }
+export type SeasonView = Omit<
+  Season,
+  'config' | 'template_source' | 'template_repo_operator_owned'
+> & {
+  config: SeasonConfig
+}
 
-/** Decode a season's `config` JSON for the wire; the seed's provenance marker stays off it. */
+/** Decode a season's `config` JSON for the wire; the seed's bookkeeping stays off it. */
 export function seasonView(season: Season): SeasonView {
-  const { template_source: _template_source, ...rest } = season
+  const {
+    template_source: _template_source,
+    template_repo_operator_owned: _template_repo_operator_owned,
+    ...rest
+  } = season
   return { ...rest, config: decodeSeasonConfig(season.config) }
 }
 
@@ -88,6 +97,7 @@ export type PublicSeasonView = Pick<
   | 'label'
   | 'description_markdown'
   | 'template_repo_url'
+  | 'template_repo_branch'
   | 'created_at'
   | 'released_at'
   | 'submission_count'
@@ -108,6 +118,7 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
     label: season.label,
     description_markdown: season.description_markdown,
     template_repo_url: season.template_repo_url,
+    template_repo_branch: season.template_repo_branch,
     created_at: season.created_at,
     released_at: season.released_at,
     submission_count: season.submission_count,

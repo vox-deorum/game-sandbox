@@ -257,7 +257,9 @@ function seasonDescriptionErrorMessage(reason: string): string {
 function templateRepositoryErrorMessage(reason: string): string {
   return reason === 'invalid'
     ? 'Enter a valid repository URL.'
-    : 'Could not save the template repository. Please try again.'
+    : reason === 'invalid_branch'
+      ? 'Enter a valid branch name, such as examples/env/name.'
+      : 'Could not save the template repository. Please try again.'
 }
 
 function startRename(season: SeasonView): void {
@@ -530,6 +532,7 @@ onUnmounted(() => {
                   :persist="setSeasonDescription"
                   :error-message="seasonDescriptionErrorMessage"
                   :template-repository="view.season.template_repo_url"
+                  :template-repository-branch="view.season.template_repo_branch"
                   :persist-template-repository="setSeasonTemplateRepository"
                   :template-repository-error-message="templateRepositoryErrorMessage"
                   clearable

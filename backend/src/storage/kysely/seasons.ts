@@ -12,6 +12,7 @@ import { sql } from 'kysely'
 import type {
   CreateSeasonInput,
   DeleteSeasonResult,
+  SeasonTemplateRepository,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
   UpdateSeasonConfigResult,
@@ -103,6 +104,8 @@ export async function ensureOpenSeason(
         label: defaults?.label ?? null,
         description_markdown: null,
         template_repo_url: null,
+        template_repo_branch: null,
+        template_repo_operator_owned: 0,
         config: encodeSeasonConfig(emptySeasonConfig(depsVersion)),
         rating_prompt: null,
         created_at: now,
@@ -149,6 +152,8 @@ export async function createSeason(
       label: input.label ?? null,
       description_markdown: input.description_markdown ?? null,
       template_repo_url: null,
+      template_repo_branch: input.template_repo_branch ?? null,
+      template_repo_operator_owned: 0,
       config: encodeSeasonConfig({
         ...emptySeasonConfig(input.deps_version),
         overrides: input.overrides,
@@ -507,18 +512,39 @@ export async function setSeasonDescription(
     .executeTakeFirst()
 }
 
-/** Set or clear the season-specific template repository without changing run configuration. */
-export async function setSeasonTemplateRepoUrl(
+/**
+ * Save an operator's template repository and branch without changing run configuration. The save
+ * marks the repository as operator-owned, so the season seed never overwrites it.
+ */
+export async function setSeasonTemplateRepository(
   db: Kysely<Database>,
   seasonId: string,
-  templateRepoUrl: string | null,
+  repository: SeasonTemplateRepository,
 ): Promise<Season | undefined> {
   return await db
     .updateTable('seasons')
-    .set({ template_repo_url: templateRepoUrl })
+    .set({
+      template_repo_url: repository.url,
+      template_repo_branch: repository.branch,
+      template_repo_operator_owned: 1,
+    })
     .where('id', '=', seasonId)
     .returningAll()
     .executeTakeFirst()
+}
+
+/** The seed's branch refresh, which never touches a repository an operator has saved. */
+export async function refreshSeedTemplateBranch(
+  db: Kysely<Database>,
+  seasonId: string,
+  branch: string | null,
+): Promise<void> {
+  await db
+    .updateTable('seasons')
+    .set({ template_repo_branch: branch })
+    .where('id', '=', seasonId)
+    .where('template_repo_operator_owned', '=', 0)
+    .execute()
 }
 
 export async function setSeasonLabel(

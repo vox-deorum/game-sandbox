@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
 
-import type { SeasonView } from '../../api/client.js'
+import type { SeasonView, TemplateRepositoryInput } from '../../api/client.js'
 import { useLatestRequest } from '../../composables/useLatestRequest.js'
 import UiButton from '../ui/UiButton.vue'
 import UiField from '../ui/UiField.vue'
@@ -29,9 +29,10 @@ const props = withDefaults(
     savedLabel?: string
     clearLabel?: string
     templateRepository?: string | null
+    templateRepositoryBranch?: string | null
     persistTemplateRepository?: (
       seasonId: string,
-      templateRepositoryUrl: string | null,
+      repository: TemplateRepositoryInput,
     ) => Promise<TemplateRepositoryPersistResult>
     templateRepositoryErrorMessage?: (reason: string) => string
   }>(),
@@ -45,10 +46,18 @@ const saved = ref<string | null>(null)
 const error = ref<string | null>(null)
 const saveRequest = useLatestRequest()
 const templateRepository = ref(props.templateRepository ?? '')
+const templateRepositoryBranch = ref(props.templateRepositoryBranch ?? '')
 const templateSaving = ref(false)
 const templateSaved = ref<string | null>(null)
 const templateError = ref<string | null>(null)
+// A rejected branch is reported beside the branch field; every other failure sits under the URL.
+const templateErrorOnBranch = ref(false)
 const templateRequest = useLatestRequest()
+
+function blankToNull(value: string): string | null {
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
 
 onBeforeUnmount(() => {
   saveRequest.invalidate()
@@ -65,9 +74,11 @@ watch(
     saved.value = null
     error.value = null
     templateRepository.value = props.templateRepository ?? ''
+    templateRepositoryBranch.value = props.templateRepositoryBranch ?? ''
     templateSaving.value = false
     templateSaved.value = null
     templateError.value = null
+    templateErrorOnBranch.value = false
   },
 )
 
@@ -106,16 +117,21 @@ async function saveTemplateRepository(): Promise<void> {
   templateSaving.value = true
   templateSaved.value = null
   templateError.value = null
+  templateErrorOnBranch.value = false
   try {
-    const value = templateRepository.value.trim()
-    const result = await persistTemplateRepository(seasonId, value === '' ? null : value)
+    const result = await persistTemplateRepository(seasonId, {
+      template_repo_url: blankToNull(templateRepository.value),
+      template_repo_branch: blankToNull(templateRepositoryBranch.value),
+    })
     if (!isCurrent() || props.season.id !== seasonId) return
     if (result.ok) {
       templateRepository.value = result.season.template_repo_url ?? ''
+      templateRepositoryBranch.value = result.season.template_repo_branch ?? ''
       templateSaved.value = 'Saved'
       emit('changed', result.season)
       return
     }
+    templateErrorOnBranch.value = result.reason === 'invalid_branch'
     templateError.value =
       props.templateRepositoryErrorMessage?.(result.reason) ??
       'Could not save the template repository.'
@@ -168,8 +184,8 @@ function clear(): Promise<void> {
     <div v-if="persistTemplateRepository !== undefined" class="template-repository">
       <UiField
         label="Template repository"
-        hint="Leave blank to use the published template branch for this environment."
-        :error="templateError ?? undefined"
+        hint="Leave blank to use this deployment's template repository."
+        :error="(!templateErrorOnBranch && templateError) || undefined"
       >
         <template #default="{ id, describedby, invalid }">
           <UiInput
@@ -177,6 +193,23 @@ function clear(): Promise<void> {
             v-model="templateRepository"
             type="url"
             placeholder="https://github.com/your-org/agent-template"
+            :aria-describedby="describedby"
+            :invalid="invalid"
+            :disabled="templateSaving"
+          />
+        </template>
+      </UiField>
+      <UiField
+        class="template-repository-branch"
+        label="Template branch"
+        :hint="`Leave blank for templates/${season.env_id}, or the default branch of a custom repository.`"
+        :error="(templateErrorOnBranch && templateError) || undefined"
+      >
+        <template #default="{ id, describedby, invalid }">
+          <UiInput
+            :id="id"
+            v-model="templateRepositoryBranch"
+            :placeholder="`examples/${season.env_id}/<example>`"
             :aria-describedby="describedby"
             :invalid="invalid"
             :disabled="templateSaving"
@@ -223,6 +256,10 @@ function clear(): Promise<void> {
   margin-top: var(--space-4);
   padding-top: var(--space-4);
   border-top: 1px solid var(--color-border);
+}
+
+.template-repository-branch {
+  margin-top: var(--space-3);
 }
 
 .operator-season-text-editor-saved {

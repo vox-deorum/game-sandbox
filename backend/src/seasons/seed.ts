@@ -8,8 +8,9 @@
  *
  * An environment that declares presets additionally receives one hidden template season per preset,
  * each a closed, unreleased season whose label is the preset title, whose config carries the shared
- * `presetOverrides` block (parameter values and, when flagged, LLM enablement), and whose
- * description names the settings it stands up. The Playground season gets a description naming the
+ * `presetOverrides` block (parameter values and, when flagged, LLM enablement), whose description
+ * names the settings it stands up, and whose template branch is the published example the preset
+ * names, if any. The Playground season gets a description naming the
  * opening settings when a preset describes those defaults.
  *
  * The seed keys its own rows with the `template_source` provenance marker: `'playground'` for the
@@ -97,6 +98,14 @@ function seedTemplateDescription(meta: EnvironmentMeta, preset: EnvPreset): stri
     named.length > 0 ? named.join(', ') : "This season uses the game's default settings"
   const llmSuffix = preset.llm === true ? ' The LLM API is available this season.' : ''
   return compileDescription(`${preset.title}. ${details}.${llmSuffix}`)
+}
+
+/**
+ * The deployment template branch a preset's students start from: the published example it names,
+ * or null for the environment's own template branch.
+ */
+export function presetTemplateBranch(envId: string, preset: EnvPreset): string | null {
+  return preset.example === undefined ? null : `examples/${envId}/${preset.example}`
 }
 
 /**
@@ -190,8 +199,18 @@ export async function seedOpenSeasons(
             description_markdown: seedTemplateDescription(meta, preset),
             overrides: presetOverrides(preset),
             template_source: source,
+            template_repo_branch: presetTemplateBranch(meta.env_id, preset),
           })
         } else if (seedStillOwns(existing)) {
+          // A template follows its preset's starter branch until an operator saves its template
+          // repository, even a blank URL with a hand-picked branch. From then on it is theirs.
+          const branch = presetTemplateBranch(meta.env_id, preset)
+          if (
+            existing.template_repo_operator_owned === 0 &&
+            existing.template_repo_branch !== branch
+          ) {
+            await storage.refreshSeedTemplateBranch(existing.id, branch)
+          }
           const previousLabel = existing.label
           const storedConfig = decodeSeasonConfig(existing.config)
           const overrides = presetOverrides(preset) satisfies Overrides | undefined

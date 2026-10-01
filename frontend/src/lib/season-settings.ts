@@ -118,16 +118,26 @@ export function seasonSettingsFile(
   return Object.keys(file).length === 2 ? null : file
 }
 
+/** Lowercase words joined by dashes, such as `season-5-the-neighbor` for "Season 5: The Neighbor". */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 /**
  * The terminal commands that copy the season template: clone the season's branch into a folder
  * named for the environment and season, enter it, rename the branch to `main`, and remove the
  * template remote. With no remote left, the first push prompts the student's editor to publish
  * the copy to their own GitHub account instead of failing against the template. The per-season
- * folder name keeps copies from different seasons from colliding.
+ * folder name keeps copies from different seasons apart. It reads like the season label, and falls
+ * back to the season ID when the label has no letters or digits.
  */
 export function setupCommandsFor(meta: EnvironmentMeta, settings: SeasonSettings): string {
   const { branch, url } = settings.template_repo
-  const folder = `${meta.env_id}-${settings.season_id}`.replaceAll('_', '-')
+  const season = slugify(settings.season_label ?? '') || slugify(settings.season_id)
+  const folder = `${slugify(meta.env_id)}-${season}`
   const clone =
     branch === null
       ? `git clone ${url} ${folder}`

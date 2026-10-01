@@ -26,6 +26,7 @@ import type {
   RatingAggregate,
   RecordGameResultInput,
   RecordingCleanupClaimResult,
+  SeasonTemplateRepository,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
   Storage,
@@ -201,11 +202,15 @@ export class KyselyStorage implements Storage {
   setSeasonDescription(seasonId: string, markdown: string | null): Promise<Season | undefined> {
     return seasons.setSeasonDescription(this.db, seasonId, markdown)
   }
-  setSeasonTemplateRepoUrl(
+  setSeasonTemplateRepository(
     seasonId: string,
-    templateRepoUrl: string | null,
+    repository: SeasonTemplateRepository,
   ): Promise<Season | undefined> {
-    return seasons.setSeasonTemplateRepoUrl(this.db, seasonId, templateRepoUrl)
+    return seasons.setSeasonTemplateRepository(this.db, seasonId, repository)
+  }
+
+  refreshSeedTemplateBranch(seasonId: string, branch: string | null): Promise<void> {
+    return seasons.refreshSeedTemplateBranch(this.db, seasonId, branch)
   }
   setSeasonLabel(seasonId: string, label: string | null): Promise<Season | undefined> {
     return seasons.setSeasonLabel(this.db, seasonId, label)

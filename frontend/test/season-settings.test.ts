@@ -61,6 +61,20 @@ describe('season settings', () => {
     ).toBeNull()
   })
 
+  it('names the setup folder after the season label, or its ID when the label is blank', () => {
+    const season = {
+      ...settings,
+      season_id: '9b1c2f4e-5d6a',
+      season_label: 'Season 5: The Neighbor',
+    }
+    expect(setupCommandsFor(flappyMeta(), season)).toContain(
+      'flappy-bird-season-5-the-neighbor\ncd flappy-bird-season-5-the-neighbor\n',
+    )
+    expect(setupCommandsFor(flappyMeta(), { ...season, season_label: ' ' })).toContain(
+      'flappy-bird-9b1c2f4e-5d6a\ncd flappy-bird-9b1c2f4e-5d6a\n',
+    )
+  })
+
   it('clones the default branch when the season names no branch', () => {
     expect(
       setupCommandsFor(flappyMeta(), {

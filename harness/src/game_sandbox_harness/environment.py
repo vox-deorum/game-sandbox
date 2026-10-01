@@ -200,12 +200,17 @@ class EnvPreset:
     defaults to ``False`` and is validated against the environment's own ``llm`` flag in
     ``EnvironmentMeta.__post_init__``, so a template can never ask for LLM access the
     environment cannot serve.
+
+    ``example`` optionally names one of the environment's published worked examples. A season
+    seeded from this preset gives students that example's template branch as their starting
+    point. The template generator checks that the example is published.
     """
 
     name: str
     title: str
     values: Mapping[str, ParameterValue]
     llm: bool = False
+    example: str | None = None
 
     def __post_init__(self) -> None:
         if not _is_parameter_name(self.name):
@@ -218,10 +223,20 @@ class EnvPreset:
             raise ValueError("preset values must be a parameter-value mapping")
         if not isinstance(cast("object", self.llm), bool):
             raise ValueError("preset llm must be a bool")
+        if self.example is not None and not _is_nonempty_string(self.example):
+            raise ValueError("preset example must be a non-empty string")
 
     def to_json(self) -> dict[str, Any]:
         """Return the public wire representation."""
-        return {"name": self.name, "title": self.title, "values": dict(self.values), "llm": self.llm}
+        payload: dict[str, Any] = {
+            "name": self.name,
+            "title": self.title,
+            "values": dict(self.values),
+            "llm": self.llm,
+        }
+        if self.example is not None:
+            payload["example"] = self.example
+        return payload
 
 
 def _is_nonempty_string(value: object) -> TypeGuard[str]:

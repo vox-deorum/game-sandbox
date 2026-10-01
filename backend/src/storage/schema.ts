@@ -246,6 +246,17 @@ export interface SeasonsTable {
   description_markdown: string | null
   /** An optional season-specific template repository. Null inherits the deployment default. */
   template_repo_url: string | null
+  /**
+   * An optional branch of the season's template repository, such as `examples/<env>/<name>`. Null
+   * uses `templates/<env>` on the deployment repository, or a custom repository's default branch.
+   */
+  template_repo_branch: string | null
+  /**
+   * SQLite has no boolean: 1 once an operator has saved this season's template repository, 0 while
+   * the season seed may still refresh the branch from its preset. Seed bookkeeping that stays off
+   * the wire.
+   */
+  template_repo_operator_owned: number
   /** The validated {@link SeasonConfig} document as JSON text (includes the pinned `deps_version`). */
   config: string
   /**

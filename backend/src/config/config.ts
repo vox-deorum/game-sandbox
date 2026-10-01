@@ -425,6 +425,29 @@ export function isSafeTemplateRepoUrl(value: string): boolean {
   )
 }
 
+const TEMPLATE_BRANCH_SEGMENT = /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/
+
+/**
+ * Whether a branch name is safe to expose and interpolate into the documented clone command. It
+ * accepts a conservative subset of Git branch names: `/`-separated segments of letters, digits,
+ * `.`, `_`, and `-`, where no segment starts with `.` or ends with `.` or `.lock`, no name starts
+ * with `-`, and no name contains `..`.
+ */
+export function isSafeTemplateBranch(value: string): boolean {
+  return (
+    !value.startsWith('-') &&
+    !value.includes('..') &&
+    value
+      .split('/')
+      .every(
+        (segment) =>
+          TEMPLATE_BRANCH_SEGMENT.test(segment) &&
+          !segment.endsWith('.') &&
+          !segment.endsWith('.lock'),
+      )
+  )
+}
+
 /** The loopback hostnames a `PUBLIC_ORIGIN` may use under the insecure-defaults opt-in. */
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]'])
 

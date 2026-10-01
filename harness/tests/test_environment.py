@@ -108,6 +108,19 @@ def test_meta_serializes_and_resolves_presets():
     assert resolve_parameters(meta, meta.presets[0].values) == {"players": 2, "terrain": True}
 
 
+def test_preset_example_serializes_only_when_set():
+    assert EnvPreset("duel", "Duel", {}, example="banner").to_json() == {
+        "name": "duel",
+        "title": "Duel",
+        "values": {},
+        "llm": False,
+        "example": "banner",
+    }
+    assert "example" not in EnvPreset("duel", "Duel", {}).to_json()
+    with pytest.raises(ValueError, match="preset example must be a non-empty string"):
+        EnvPreset("duel", "Duel", {}, example="")
+
+
 def test_meta_rejects_preset_llm_when_environment_declares_llm_false():
     with pytest.raises(ValueError, match=r"enables the LLM "):
         EnvironmentMeta(**{**_meta().__dict__, "presets": (EnvPreset("duel", "Duel", {}, llm=True),)})

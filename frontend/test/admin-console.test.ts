@@ -1180,10 +1180,13 @@ describe('AdminConsolePage', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Cleared')
   })
 
-  it('saves the template repository through the season editor', async () => {
+  it('saves the template repository and branch through the season editor', async () => {
     vi.mocked(setSeasonTemplateRepository).mockResolvedValue({
       ok: true,
-      season: season({ template_repo_url: 'https://example.test/template' }),
+      season: season({
+        template_repo_url: 'https://example.test/template',
+        template_repo_branch: 'starter',
+      }),
     })
     await renderConsole()
 
@@ -1191,12 +1194,40 @@ describe('AdminConsolePage', () => {
       await screen.findByLabelText('Template repository'),
       'https://example.test/template',
     )
+    await fireEvent.update(screen.getByLabelText('Template branch'), ' starter ')
     await fireEvent.click(screen.getByRole('button', { name: 'Save template repository' }))
-    expect(vi.mocked(setSeasonTemplateRepository)).toHaveBeenCalledWith(
-      'iter-1',
-      'https://example.test/template',
-    )
+    expect(vi.mocked(setSeasonTemplateRepository)).toHaveBeenCalledWith('iter-1', {
+      template_repo_url: 'https://example.test/template',
+      template_repo_branch: 'starter',
+    })
     expect(await screen.findByRole('status')).toHaveTextContent('Saved')
+    expect(screen.getByLabelText('Template branch')).toHaveValue('starter')
+  })
+
+  it('prefills a seeded example branch and reports a rejected branch beside it', async () => {
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({ season: season({ template_repo_branch: 'examples/flappy_bird/hello' }) }),
+    )
+    vi.mocked(setSeasonTemplateRepository).mockResolvedValue({
+      ok: false,
+      reason: 'invalid_branch',
+    })
+    await renderConsole()
+
+    const branch = await screen.findByLabelText('Template branch')
+    expect(branch).toHaveValue('examples/flappy_bird/hello')
+    expect(screen.getByLabelText('Template repository')).toHaveValue('')
+    await fireEvent.update(branch, 'bad branch')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save template repository' }))
+    expect(vi.mocked(setSeasonTemplateRepository)).toHaveBeenCalledWith('iter-1', {
+      template_repo_url: null,
+      template_repo_branch: 'bad branch',
+    })
+    expect(
+      await screen.findByText('Enter a valid branch name, such as examples/env/name.'),
+    ).toBeInTheDocument()
+    expect(branch).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText('Template repository')).not.toHaveAttribute('aria-invalid', 'true')
   })
 
   it('reseeds the description draft from the normalized saved value', async () => {

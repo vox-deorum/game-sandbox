@@ -151,7 +151,17 @@ The header's `[X]` abandons the pending start and returns to the underlying page
 
 The season config editor lists every effective parameter, including the synthesized layout parameter and values hidden from players. Each value either inherits the environment default or supplies an override, so an empty string remains valid. The editor validates and canonicalizes values before saving, and it serializes only current effective parameter names.
 
-The season text editor also accepts an optional absolute HTTP(S) template repository URL. A blank field uses the deployment's published template repository and the environment's `templates/<environment>` branch. Operators may correct this URL after runs or submissions exist.
+The season text editor also sets the season's starter template: an optional absolute HTTP(S) template repository URL and an optional branch, saved together.
+
+```text
+Template repository  [                                  ]
+                     Leave blank to use this deployment's template repository.
+Template branch      [examples/skirmish_crane/banner    ]
+                     Leave blank for templates/skirmish_crane, or the default branch of a custom repository.
+[Save template repository]  Saved
+```
+
+A blank URL uses the deployment's published template repository, and a blank branch uses `templates/<environment>` there or a custom repository's default branch. Typing a branch such as `examples/<environment>/<name>` starts students from a published worked example. A rejected branch name is reported under the branch field. Operators may change both after runs or submissions exist. See [Seasons](seasons.md#per-season-configuration).
 
 Each matchup row keeps one selector per seat it holds. A selector offers `submission` plus every builtin declared by the environment, displayed by label and saved as `builtin:<name>`. A seat the resolved layout restricts is set to its designated builtin and disabled. Changing the seat plan or the player count conforms every row to the newly resolved layout, updating its width and every restricted seat's designated builtin. A row saved under an earlier layout keeps its stored seats until the operator conforms it. The editor reports the projected game count for the whole match design beside the resolved seat and roster sizes, and each match's heading shows that match's own share. When the design cannot be counted, the editor shows one reason in place of those counts. The editor flags a row that no longer matches the resolved layout and offers a one-step action to conform it.
 

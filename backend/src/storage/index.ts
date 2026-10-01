@@ -221,6 +221,14 @@ export interface CreateSeasonInput {
    * ones.
    */
   template_source?: string | null
+  /** An optional branch of the deployment template repository, such as a published example's. */
+  template_repo_branch?: string | null
+}
+
+/** A season's template repository and branch. Null fields inherit the deployment defaults. */
+export interface SeasonTemplateRepository {
+  url: string | null
+  branch: string | null
 }
 
 /**
@@ -536,11 +544,16 @@ export interface Storage {
   setSeasonRatingPrompt(seasonId: string, prompt: string | null): Promise<void>
   /** Set or clear the public Season description; editable anytime and outside run configuration. */
   setSeasonDescription(seasonId: string, markdown: string | null): Promise<Season | undefined>
-  /** Set or clear the season-specific template repository; editable anytime and outside run configuration. */
-  setSeasonTemplateRepoUrl(
+  /**
+   * Save an operator's template repository and branch; editable anytime and outside run
+   * configuration. The save marks the repository operator-owned, so the seed stops refreshing it.
+   */
+  setSeasonTemplateRepository(
     seasonId: string,
-    templateRepoUrl: string | null,
+    repository: SeasonTemplateRepository,
   ): Promise<Season | undefined>
+  /** The seed's preset branch refresh; a no-op once an operator has saved the template repository. */
+  refreshSeedTemplateBranch(seasonId: string, branch: string | null): Promise<void>
   /** Rename a season (or clear its label with `null`); editable anytime, never gated by the config rules. */
   setSeasonLabel(seasonId: string, label: string | null): Promise<Season | undefined>
 

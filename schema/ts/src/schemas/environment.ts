@@ -192,6 +192,8 @@ export const EnvPresetSchema = z
       z.union([z.boolean(), z.number(), z.string(), z.array(z.string())]),
     ),
     llm: z.boolean().optional(),
+    /** A published worked example whose template branch seasons seeded from this preset start from. */
+    example: NonEmptyString.optional(),
   })
   .meta({
     id: 'env_preset',
