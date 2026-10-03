@@ -8,7 +8,7 @@
  */
 import { Container, Graphics } from 'pixi.js'
 
-import { formatSeat } from '../../../frontend/src/lib/format.js'
+import { formatPlayer, formatSeat } from '../../../frontend/src/lib/format.js'
 import type { CraneAssetName } from './assets.js'
 import { LATO, MONO, type SpriteFactory, type TextFactory } from './draw.js'
 import type { InspectionEvent, InspectionTarget, RosterInspectionTarget } from './inspection.js'
@@ -25,6 +25,7 @@ import {
   type HexTile,
   type Point,
   SCENE_WIDTH,
+  type SceneRosterEntry,
   type SceneUnit,
   unitCardFor,
 } from './scene.js'
@@ -216,6 +217,14 @@ function drawCornerPanel(
 }
 
 /**
+ * A unit's in-game name: its recorded id with the color prefix replaced by the owning seat's compact
+ * label, so `red_cavalry_5` reads `S0_cavalry_5`. The chip heading and the host's player names share it.
+ */
+export function unitDisplayName(unit: Pick<SceneRosterEntry, 'unitId' | 'side'>): string {
+  return unit.unitId.replace(/^(red|blue)/, formatSeat(unit.side === 'red' ? 'seat_0' : 'seat_1'))
+}
+
+/**
  * Draw the card for whatever is being inspected, and return its field list for the browser probe.
  * Returns null when nothing is inspected or the inspected unit has left the scene.
  */
@@ -241,10 +250,7 @@ export function drawInspectionCard(
     return drawCard(layer, paint, {
       x,
       y,
-      title: unit.unitId.replace(
-        /^(red|blue)/,
-        formatSeat(unit.side === 'red' ? 'seat_0' : 'seat_1'),
-      ),
+      title: `${unitDisplayName(unit)} · ${formatPlayer(unit.playerId)}`,
       titleFont: MONO,
       type: unit.type,
       currentHitPoints: unit.hitPoints,

@@ -145,9 +145,10 @@ test('watch a Crane Reach skirmish to game over and seek its exact replay frames
   const unitPoint = viewPoint(canvasBox, unitX, unitY)
   await page.mouse.move(unitPoint.x, unitPoint.y)
   await expect(rendererHost).toHaveAttribute('data-crane-inspection', `unit:${unitId}`)
+  // The title is the seat-prefixed unit id, then ' · P<n>' for the owning player (S0_footman_2 · P2).
   await expect(rendererHost).toHaveAttribute(
     'data-crane-inspection-title',
-    (unitId ?? '').replace(/^red_/, 'S0_').replace(/^blue_/, 'S1_'),
+    new RegExp(`^${(unitId ?? '').replace(/^red_/, 'S0_').replace(/^blue_/, 'S1_')} · P\\d+$`),
   )
   await expect(rendererHost).toHaveAttribute(
     'data-crane-inspection-fields',

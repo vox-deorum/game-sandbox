@@ -1,4 +1,4 @@
-import { Container, type Sprite, Text, Texture } from 'pixi.js'
+import { Container, Graphics, type Sprite, Text, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording, testText } from '../core/test-helpers.js'
@@ -84,6 +84,15 @@ function expressionOf(layer: Container): Container {
   const root = layer.children[0]
   if (root === undefined) throw new Error('the annotation layer has no character nodes.')
   return descendant(root, 'annotation-expression')
+}
+
+/** The plate behind one character's name, found through the retained label the way these tests do. */
+function plateOf(layer: Container, id: string): Graphics {
+  const label = collectTextNodes(layer).find((text) => text.text === id)
+  if (label === undefined) throw new Error(`Missing plate label: ${id}`)
+  const plate = label.parent?.children.find((node): node is Graphics => node instanceof Graphics)
+  if (plate === undefined) throw new Error(`Missing plate graphics: ${id}`)
+  return plate
 }
 
 /** The bubble label's local y, which draws its bottom at the stacked top minus the gap. */
@@ -458,5 +467,62 @@ describe('merged expression nameplates', () => {
     expect(annotations.expressionChipTitle('player_0')).toBe('Wave')
     annotations.clear()
     expect(annotations.expressionChipTitle('player_0')).toBeNull()
+  })
+})
+
+describe('AnnotationLayer.highlight', () => {
+  const fittedZoom = 2
+  // At the fade floor no nameplate is readable, so the assertions tell a host-forced plate apart
+  // from one the zoom alone would show.
+  const fadedZoom = fittedZoom * (nameplateZoomFactor - nameplateFadeFactor)
+
+  it('forces the highlighted plate to full opacity while the others stay faded, and restores', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const scene = fixtureScene()
+    annotations.reconcile(scene, fadedZoom, fittedZoom, 1)
+    for (const character of scene.characters) {
+      expect(plateOf(layer, character.id).alpha).toBe(0)
+    }
+
+    annotations.highlight('player_1')
+    annotations.reconcile(scene, fadedZoom, fittedZoom, 1)
+    expect(plateOf(layer, 'player_1').alpha).toBe(1)
+    for (const character of scene.characters) {
+      if (character.id === 'player_1') continue
+      expect(plateOf(layer, character.id).alpha).toBe(0)
+    }
+    // The name label rides the plate's alpha, so the highlighted name reads too.
+    const label = collectTextNodes(layer).find((text) => text.text === 'player_1')
+    expect(label?.alpha).toBe(1)
+
+    annotations.highlight(null)
+    annotations.reconcile(scene, fadedZoom, fittedZoom, 1)
+    expect(plateOf(layer, 'player_1').alpha).toBe(0)
+  })
+
+  it('outlines only the highlighted plate with the wider gilt stroke', () => {
+    const strokeWidths = (graphic: Graphics): number[] =>
+      graphic.context.instructions
+        .filter((instruction) => instruction.action === 'stroke')
+        .map((instruction) => (instruction.data as { style: { width: number } }).style.width)
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    annotations.highlight('player_1')
+    annotations.reconcile(fixtureScene(), fittedZoom * nameplateZoomFactor, fittedZoom, 1)
+    expect(strokeWidths(plateOf(layer, 'player_1'))).toEqual([2])
+    expect(strokeWidths(plateOf(layer, 'player_0'))).toEqual([1])
+  })
+
+  it('takes hold on the first reconcile after a highlight and holds across later ones', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const scene = fixtureScene()
+    annotations.highlight('player_1')
+    annotations.reconcile(scene, fadedZoom, fittedZoom, 1)
+    expect(plateOf(layer, 'player_1').alpha).toBe(1)
+    expect(plateOf(layer, 'player_0').alpha).toBe(0)
+    annotations.reconcile(scene, fadedZoom, fittedZoom, 1)
+    expect(plateOf(layer, 'player_1').alpha).toBe(1)
   })
 })

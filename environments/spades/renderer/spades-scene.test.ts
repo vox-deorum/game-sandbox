@@ -6,6 +6,8 @@ import {
   type SceneConfig,
   wideSeatsAccessibilityLabel,
 } from '../../../frontend/src/renderers/cards/scene.js'
+import { spadesHeader, spadesMeta } from '../../../frontend/test/helpers/fixtures.js'
+import { SpadesRenderer } from './index.js'
 import {
   bidChipAt,
   type Card,
@@ -460,5 +462,28 @@ describe('the recorded multi-agent Spades replay', () => {
 describe('renderer registration', () => {
   it('registers the Spades renderer under its metadata key', () => {
     expect(getRenderer('spades')).toBeDefined()
+  })
+})
+
+describe('player profiles for the host chat', () => {
+  it('pairs each partnership under one team string, and the two partnerships under two', () => {
+    // Mounting is the cheapest construction the renderer tests use (it is what the host pages do), and
+    // jsdom's headless guard skips the GPU entirely, so the profiles stay the pure function they are.
+    const renderer = SpadesRenderer.mount({
+      container: document.createElement('div'),
+      meta: spadesMeta(),
+      header: spadesHeader(),
+      controlledPlayers: [],
+    })
+    const profiles = renderer.playerProfiles?.(states[0] as StepState)
+    renderer.destroy()
+    // Players 0 and 2 share a partnership and players 1 and 3 the other; the host colors a partner's
+    // chat as an ally from these team strings.
+    expect(profiles).toEqual({
+      player_0: { team: '0' },
+      player_1: { team: '1' },
+      player_2: { team: '0' },
+      player_3: { team: '1' },
+    })
   })
 })

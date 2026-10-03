@@ -7,6 +7,9 @@
  *
  * Mount is idempotent: the live socket replays the header on every reconnect, but the renderer mounts
  * once and is fed states thereafter.
+ *
+ * It also provides the renderer's player identity to the page's chrome (see usePlayerIdentity): the
+ * player profiles (in-game names and teams) of the latest relayed state and the view-only highlight.
  */
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
@@ -21,7 +24,8 @@ import {
 } from 'vue'
 
 import { getRenderer } from '../renderers/registry.js'
-import type { RendererInstance, RenderOptions } from '../renderers/types.js'
+import type { PlayerProfile, RendererInstance, RenderOptions } from '../renderers/types.js'
+import { providePlayerIdentity, sharedHighlight } from './usePlayerIdentity.js'
 
 export interface UseRendererMountOptions {
   host: Ref<HTMLElement | null>
@@ -44,6 +48,9 @@ export function useRendererMount(options: UseRendererMountOptions) {
   // and seats the decision log beside a portrait canvas (< 1) or below a landscape one. The base class
   // owns the pixel sizing and scaling within that shape; the host only needs the ratio.
   const aspectRatio = ref<number | null>(null)
+  // The latest relayed state's player profiles. Replaced only when they change, so the chat and log rows
+  // that read them do not recompute on every tick of a game whose names and teams are fixed.
+  const playerProfiles = shallowRef<Readonly<Record<string, PlayerProfile>>>({})
 
   function mount(header: RecordingHeader): void {
     if (instance.value !== null || options.meta.value === null || options.host.value === null) {
@@ -76,7 +83,13 @@ export function useRendererMount(options: UseRendererMountOptions) {
   /** Draw a state, resolving once the renderer's transition for it has finished. A page with no
    *  renderer resolves at once, so a paced host waiting on the frame is never left hanging. */
   function render(state: StepState, options?: RenderOptions): Promise<void> {
+    const profiles = instance.value?.playerProfiles?.(state) ?? {}
+    if (!sameProfiles(profiles, playerProfiles.value)) playerProfiles.value = profiles
     return instance.value?.render(state, options) ?? Promise.resolve()
+  }
+
+  function highlightPlayer(playerId: string | null): void {
+    instance.value?.highlightPlayer?.(playerId)
   }
 
   function destroy(): void {
@@ -93,6 +106,18 @@ export function useRendererMount(options: UseRendererMountOptions) {
   }
 
   onBeforeUnmount(destroy)
+  providePlayerIdentity({ profiles: playerProfiles, highlight: sharedHighlight(highlightPlayer) })
 
   return { instance, noRenderer, aspectRatio, mount, render, destroy }
+}
+
+function sameProfiles(
+  a: Readonly<Record<string, PlayerProfile>>,
+  b: Readonly<Record<string, PlayerProfile>>,
+): boolean {
+  const keys = Object.keys(a)
+  return (
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => key in b && a[key]?.name === b[key]?.name && a[key]?.team === b[key]?.team)
+  )
 }

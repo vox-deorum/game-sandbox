@@ -32,7 +32,7 @@ import {
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
 import { MoveClock } from '@renderers/base/move-clock.js'
 import { clear, PixiRenderer } from '@renderers/base/PixiRenderer.js'
-import type { RendererDefinition, RenderOptions } from '@renderers/types.js'
+import type { PlayerProfile, RendererDefinition, RenderOptions } from '@renderers/types.js'
 import { Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js'
 
 import { type CraneAssetName, craneAssetSources, loadCraneAssets } from './assets.js'
@@ -63,9 +63,10 @@ import {
   perspectiveForObservers,
   visibleUnits,
 } from './fog.js'
-import { drawHud, drawInspectionCard, type HudPaint } from './hud.js'
+import { drawHud, drawInspectionCard, type HudPaint, unitDisplayName } from './hud.js'
 import {
   EMPTY_INSPECTION,
+  focusPlayer,
   type InspectionEvent,
   type InspectionState,
   inspectionPresentation,
@@ -98,6 +99,7 @@ import {
   CRANE_STYLE,
   type CraneReachScene,
   computeScene,
+  rosterForHeader,
   SCENE_HEIGHT,
   SCENE_WIDTH,
   type SceneEvent,
@@ -205,6 +207,9 @@ export class CraneReachRenderer extends PixiRenderer {
   /** True after the resolving perspective has reached the event's final tile. */
   private eventContacted = false
   private inspection: InspectionState = EMPTY_INSPECTION
+  private profiles: Record<string, PlayerProfile> | null = null
+  /** The player the host points at, kept so its unit gains the focus whenever it comes into view. */
+  private highlightedPlayerId: string | null = null
   /** The perspective the presented frame is drawn through; null when nothing is hidden. */
   private perspective: Perspective | null = null
   /** How far into the glaze cross-dissolve a perspective switch is. */
@@ -365,6 +370,34 @@ export class CraneReachRenderer extends PixiRenderer {
     if (paused) this.moveClock.hold()
     else this.moveClock.resume()
     this.refreshVisual()
+  }
+
+  /**
+   * Every roster slot's in-game name and side, alive or not, since both rosters are standing knowledge
+   * and the board already colors every unit by its side. The header's seat plan fixes them for the game.
+   */
+  playerProfiles(): Record<string, PlayerProfile> {
+    this.profiles ??= Object.fromEntries(
+      rosterForHeader(this.ctx.header.overlay_static).map((entry) => [
+        entry.playerId,
+        { name: unitDisplayName(entry), team: entry.side },
+      ]),
+    )
+    return this.profiles
+  }
+
+  /**
+   * Inspect a player's unit as if it were hovered, while the host points at its player id. A unit the
+   * perspective cannot see, or one that has died, shows nothing, so the host never reveals it. The
+   * request outlives the frame: a unit the fog later reveals takes the focus as it appears.
+   */
+  highlightPlayer(playerId: string | null): void {
+    this.highlightedPlayerId = playerId
+    const scene = this.presentedScene
+    if (scene === null) return
+    const focused = focusPlayer(this.inspection, visibleUnits(scene, this.perspective), playerId)
+    if (focused === this.inspection) return
+    this.setInspection({ type: 'focus-unit', unitId: focused.focusedUnitId })
   }
 
   protected override onFrame(dtMs: number): boolean {
@@ -759,7 +792,10 @@ export class CraneReachRenderer extends PixiRenderer {
     // Units outside the perspective are absent, not ghosted: the past lives in a unit's own code.
     const drawn = visibleUnits(scene, this.perspective)
     const liveIds = new Set(drawn.map((unit) => unit.unitId))
-    this.inspection = normalizeInspection(this.inspection, liveIds)
+    this.inspection = normalizeInspection(
+      focusPlayer(this.inspection, drawn, this.highlightedPlayerId),
+      liveIds,
+    )
     for (const [unitId, node] of this.unitNodes) {
       if (!liveIds.has(unitId)) {
         this.unitNodes.delete(unitId)

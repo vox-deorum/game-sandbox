@@ -20,6 +20,12 @@ export interface AnnotationLayer {
    * `tickMs`. Called once per landed state, never on a redraw.
    */
   observeExpressions(scene: FrameScene, tickMs: number): void
+  /**
+   * Outline one character's nameplate in gilt and hold it at full opacity, or clear it with null. The
+   * host asks for this while someone hovers that player's id in chat or a log. Takes effect on the
+   * next reconcile.
+   */
+  highlight(characterId: string | null): void
   /** The semantic title of one visible or retained expression, or null for none. */
   expressionChipTitle(characterId: string): string | null
   /** Retain the lines one state delivered, replacing each speaker's previous line. */
@@ -115,6 +121,7 @@ export function createAnnotationLayer(
   // bubble. Replacing the set on each delivery keeps memory bounded by one state.
   let lastDeliveryKeys = new Set<string>()
   let art: ExpressionArt | null = null
+  let highlighted: string | null = null
 
   return {
     reconcile(scene, zoom, fittedZoom, resolution) {
@@ -128,8 +135,11 @@ export function createAnnotationLayer(
       }
 
       const inverseZoom = Number.isFinite(zoom) && zoom > 0 ? 1 / zoom : 1
-      const plateAlpha = nameplateAlpha(zoom, fittedZoom)
+      const fittedPlateAlpha = nameplateAlpha(zoom, fittedZoom)
       for (const character of scene.characters) {
+        // A highlighted plate stays readable at any zoom, so the host can always point at it.
+        const isHighlighted = character.id === highlighted
+        const plateAlpha = isHighlighted ? 1 : fittedPlateAlpha
         let node = nodes.get(character.id)
         if (node === undefined) {
           node = createCharacterNode(layer, character.id, createText)
@@ -139,9 +149,11 @@ export function createAnnotationLayer(
         node.root.scale.set(inverseZoom)
 
         const retained = chips.get(character.id)
+        // The expression slot keeps its own zoom gate, so a host-forced plate never adds a marker
+        // the camera would hide.
         const expressionShown =
           art !== null &&
-          plateAlpha === 1 &&
+          fittedPlateAlpha === 1 &&
           (retained !== undefined || character.expressionIcon !== null)
         const expressionIcon = retained?.icon ?? character.expressionIcon ?? 'use'
         const expressionAlpha = retained === undefined ? 1 : displayedChipAlpha(retained)
@@ -155,6 +167,7 @@ export function createAnnotationLayer(
           expressionAlpha,
           art,
           expressionIcon,
+          isHighlighted,
         )
         node.plate.alpha = plateAlpha
         node.plateLabel.alpha = plateAlpha
@@ -172,6 +185,10 @@ export function createAnnotationLayer(
 
     install(nextArt) {
       art = nextArt
+    },
+
+    highlight(characterId) {
+      highlighted = characterId
     },
 
     observeExpressions(scene, tickMs) {
@@ -468,6 +485,7 @@ function drawPlate(
   expressionAlpha: number,
   art: ExpressionArt | null,
   expressionIcon: string,
+  highlighted: boolean,
 ): number {
   node.plateLabel.text = character.id
   node.plateLabel.resolution = resolution
@@ -481,7 +499,11 @@ function drawPlate(
   node.plate
     .roundRect(left, bottomY - height, width, height, height / 2)
     .fill(accent)
-    .stroke({ color: HEARTHSIDE_STYLE.palette.backdrop, width: 1 })
+    .stroke(
+      highlighted
+        ? { color: HEARTHSIDE_STYLE.palette.gilt, width: 2 }
+        : { color: HEARTHSIDE_STYLE.palette.backdrop, width: 1 },
+    )
   if (expressionShown) {
     const dividerX = -nameWidth / 2
     node.plate

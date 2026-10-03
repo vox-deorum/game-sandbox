@@ -90,8 +90,8 @@ const isOwner = computed(
 // header arrives, return [] so a human controlling player_2 never briefly gets player_0's controls.
 //
 // This is independent of run status on purpose: it is the viewer's *identity* in the match, which the
-// chat panel needs to keep badging their own lines "from you"/"to you" even on an ended session's
-// read-only history. Control (below) is what drops at end, not identity.
+// chat panel needs to keep coloring their own senders and badging lines "to you" even on an ended
+// session's read-only history. Control (below) is what drops at end, not identity.
 const viewerPlayers = computed<string[]>(() => {
   if (!(isOwner.value && row.value?.mode === 'human')) {
     return []

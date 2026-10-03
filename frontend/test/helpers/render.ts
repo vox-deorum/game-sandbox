@@ -31,3 +31,14 @@ export function renderWithMe(router: Router): ReturnType<typeof render> {
     global: { plugins: [router] },
   })
 }
+
+/**
+ * Every badge's text under `container`, whitespace collapsed. A recipient badge reads "to P2" across
+ * two elements ("to " plus the PlayerTag's compact id), so Testing Library's text matchers cannot see
+ * it whole.
+ */
+export function badgeTexts(container: ParentNode): string[] {
+  return Array.from(container.querySelectorAll('.ui-badge')).map((badge) =>
+    (badge.textContent ?? '').replace(/\s+/g, ' ').trim(),
+  )
+}

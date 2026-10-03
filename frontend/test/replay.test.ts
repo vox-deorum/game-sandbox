@@ -13,7 +13,7 @@ import {
   spadesPlayers,
 } from './helpers/fixtures.js'
 import { signedInMe } from './helpers/me.js'
-import { memoryRouter, renderWithMe } from './helpers/render.js'
+import { badgeTexts, memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
 
@@ -959,7 +959,7 @@ describe('ReplayPage', () => {
     expect(screen.getByText('good luck all')).toBeInTheDocument()
     expect(screen.getByText('cover the king')).toBeInTheDocument()
     // The targeted line names its recipient by seat, so a same-labelled roster stays unambiguous.
-    expect(screen.getByText('to P3')).toBeInTheDocument()
+    expect(badgeTexts(view.container)).toContain('to P3')
 
     // Home empties it again, and a replay never offers a composer.
     await fireEvent.keyDown(stage, { key: 'Home' })

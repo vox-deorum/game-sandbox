@@ -1,9 +1,12 @@
 import type { StepState } from '@game-sandbox/schema'
 import { Container, type FederatedPointerEvent, Text } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
+import { formatPlayer } from '../../../frontend/src/lib/format.js'
 import { drawInspectionCard, type HudPaint } from './hud.js'
 import {
   EMPTY_INSPECTION,
+  focusPlayer,
+  type InspectionState,
   inspectionPresentation,
   normalizeInspection,
   type ProjectedUnit,
@@ -52,7 +55,10 @@ describe('Crane Reach HUD inspection and range', () => {
       labels.length = 0
       const layer = new Container()
       const card = drawInspectionCard(layer, paint, scene, { kind: 'unit', unitId: unit.unitId })
-      const expected = `${unit.side === 'red' ? 'S0' : 'S1'}_${unit.unitId.split('_').slice(1).join('_')}`
+      // The heading is the seat-prefixed unit id, then the owning player's compact id.
+      const expected =
+        `${unit.side === 'red' ? 'S0' : 'S1'}_${unit.unitId.split('_').slice(1).join('_')}` +
+        ` · ${formatPlayer(unit.playerId)}`
       expect(labels[0]).toBe(expected)
       expect(card?.title).toBe(expected)
       expect(labels).not.toContain(unit.unitId)
@@ -174,17 +180,20 @@ describe('Crane Reach HUD inspection and range', () => {
     const stale = {
       target: { kind: 'unit', unitId: 'blue_archer_0' } as const,
       hoveredUnitId: 'blue_archer_0',
+      focusedUnitId: null,
       hoveredRoster: roster,
     }
     expect(normalizeInspection(stale, visible)).toEqual({
       target: null,
       hoveredUnitId: null,
+      focusedUnitId: null,
       hoveredRoster: roster,
     })
 
     const current = {
       target: { kind: 'unit', unitId: 'red_footman_0' } as const,
       hoveredUnitId: 'red_footman_0',
+      focusedUnitId: null,
       hoveredRoster: roster,
     }
     expect(normalizeInspection(current, visible)).toBe(current)
@@ -192,9 +201,57 @@ describe('Crane Reach HUD inspection and range', () => {
       {
         target: roster,
         hoveredUnitId: null,
+        focusedUnitId: null,
         hoveredRoster: roster,
       },
     )
+  })
+
+  it('sets a host focus, resolves it below board hover and above roster and pinned targets', () => {
+    const roster = { kind: 'roster', side: 'red', type: 'footman' } as const
+    const base: InspectionState = {
+      target: { kind: 'unit', unitId: 'red_cavalry_0' },
+      hoveredUnitId: null,
+      focusedUnitId: null,
+      hoveredRoster: roster,
+    }
+    const focused = reduceInspection(base, { type: 'focus-unit', unitId: 'blue_archer_0' })
+    expect(focused.focusedUnitId).toBe('blue_archer_0')
+    // The board pointer wins over the host focus, which wins over a hovered roster card and the
+    // pinned target, so a canvas hover and a chat hover never overwrite each other.
+    expect(resolveInspection(focused)).toEqual({ kind: 'unit', unitId: 'blue_archer_0' })
+    expect(resolveInspection({ ...focused, hoveredUnitId: 'red_footman_0' })).toEqual({
+      kind: 'unit',
+      unitId: 'red_footman_0',
+    })
+    expect(resolveInspection({ ...focused, focusedUnitId: null })).toEqual(roster)
+    expect(resolveInspection({ ...focused, focusedUnitId: null, hoveredRoster: null })).toEqual(
+      base.target,
+    )
+    // The host clears with null, and a dismiss clears the focus with everything else.
+    expect(reduceInspection(focused, { type: 'focus-unit', unitId: null }).focusedUnitId).toBeNull()
+    expect(reduceInspection(focused, { type: 'dismiss' })).toEqual(EMPTY_INSPECTION)
+    // A focused unit that is no longer visible drops its focus, exactly as a hovered one does.
+    expect(normalizeInspection(focused, new Set(['red_cavalry_0']))).toEqual({
+      ...focused,
+      focusedUnitId: null,
+    })
+    expect(normalizeInspection(focused, new Set(['red_cavalry_0', 'blue_archer_0']))).toBe(focused)
+  })
+
+  it('focuses the host-named player once its unit is drawn, and loses it when the unit is not', () => {
+    const archer = { unitId: 'blue_archer_0', playerId: 'player_5' }
+    const footman = { unitId: 'red_footman_0', playerId: 'player_0' }
+    // The enemy archer is under fog when the chat id is focused, so nothing is focused yet.
+    const hidden = focusPlayer(EMPTY_INSPECTION, [footman], 'player_5')
+    expect(hidden).toBe(EMPTY_INSPECTION)
+    // A later frame draws it, and the request still standing takes the focus.
+    const revealed = focusPlayer(hidden, [footman, archer], 'player_5')
+    expect(revealed.focusedUnitId).toBe('blue_archer_0')
+    expect(focusPlayer(revealed, [footman, archer], 'player_5')).toBe(revealed)
+    // The fog closing again, or the host withdrawing the request, clears it.
+    expect(focusPlayer(revealed, [footman], 'player_5').focusedUnitId).toBeNull()
+    expect(focusPlayer(revealed, [footman, archer], null).focusedUnitId).toBeNull()
   })
 
   it('mirrors terrain cost, occupancy, the first expensive step, and the four-step limit', () => {

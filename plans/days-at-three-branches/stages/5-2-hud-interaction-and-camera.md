@@ -49,7 +49,7 @@ The 54-unit strip keeps its step 3 layout seam and adopts a thematic Hearthside 
                      o           o [player_3]
 ```
 
-Each character carries a nameplate pill with its raw player id above its sprite: a cinnabar accent for `player_0`, the visitor, and ink for NPCs. Plates fade in near the focus zoom and hide at far zooms, sharing one readability threshold with step 5.1's far-zoom character marks. A plate and a bubble hold one size on screen at every zoom, so they counter-scale against the camera and their text needs no zoom-dependent resolution.
+Each character carries a nameplate pill with its raw player id above its sprite: a cinnabar accent for `player_0`, the visitor, and ink for NPCs. Plates fade in near the focus zoom and hide at far zooms, sharing one readability threshold with step 5.1's far-zoom character marks. A plate and a bubble hold one size on screen at every zoom, so they counter-scale against the camera and their text needs no zoom-dependent resolution. While a viewer hovers or focuses that player's compact id in the host's chat or decision rows, the plate takes a 2 px gilt outline and holds full opacity at every zoom, so the character can always be found. The expression compartment keeps its own zoom gate and stays hidden on a forced plate below the full-plate zoom.
 
 ### Character expressions
 
@@ -96,7 +96,7 @@ P1         The pump sticks.      broadcast
 Recipient: [ Everyone | P1 | P3 ]   [ Send ]
 ```
 
-The shared host chat panel is the transcript on the session and replay pages. It uses the platform's standard compact `P0`, `P1`, and similar formatting for canonical player ids. Renderer definitions provide no environment-specific name map. The selector offers Everyone for broadcast plus the currently permitted player-id addressees from `chat_options`. Canvas nameplates and bubbles keep the raw `player_i` values carried by the recording.
+The shared host chat panel is the transcript on the session and replay pages. It labels players with the platform's standard compact `P0`, `P1`, and similar forms, badges every message by its recipient (`broadcast`, `to you`, or `to P3`), and the renderer reports each player's raw id as its in-game name, so a sender reads `player_3`, the same text its nameplate prints. The village declares no teams, so no sender ever colors as an ally there. Hovering or focusing a compact id in a chat row, a decision row, or a badge outlines that character's nameplate with a gilt stroke at full opacity. The selector offers Everyone for broadcast plus the currently permitted player-id addressees from `chat_options`, each labelled `P3 · player_3`. Canvas nameplates and bubbles keep the raw `player_i` values carried by the recording.
 
 ### Camera
 
@@ -155,7 +155,7 @@ The shared panel's composer sends broadcasts and direct lines through the recipi
 
 - Renderer unit tests cover the chrome elements and their states, the collision overlay's off default and C toggle, nameplate zoom gating, bubble tagging, wrapping, replacement, and seek clearing, camera follow, inspection suspension, gradual live return, zoom-preserving Recenter, and tuned fixture zoom limits.
 - Expression tests cover all nine ruleset emotes plus `use`, `none`, title text, exact target-state selection, movement alongside an expression, equal-frame seek and repeat determinism, retained-node lifecycle, bubble stacking, text-only loading fallback, effects-frame completeness, and hiding throughout the nameplate fade band and far zoom.
-- Shared panel tests cover the display-name hook in chat rows, badges, and the recipient selector on the session and replay pages.
+- Shared panel tests cover the player-profile hook on the session and replay pages: in-game sender labels and their tones, recipient badges, and the recipient selector.
 - The Three Branches browser journeys cover the off collision default, the button, the C key, zoom-preserving Recenter, the permanent joystick, and the visitor camera's gradual return during live play.
 - Update locators whenever markup moves.
 - Run the Three Branches browser e2e group while iterating. Before handoff, run the bare full browser e2e suite.

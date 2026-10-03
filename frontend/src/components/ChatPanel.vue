@@ -6,10 +6,14 @@
   attribution context the rest of the session chrome already threads, so it needs no transport of its
   own, it emits `send` and lets the page own the socket.
 
-  Each entry is badged for what it is: a broadcast, a message "to you", a message "from you" (the
-  relay reflects a controller's own sends back on the recorded line), or, on a replay, a targeted
-  message between other players. Sender labels come through the shared `attributionLabel`, so the panel
-  honours the same blind policy as the attribution line and the decision log.
+  Each entry is badged with its recipient: a broadcast, a message "to you", or a message to another
+  player, whose compact id is a `PlayerTag` like the sender's. Who sent it is told by the sender label:
+  its in-game name when the renderer reports one (`S0_cavalry_5`, which names a role and never a
+  person), otherwise the shared `attributionLabel`, which honours the same blind policy as the
+  attribution line. The label's color says whose the sender is: the accent for the viewer's own
+  players, the ally color for players on the viewer's side, and the plain text color for everyone else.
+  The sender's compact player id is a `PlayerTag` that names and highlights the player in the game
+  frame.
 
   When sendable, the composer counts the draft in Unicode code points through the same shared counter
   the relay's cap pre-gate uses, so the browser can never disagree with the harness about what fits.
@@ -20,9 +24,10 @@ import { codePointLength } from '@game-sandbox/schema/text'
 import { computed, ref, useId, watch } from 'vue'
 
 import type { LiveChatPolicy } from '../composables/useLiveChat.js'
-import { attributionLabel } from '../lib/attribution.js'
-import { type ChatEntry, messageBadge, messageKey } from '../lib/chat.js'
+import { usePlayerIdentity } from '../composables/usePlayerIdentity.js'
+import { type ChatEntry, messageBadge, messageKey, senderIdentity } from '../lib/chat.js'
 import { formatPlayer } from '../lib/format.js'
+import PlayerTag from './PlayerTag.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
 import UiInput from './ui/UiInput.vue'
@@ -39,7 +44,7 @@ const props = withDefaults(
     masked?: boolean
     viewerId?: string
     anonymousNumbers?: Record<string, number>
-    /** Players the connected viewer controls; drives the "to you"/"from you" badges. Empty when spectating. */
+    /** Players the connected viewer controls; drives the "to you" badge and the sender colors. Empty when spectating. */
     viewerPlayers?: string[]
     /** Show the composer. The page decides (owner + human mode + running + controls a player). */
     sendable?: boolean
@@ -72,35 +77,39 @@ const attributionCtx = computed(() => ({
   anonymousNumbers: props.anonymousNumbers,
 }))
 
-function labelFor(playerId: string): string {
-  return attributionLabel(playerId, props.players?.[playerId], attributionCtx.value)
-}
+const identity = usePlayerIdentity()
 
 // Decorate once so the template reads each derived field without recomputing per binding. Identity and
 // the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
-// a message identically. The player (the compact player id)
-// rides alongside the attribution label, so a roster of
-// same-labelled agents (three "Naive agent" players in a default Spades table) stays legible.
+// a message identically. The player (the compact player id) rides alongside the sender label, so a
+// roster of same-labelled agents (three "Naive agent" players in a default Spades table) stays legible.
 const rows = computed(() =>
   props.entries.map((entry) => ({
     key: messageKey(entry),
     tick: entry.tick,
     text: entry.text,
-    player: formatPlayer(entry.from),
-    sender: labelFor(entry.from),
-    badge: messageBadge(entry, props.viewerPlayers),
+    from: entry.from,
+    sender: senderIdentity(
+      entry.from,
+      identity.profiles.value,
+      props.players,
+      attributionCtx.value,
+      props.viewerPlayers,
+    ),
+    badge: messageBadge(entry, props.players, attributionCtx.value, props.viewerPlayers),
   })),
 )
 
 // The recipient options come verbatim from the live policy: valued by platform player id (what the send
-// payload carries) and labelled by compact player id ("P1")
-// otherwise. "Everyone" (a broadcast) remains available independently of that ordered direct-recipient
-// list.
+// payload carries) and labelled by compact player id ("P1"), followed by the in-game name when the
+// renderer reports one ("P1 · S0_footman_1"). "Everyone" (a broadcast) remains available independently
+// of that ordered direct-recipient list.
 const recipientOptions = computed(() =>
-  (props.policy?.targetRecipients ?? []).map((playerId) => ({
-    value: playerId,
-    label: formatPlayer(playerId),
-  })),
+  (props.policy?.targetRecipients ?? []).map((playerId) => {
+    const name = identity.profiles.value[playerId]?.name
+    const player = formatPlayer(playerId)
+    return { value: playerId, label: name === undefined ? player : `${player} · ${name}` }
+  }),
 )
 
 const recipient = ref('') // '' is the "Everyone" broadcast option.
@@ -174,9 +183,13 @@ watch(
       <ul v-if="rows.length > 0" class="chat-list">
         <li v-for="row in rows" :key="row.key" class="chat-entry">
           <div class="chat-meta">
-            <span class="chat-player">{{ row.player }}</span>
-            <span class="chat-from">{{ row.sender }}</span>
-            <UiBadge :variant="row.badge.variant">{{ row.badge.text }}</UiBadge>
+            <PlayerTag class="chat-player" :player-id="row.from" />
+            <span class="chat-from" :class="`chat-from--${row.sender.tone}`">{{ row.sender.label }}</span>
+            <UiBadge :variant="row.badge.variant">
+              <template v-if="row.badge.kind === 'broadcast'">broadcast</template>
+              <template v-else-if="row.badge.kind === 'to-you'">to you</template>
+              <template v-else>to <PlayerTag :player-id="row.badge.playerId" /></template>
+            </UiBadge>
             <span class="chat-tick">tick {{ row.tick }}</span>
           </div>
           <p class="chat-text">{{ row.text }}</p>
@@ -259,6 +272,16 @@ watch(
 .chat-from {
   font-weight: 600;
   font-size: var(--text-xs);
+}
+
+/* The sender's color says whose it is, since an in-game name carries no "Your agent": the accent for the
+   viewer's own players, the ally color for the viewer's side, and the plain text color for the rest. */
+.chat-from--own {
+  color: var(--color-accent);
+}
+
+.chat-from--ally {
+  color: var(--color-ally);
 }
 
 .chat-tick {

@@ -10,6 +10,7 @@ The [specification](../docs/specs/index.md) defines the system. This folder trac
 - [admin-log-viewer.md](admin-log-viewer.md) is the completed, current feature: the admin current-process structured log viewer.
 - [live-session-health.md](live-session-health.md) is the completed, current feature: the live badge that says whether a still picture is a slow agent or a slow link, and the socket keepalive behind it.
 - [season-starter-templates.md](season-starter-templates.md) is the completed, current feature: a season's starter template as a repository plus an optional branch, with preset defaults for published examples.
+- [player-identity.md](player-identity.md) is the completed, current feature: the player profiles (in-game names and teams) a renderer reports to the host chrome, the sender colors and recipient badges the chat reads from them, and the view-only highlight behind every compact player id.
 - [archived/](archived/README.md) holds the completed platform stages (1 through 19) and the conventions they followed.
 
 Except for archived/, the plan is a living description of the current intended build path. Read the relevant specification and stage file before implementation, update the stage status when work starts and finishes, and revise the stage file in the same change when an implementation choice, interface, scope, or stage boundary changes. A pull request that changes planned behavior without touching the corresponding stage file is incomplete.

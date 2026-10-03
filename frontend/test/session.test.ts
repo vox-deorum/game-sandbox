@@ -1684,7 +1684,7 @@ describe('SessionPage', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('keeps the viewer’s own messages badged on an ended session', async () => {
+  it("keeps the viewer's own messages badged on an ended session", async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getEnvironments).mockResolvedValue([spadesMeta()])
     vi.mocked(getSession).mockResolvedValue({
@@ -1703,13 +1703,16 @@ describe('SessionPage', () => {
         { environment: 'spades', players: spadesPlayers('player_2') },
       ),
     )
-    await renderSession()
+    const view = await renderSession()
 
     // Seat identity is the viewer's role in the match, not a live-control affordance, so it survives the
-    // session ending: their own line stays "from you" and the line to them stays "to you", even though
-    // control (and the composer) are gone.
-    await screen.findByText('from you')
+    // session ending: their own sender line keeps the own tone and the line addressed to them still
+    // reads "to you", even though control (and the composer) are gone. Their own broadcast is badged
+    // like anyone else's, by its recipient.
+    await screen.findByText('good luck all')
+    expect(view.container.querySelector('.chat-from--own')?.textContent).toBe('dev')
     expect(screen.getByText('to you')).toBeInTheDocument()
+    expect(screen.queryByText('from you')).toBeNull()
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 

@@ -351,10 +351,7 @@ export function decodeOverlay(state: StepState, staticOverlay: unknown): Compact
   if ('d' in overlay && (typeof acted !== 'string' || acted.length === 0)) {
     throw new Error('Crane Reach overlay has malformed acted state')
   }
-  const plan = asString(staticData.p, 'Crane Reach static overlay has an invalid seat plan')
-  if (plan !== 'skirmish' && plan !== 'army') {
-    throw new Error('Crane Reach static overlay has an unknown seat plan')
-  }
+  const plan = seatPlan(staticData)
   if (typeof acted === 'string') decodeVisibilityBits(acted, rosterFor(plan).length)
   const battlefield = asRecord(staticData.b, 'Crane Reach static overlay has no battlefield')
   if (!hasExactKeys(battlefield, ['s', 't', 'z'])) {
@@ -429,6 +426,19 @@ export function decodeOverlay(state: StepState, staticOverlay: unknown): Compact
     terminal,
     outcome: outcome as [number, number] | null,
   }
+}
+
+/** Every roster slot of a game, which the header's seat plan alone fixes for every state. */
+export function rosterForHeader(staticOverlay: unknown): SceneRosterEntry[] {
+  return rosterFor(seatPlan(asRecord(staticOverlay, 'Crane Reach header has no static overlay')))
+}
+
+function seatPlan(staticData: Record<string, unknown>): CompactOverlay['plan'] {
+  const plan = asString(staticData.p, 'Crane Reach static overlay has an invalid seat plan')
+  if (plan !== 'skirmish' && plan !== 'army') {
+    throw new Error('Crane Reach static overlay has an unknown seat plan')
+  }
+  return plan
 }
 
 function rosterFor(plan: CompactOverlay['plan']): SceneRosterEntry[] {

@@ -12,7 +12,12 @@ import {
 import { type CameraGestures, wireCameraGestures } from '@renderers/base/camera-gestures.js'
 import { PixiRenderer, type RendererTextFactory } from '@renderers/base/PixiRenderer.js'
 import type { TiledGround } from '@renderers/base/tiled-ground.js'
-import type { RendererContext, RendererDefinition, RenderOptions } from '@renderers/types.js'
+import type {
+  PlayerProfile,
+  RendererContext,
+  RendererDefinition,
+  RenderOptions,
+} from '@renderers/types.js'
 import { Assets, Container, Graphics, Texture } from 'pixi.js'
 
 // Atlas manifest and art live beside the barrel; the build and the atlas CLI resolve them from the
@@ -135,6 +140,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private lastRoofTick: number | null = null
   private characters!: CharacterLayer
   private annotations!: AnnotationLayer
+  /** The player the host points at, whose nameplate every annotation redraw outlines. */
+  private highlightedPlayerId: string | null = null
   private chrome!: ChromeLayer
   private cameraLimits!: CameraLimits
   private visitorCamera!: VisitorCameraState
@@ -270,6 +277,21 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       redraw: () => this.redrawCurrentFrame(),
     })
     void this.loadArt()
+  }
+
+  /** Characters are named by their player id, the same text their nameplates print. */
+  playerProfiles(_state: StepState): Record<string, PlayerProfile> {
+    return Object.fromEntries(this.expectedIds.map((id) => [id, { name: id }]))
+  }
+
+  /** Outline the player's nameplate while the host points at its player id. */
+  highlightPlayer(playerId: string | null): void {
+    // A request that arrives before the first frame waits here for the first annotation redraw, since
+    // the annotation layer exists only once Pixi setup has run, which never happens headless.
+    this.highlightedPlayerId = playerId
+    if (this.presentedScene === null) return
+    this.redrawAnnotations()
+    this.redrawCurrentFrame()
   }
 
   protected update(state: StepState, options?: RenderOptions): void {
@@ -590,6 +612,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private redrawAnnotations(): void {
     const scene = this.presentedScene
     if (scene === null) return
+    this.annotations.highlight(this.highlightedPlayerId)
     this.annotations.reconcile(
       scene,
       this.visitorCamera.camera.zoom,

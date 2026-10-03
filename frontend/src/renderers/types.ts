@@ -109,7 +109,33 @@ export interface RendererInstance {
    * the same thing. Optional: a renderer without a clock has nothing to freeze.
    */
   setPaused?(paused: boolean): void
+  /**
+   * What the game says about each player in one state: its in-game name (`player_7` → `S0_cavalry_5`),
+   * which the host shows in chat sender labels and behind every compact player id, and its team, which
+   * the host uses to color the viewer's own side. It must be a pure function of the state, and neither
+   * field may identify a person or submission the host's attribution policy hides. Optional: without
+   * it, the host keeps its own attribution labels and colors no allies.
+   */
+  playerProfiles?(state: StepState): Readonly<Record<string, PlayerProfile>>
+  /**
+   * Emphasize one player's figure in the game frame, or clear the emphasis with `null`. The host calls
+   * this while the person hovers or focuses that player's compact id. It is view-only: it never sends
+   * an action, and it must not reveal anything the frame would otherwise hide. A request stands until
+   * the next call, so a figure the frame cannot show yet takes the emphasis once a later frame draws it.
+   */
+  highlightPlayer?(playerId: string | null): void
   destroy(): void
+}
+
+/** One player as the game frame presents it. Both fields are optional. */
+export interface PlayerProfile {
+  /** The in-game name, such as `S0_cavalry_5`. It names a role, never a person. */
+  name?: string
+  /**
+   * Any key shared by players on the same side, such as a Crane Reach side or a Spades partnership.
+   * A player without a team is nobody's ally.
+   */
+  team?: string
 }
 
 /** The fixed logical coordinate space a renderer draws in; the base class scales it onto the host. */

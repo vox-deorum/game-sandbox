@@ -50,9 +50,10 @@ function blindAgentLabel(submissionId: string, anonymousNumbers?: Record<string,
  * anonymous viewer (`ctx.viewerId === undefined`) must never match a header entry that also carries no
  * `user` (schema-optional, absent on some agent players and on older recordings), `undefined ===
  * undefined` is not "the same person," so the exemption below fails closed rather than granting an
- * anonymous viewer somebody else's identity.
+ * anonymous viewer somebody else's identity. Chat and the replay thread also use it to color the
+ * viewer's own sender labels.
  */
-function isOwnRow(player: Player, ctx: AttributionContext): boolean {
+export function isViewerOwned(player: Player, ctx: AttributionContext): boolean {
   const user = 'user' in player ? player.user : undefined
   return user !== undefined && user === ctx.viewerId
 }
@@ -71,9 +72,9 @@ export function isBlindMasked(player: Player, ctx: AttributionContext = {}): boo
     return false
   }
   if (player.kind === 'human') {
-    return !isOwnRow(player, ctx)
+    return !isViewerOwned(player, ctx)
   }
-  return 'submission_id' in player && !isOwnRow(player, ctx)
+  return 'submission_id' in player && !isViewerOwned(player, ctx)
 }
 
 /** Whether a players map contains a submitted (non-builtin) agent player, the only case blind
@@ -101,7 +102,7 @@ export function attributionLabel(
   // A viewer's own submitted agent is never hidden (so isBlindMasked is false for it) but is relabeled
   // "Your agent" while blind, so they can still find themselves. This self-identification is the one
   // label decision that sits outside the hide policy.
-  if (ctx.blind === true && player.kind === 'agent' && isOwnRow(player, ctx)) {
+  if (ctx.blind === true && player.kind === 'agent' && isViewerOwned(player, ctx)) {
     return 'Your agent'
   }
   // Every other "hide this identity?" case goes through isBlindMasked, the single owner of the blind

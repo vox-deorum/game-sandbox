@@ -15,7 +15,12 @@
  */
 import type { StepState } from '@game-sandbox/schema'
 import { CardTableRenderer } from '@renderers/cards/CardTableRenderer.js'
-import { type RendererDefinition, type RenderOptions, transitionScaleOf } from '@renderers/types.js'
+import {
+  type PlayerProfile,
+  type RendererDefinition,
+  type RenderOptions,
+  transitionScaleOf,
+} from '@renderers/types.js'
 import { Container, Graphics, Rectangle } from 'pixi.js'
 import {
   asNumberList,
@@ -36,6 +41,7 @@ import {
   type TableGeometry,
   TEAM_TINT,
   type TrickSweep,
+  teamOf,
   WIDTH,
 } from './scene.js'
 import thumbnail from './thumbnail.svg'
@@ -70,6 +76,13 @@ export class SpadesRenderer extends CardTableRenderer<SpadesScene> {
 
   protected computeSceneFor(state: StepState): SpadesScene {
     return computeScene(state, this.sceneConfig())
+  }
+
+  /** Each seat's partnership, which the table already shows, so the host can color a partner's chat. */
+  playerProfiles(_state: StepState): Record<string, PlayerProfile> {
+    return Object.fromEntries(
+      Array.from({ length: NUM_PLAYERS }, (_, i) => [`player_${i}`, { team: String(teamOf(i)) }]),
+    )
   }
 
   // Spades declares no base input intents: the shared hand wires on-screen card clicks per card and the

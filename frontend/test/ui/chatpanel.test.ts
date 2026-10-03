@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import ChatPanel from '../../src/components/ChatPanel.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
+import { badgeTexts } from '../helpers/render.js'
 
 // A four-player Spades attribution map: two plain agents, the viewer's human player, and a submitted
 // agent whose ownership a blind viewer must not see.
@@ -21,14 +22,14 @@ const POLICY = {
 const LIVE_POLICY = { policy: POLICY }
 
 describe('ChatPanel', () => {
-  it('badges broadcasts, to-you, from-you, and blind-labels senders', () => {
+  it('badges broadcasts, to-you, and to-player lines, and blind-labels senders', () => {
     const entries: ChatEntry[] = [
       { tick: 1, from: 'player_0', to: null, text: 'hearts broken?' },
       { tick: 2, from: 'player_1', to: 'player_2', text: 'partner up' },
       { tick: 3, from: 'player_2', to: 'player_0', text: 'on it' },
       { tick: 4, from: 'player_3', to: null, text: 'going nil' },
     ]
-    render(ChatPanel, {
+    const { container } = render(ChatPanel, {
       props: {
         entries,
         players: PLAYERS,
@@ -39,10 +40,8 @@ describe('ChatPanel', () => {
       },
     })
 
-    // Each entry carries the badge for what it is.
-    expect(screen.getAllByText('broadcast')).toHaveLength(2)
-    expect(screen.getByText('to you')).toBeInTheDocument()
-    expect(screen.getByText('from you')).toBeInTheDocument()
+    // Each entry carries the badge for its recipient, the viewer's own send included.
+    expect(badgeTexts(container)).toEqual(['broadcast', 'to you', 'to P0', 'broadcast'])
 
     // Message bodies render.
     expect(screen.getByText('hearts broken?')).toBeInTheDocument()
@@ -316,7 +315,7 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
   })
 
-  it("renders the visitor's own pre-filtered feed, badging its own sends and receipts as from-you/to-you", () => {
+  it("renders the visitor's own pre-filtered feed, badging every line by its recipient", () => {
     // The server has already filtered this list to lines the visitor session is entitled to: broadcasts,
     // and lines to or from player_0. An npc-to-npc line is a watcher/replay-only concern and never
     // reaches this list at all (see the GameThread coverage in gamethread.test.ts).
@@ -330,24 +329,22 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
     })
 
     expect(container.querySelectorAll('.chat-entry')).toHaveLength(3)
-    expect(screen.getByText('broadcast')).toBeInTheDocument()
-    expect(screen.getByText('from you')).toBeInTheDocument()
-    expect(screen.getByText('to you')).toBeInTheDocument()
+    // Every line is badged by its recipient: the visitor's own send reads "to P2" like anyone else's.
+    expect(badgeTexts(container)).toEqual(['broadcast', 'to P2', 'to you'])
     expect(screen.getByText('have you seen the miller?')).toBeInTheDocument()
     expect(screen.getByText('try the mill')).toBeInTheDocument()
   })
 
-  it("badges a direct line by the other party's display name for a spectator of the same pre-filtered feed", () => {
-    // A spectator watching the visitor's session controls nobody, so the from-you/to-you shortcuts never
-    // fire: the same pre-filtered entries now badge their targeted line by the addressee's display name.
+  it("badges a direct line by the other party's compact player id for a spectator of the same pre-filtered feed", () => {
+    // A spectator watching the visitor's session controls nobody, so no line can read "to you":
+    // the same pre-filtered entries now badge their targeted lines by the addressee's compact id.
     const entries: ChatEntry[] = [
       { tick: 11, from: 'player_0', to: 'player_2', text: 'have you seen the miller?' },
       { tick: 12, from: 'player_2', to: 'player_0', text: 'try the mill' },
     ]
-    render(ChatPanel, { props: { entries, viewerPlayers: [] } })
+    const { container } = render(ChatPanel, { props: { entries, viewerPlayers: [] } })
 
-    expect(screen.getByText('to P2')).toBeInTheDocument()
-    expect(screen.getByText('to P0')).toBeInTheDocument()
+    expect(badgeTexts(container)).toEqual(['to P2', 'to P0'])
     expect(screen.queryByText('to you')).toBeNull()
     expect(screen.queryByText('from you')).toBeNull()
   })

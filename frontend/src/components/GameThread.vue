@@ -9,9 +9,10 @@
   message hangs off its tick's decision group, so the caller must supply a decision for every tick that
   carries chat (ReplayPage derives both from the same parsed states); a message on a tick with no
   decision row is never rendered. Rows render through the same shared helpers the split panels use:
-  formatAction for decisions, formatPlayer for standard compact player labels, and attributionLabel
-  plus the shared broadcast/to-you/from-you badge for message senders. The merged view therefore honours
-  the same blind policy and stays legible on a same-labelled roster.
+  formatAction for decisions, PlayerTag for compact player ids (which name and highlight the player in
+  the game frame), and senderIdentity plus the shared recipient badge (broadcast, to you, or to another
+  player) for messages. The merged view therefore honours the same blind policy and stays legible on a
+  same-labelled roster.
 -->
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
@@ -19,12 +20,20 @@ import { computed, ref } from 'vue'
 
 import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
-import { attributionLabel } from '../lib/attribution.js'
-import { type ChatEntry, type MessageBadge, messageBadge, messageKey } from '../lib/chat.js'
-import { formatAction, formatPlayer } from '../lib/format.js'
+import { usePlayerIdentity } from '../composables/usePlayerIdentity.js'
+import {
+  type ChatEntry,
+  type MessageBadge,
+  messageBadge,
+  messageKey,
+  type SenderIdentity,
+  senderIdentity,
+} from '../lib/chat.js'
+import { formatAction } from '../lib/format.js'
 import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
+import PlayerTag from './PlayerTag.vue'
 import RequestResponseView from './RequestResponseView.vue'
 import UiBadge from './ui/UiBadge.vue'
 import UiButton from './ui/UiButton.vue'
@@ -75,9 +84,7 @@ const attributionCtx = computed(() => ({
   anonymousNumbers: props.anonymousNumbers,
 }))
 
-function labelFor(playerId: string): string {
-  return attributionLabel(playerId, props.players?.[playerId], attributionCtx.value)
-}
+const identity = usePlayerIdentity()
 
 const activeTick = computed(() => props.currentTick ?? props.decisions.at(-1)?.tick ?? null)
 
@@ -101,7 +108,6 @@ interface DecisionItem {
   key: string
   kind: 'decision'
   state: ThreadState
-  player: string
   action: string
   tick: number
   playerId: string
@@ -112,8 +118,8 @@ interface MessageItem {
   key: string
   kind: 'message'
   state: ThreadState
-  player: string
-  sender: string
+  playerId: string
+  sender: SenderIdentity
   badge: MessageBadge
   text: string
   tick: number
@@ -143,7 +149,6 @@ const items = computed<ThreadItem[]>(() => {
         key: `d-${decision.tick}-${decision.player}`,
         kind: 'decision',
         state,
-        player: decision.player ? formatPlayer(decision.player) : 'None',
         action: formatAction(decision.action),
         tick: decision.tick,
         playerId: decision.player,
@@ -155,9 +160,15 @@ const items = computed<ThreadItem[]>(() => {
         key: `m-${messageKey(entry)}`,
         kind: 'message',
         state: state === 'future' ? 'past' : state,
-        player: formatPlayer(entry.from),
-        sender: labelFor(entry.from),
-        badge: messageBadge(entry, props.viewerPlayers),
+        playerId: entry.from,
+        sender: senderIdentity(
+          entry.from,
+          identity.profiles.value,
+          props.players,
+          attributionCtx.value,
+          props.viewerPlayers,
+        ),
+        badge: messageBadge(entry, props.players, attributionCtx.value, props.viewerPlayers),
         text: entry.text,
         tick: entry.tick,
       })
@@ -222,7 +233,7 @@ const scroller = useActiveRowScroll(
         class="thread-item thread-item--decision"
         :data-row-id="`setup:${row.player}`"
       >
-        <span class="thread-player">{{ row.player ? formatPlayer(row.player) : 'None' }}</span>
+        <PlayerTag class="thread-player" :player-id="row.player" />
         <span class="thread-tick">Setup</span>
         <span class="thread-action">Setup</span>
         <span class="thread-cost">
@@ -247,7 +258,7 @@ const scroller = useActiveRowScroll(
         :aria-current="item.kind === 'decision' && item.currentMarker ? 'true' : undefined"
       >
         <template v-if="item.kind === 'decision'">
-          <span class="thread-player">{{ item.player }}</span>
+          <PlayerTag class="thread-player" :player-id="item.playerId" />
           <span class="thread-tick">tick {{ item.tick }}</span>
           <span class="thread-action">{{ item.action }}</span>
           <span class="thread-cost">
@@ -266,9 +277,13 @@ const scroller = useActiveRowScroll(
         </template>
         <template v-else>
           <div class="thread-meta">
-            <span class="thread-msg-player">{{ item.player }}</span>
-            <span class="thread-from">{{ item.sender }}</span>
-            <UiBadge :variant="item.badge.variant">{{ item.badge.text }}</UiBadge>
+            <PlayerTag class="thread-msg-player" :player-id="item.playerId" />
+            <span class="thread-from" :class="`thread-from--${item.sender.tone}`">{{ item.sender.label }}</span>
+            <UiBadge :variant="item.badge.variant">
+              <template v-if="item.badge.kind === 'broadcast'">broadcast</template>
+              <template v-else-if="item.badge.kind === 'to-you'">to you</template>
+              <template v-else>to <PlayerTag :player-id="item.badge.playerId" /></template>
+            </UiBadge>
             <span class="thread-tick">tick {{ item.tick }}</span>
           </div>
           <p class="thread-text">{{ item.text }}</p>
@@ -392,6 +407,15 @@ const scroller = useActiveRowScroll(
 .thread-from {
   font-weight: 600;
   font-size: var(--text-xs);
+}
+
+/* The sender's color says whose it is, matching the live chat panel. */
+.thread-from--own {
+  color: var(--color-accent);
+}
+
+.thread-from--ally {
+  color: var(--color-ally);
 }
 
 .thread-tick {

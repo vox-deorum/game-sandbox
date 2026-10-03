@@ -351,7 +351,10 @@ test('Spades watchers see complete chat live and in replay', async ({
     await expect(controllerChat).toBeVisible()
     await expect(controllerChat.getByText(BROADCAST)).toBeVisible({ timeout: 30_000 })
     await expect(controllerChat.getByText(TARGETED)).toBeVisible()
-    await expect(controllerChat.getByText('from you')).toHaveCount(2)
+    // Both sent lines carry the recipient badge like any other sender's (there is no "from you" case):
+    // BROADCAST was queued first, so the broadcast badge leads, then "to P2" on the targeted line.
+    // The badge text splits across elements in the DOM, so read the badge's full text.
+    await expect(controllerChat.locator('.ui-badge')).toHaveText(['broadcast', 'to P2'])
     // Both messages queued before the human's first action, so both ride the opening tick 0 — the
     // ChatPanel's tick badge is the browser-observable proof of which recorded state carried them.
     await expect(controllerChat.locator('.chat-tick')).toHaveText(['tick 0', 'tick 0'])

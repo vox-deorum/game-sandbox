@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import GameThread from '../../src/components/GameThread.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
 import type { DecisionEntry } from '../../src/lib/state.js'
+import { badgeTexts } from '../helpers/render.js'
 
 // A four-player Spades roster: three agents sharing a label plus the viewer's human player.
 const PLAYERS = {
@@ -67,7 +68,7 @@ describe('GameThread', () => {
     expect(screen.getByText('cover the king')).toBeInTheDocument()
     expect(screen.getByText('broadcast')).toBeInTheDocument()
     // A targeted line names its recipient by player, so a same-labelled roster stays unambiguous.
-    expect(screen.getByText('to P3')).toBeInTheDocument()
+    expect(badgeTexts(container)).toContain('to P3')
 
     // The broadcast rode tick 1, so it sits between the tick-1 and tick-2 decisions.
     const items = Array.from(container.querySelectorAll('.thread-item'))
@@ -224,8 +225,8 @@ describe('GameThread — Three Branches human play (step 6)', () => {
     expect(screen.getByText('have you seen the miller?')).toBeInTheDocument()
     expect(screen.getByText('try the mill')).toBeInTheDocument()
     expect(screen.getByText('keep an eye on the visitor')).toBeInTheDocument()
-    // The direct badge and every message player cell use compact player labels.
-    expect(screen.getByText('to P3')).toBeInTheDocument()
+    // The recipient badge and every message player cell use compact player labels.
+    expect(badgeTexts(container)).toContain('to P3')
 
     const messages = Array.from(container.querySelectorAll('.thread-item--message'))
     expect(messages).toHaveLength(4)

@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest'
 
 import '@renderers/index.js'
 import tileTypes from '../tile_types.json'
-import { CRANE_STYLE, computeScene, decodeOverlay, unitCardFor } from './scene.js'
+import { unitDisplayName } from './hud.js'
+import { CRANE_STYLE, computeScene, decodeOverlay, rosterForHeader, unitCardFor } from './scene.js'
 import {
   armyFixture,
   armyLegalityRaw,
@@ -21,6 +22,19 @@ import {
 describe('Crane Reach scene geometry and compact overlay', () => {
   it('registers the public renderer key', () => {
     expect(getRenderer('crane-reach-field')).toBeDefined()
+  })
+
+  it('names every roster player from the header seat plan by its seat-prefixed unit id, alive or not', () => {
+    const state = skirmishStates[0] as StepState
+    const roster = rosterForHeader(skirmishStaticOverlay)
+    expect(roster).toEqual(skirmishScene(state).roster)
+    const names = roster.map(unitDisplayName)
+    expect(names[0]).toBe('S0_footman_0')
+    expect(names.at(-1)).toMatch(/^S1_cavalry_\d+$/)
+    expect(names.every((name) => /^S[01]_(footman|archer|cavalry)_\d+$/.test(name))).toBe(true)
+    // Every entry carries one of the two sides, and both sides appear: this side is the chat profile
+    // team the host colors allies by.
+    expect(new Set(roster.map((entry) => entry.side))).toEqual(new Set(['red', 'blue']))
   })
 
   it('lays out pointy-top axial hexes with the void surround still visible', () => {

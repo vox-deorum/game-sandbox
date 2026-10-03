@@ -81,7 +81,7 @@ Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping else
 
 ```
    +-----------------------------+
-   | S0_archer_2                |
+   | S0_archer_2 · P2           |
    | {hp} HP 4/6     {move} MOV 2   |
    | {attack} ATK 2  {range} RNG 6  |
    | {vision} VIS 6                 |
@@ -89,7 +89,7 @@ Hovering a unit inspects it. On touch, tap a unit to open its chip; tapping else
    +-----------------------------+
 ```
 
-The chip identifies the owning seat with the same compact label as the session and replay attribution: `S0` for Red and `S1` for Blue in both seat plans. Its heading replaces the unit ID's color prefix, so `red_cavalry_0` appears as `S0_cavalry_0`. Recorded unit IDs remain unchanged. The chip is view-only and never blocks the board.
+The chip heading is the seat-prefixed unit id followed by the compact player id. The seat prefix is the same compact label as the session and replay attribution (`S0` for Red and `S1` for Blue in both seat plans), so `red_cavalry_5` of `player_7` reads `S0_cavalry_5 · P7`. Recorded unit ids remain unchanged. The chip is view-only and never blocks the board. The renderer also reports that same name, and the unit's side as its team, as the player's profile for the host's chat: the sender label reads `S0_cavalry_5`, and the side is what colors that label as the viewer's own or an ally's. Hovering or focusing that player's compact id anywhere the host chat or decision rows name a player, a sender id or a badge's recipient id alike, inspects the unit the same way, through a host focus ranked below a board pointer hover so the two never fight. A unit the perspective cannot see, or one that has died, shows nothing.
 
 ### Match end
 

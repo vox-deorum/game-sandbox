@@ -7,17 +7,20 @@
   the canvas, or a disclosure summary below it), so this component is just the table.
 
   The cells are terse by nature — an action is all an agent emits per tick — and the value is formatted
-  generically (formatAction): naming an action is the renderer's job, not the host log's.
+  generically (formatAction): naming an action is the renderer's job, not the host log's. The player
+  cell is a PlayerTag, so a game that names its players shows that name on hover and highlights the
+  player's figure.
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
 import type { RecordingLlmCall } from '../api/client.js'
 import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
-import { formatAction, formatPlayer } from '../lib/format.js'
+import { formatAction } from '../lib/format.js'
 import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
+import PlayerTag from './PlayerTag.vue'
 import RequestResponseView from './RequestResponseView.vue'
 import UiButton from './ui/UiButton.vue'
 import UiDialog from './ui/UiDialog.vue'
@@ -124,7 +127,7 @@ const scroller = useActiveRowScroll(
           :data-row-id="`setup:${row.player}`"
         >
           <td class="player-col">
-            {{ row.player ? formatPlayer(row.player) : 'None' }}
+            <PlayerTag :player-id="row.player" />
           </td>
           <td class="tick-col">Setup</td>
           <td>Setup</td>
@@ -147,7 +150,7 @@ const scroller = useActiveRowScroll(
           :aria-current="i === activeIndex ? 'true' : undefined"
         >
           <td class="player-col">
-            {{ entry.player ? formatPlayer(entry.player) : 'None' }}
+            <PlayerTag :player-id="entry.player" />
           </td>
           <td class="tick-col">{{ entry.tick }}</td>
           <td>{{ formatAction(entry.action) }}</td>

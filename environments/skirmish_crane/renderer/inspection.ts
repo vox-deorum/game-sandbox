@@ -11,12 +11,15 @@ export type RosterInspectionTarget = Exclude<InspectionTarget, null> & { kind: '
 export interface InspectionState {
   target: InspectionTarget
   hoveredUnitId: string | null
+  /** The unit the host chrome points at while someone hovers its player id in chat or a log. */
+  focusedUnitId: string | null
   hoveredRoster: RosterInspectionTarget | null
 }
 
 export const EMPTY_INSPECTION: InspectionState = {
   target: null,
   hoveredUnitId: null,
+  focusedUnitId: null,
   hoveredRoster: null,
 }
 
@@ -25,18 +28,40 @@ export function normalizeInspection(
   state: InspectionState,
   visibleUnitIds: ReadonlySet<string>,
 ): InspectionState {
-  const hoveredUnitId =
-    state.hoveredUnitId !== null && !visibleUnitIds.has(state.hoveredUnitId)
-      ? null
-      : state.hoveredUnitId
+  const visibleOrNull = (unitId: string | null) =>
+    unitId !== null && !visibleUnitIds.has(unitId) ? null : unitId
+  const hoveredUnitId = visibleOrNull(state.hoveredUnitId)
+  const focusedUnitId = visibleOrNull(state.focusedUnitId)
   const target =
     state.target?.kind === 'unit' && !visibleUnitIds.has(state.target.unitId) ? null : state.target
-  if (hoveredUnitId === state.hoveredUnitId && target === state.target) return state
-  return { ...state, hoveredUnitId, target }
+  if (
+    hoveredUnitId === state.hoveredUnitId &&
+    focusedUnitId === state.focusedUnitId &&
+    target === state.target
+  ) {
+    return state
+  }
+  return { ...state, hoveredUnitId, focusedUnitId, target }
+}
+
+/**
+ * Aim the host focus at the drawn unit of the player the host points at, or at nothing when no player
+ * is named or that player's unit is not drawn (under fog, or dead). The renderer applies it to every
+ * drawn frame, so a request that outlives its frame takes the focus once the unit comes into view.
+ */
+export function focusPlayer(
+  state: InspectionState,
+  drawn: readonly Pick<SceneUnit, 'unitId' | 'playerId'>[],
+  playerId: string | null,
+): InspectionState {
+  const focusedUnitId =
+    playerId === null ? null : (drawn.find((unit) => unit.playerId === playerId)?.unitId ?? null)
+  return focusedUnitId === state.focusedUnitId ? state : { ...state, focusedUnitId }
 }
 
 export type InspectionEvent =
   | { type: 'hover-unit'; unitId: string | null }
+  | { type: 'focus-unit'; unitId: string | null }
   | { type: 'hover-roster'; target: RosterInspectionTarget | null }
   | { type: 'inspect'; target: Exclude<InspectionTarget, null> }
   | { type: 'dismiss' }
@@ -44,6 +69,7 @@ export type InspectionEvent =
 /** Keep pointer inspection deterministic and intentionally separate from the renderer action boundary. */
 export function reduceInspection(state: InspectionState, event: InspectionEvent): InspectionState {
   if (event.type === 'hover-unit') return { ...state, hoveredUnitId: event.unitId }
+  if (event.type === 'focus-unit') return { ...state, focusedUnitId: event.unitId }
   if (event.type === 'hover-roster') return { ...state, hoveredRoster: event.target }
   if (event.type === 'dismiss') return EMPTY_INSPECTION
   return { ...state, target: event.target }
@@ -54,9 +80,13 @@ export function pinsInspectionForPointer(pointerType: string): boolean {
   return pointerType !== 'mouse'
 }
 
-/** One display priority keeps hover useful while a touch card remains pinned underneath it. */
+/**
+ * One display priority keeps hover useful while a touch card remains pinned underneath it. The board
+ * pointer wins over the host's focus, so moving between the chat and the canvas never fights.
+ */
 export function resolveInspection(state: InspectionState): InspectionTarget {
   if (state.hoveredUnitId !== null) return { kind: 'unit', unitId: state.hoveredUnitId }
+  if (state.focusedUnitId !== null) return { kind: 'unit', unitId: state.focusedUnitId }
   if (state.hoveredRoster !== null) return state.hoveredRoster
   return state.target
 }

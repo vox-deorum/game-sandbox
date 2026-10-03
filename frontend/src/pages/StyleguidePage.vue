@@ -39,6 +39,8 @@ const colorTokens = [
   'text-muted',
   'accent',
   'on-accent',
+  'current',
+  'ally',
   'danger',
   'success',
   'warning',
