@@ -77,6 +77,11 @@ describe('GameThread', () => {
     const tick2 = items.findIndex((el) => el.textContent?.includes('play QS'))
     expect(tick1).toBeLessThan(message)
     expect(message).toBeLessThan(tick2)
+
+    // A decision sits under the Tick column header, so it shows the bare number. A message spans the
+    // full width with no column header above it, so its tick is spelled out.
+    expect(items[tick1]?.querySelector('.thread-tick')).toHaveTextContent(/^1$/)
+    expect(items[message]?.querySelector('.thread-tick')).toHaveTextContent('tick 1')
   })
 
   it('marks only the current decision with aria-current, not the messages riding its tick', () => {

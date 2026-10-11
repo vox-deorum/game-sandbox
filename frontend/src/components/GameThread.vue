@@ -220,76 +220,78 @@ const scroller = useActiveRowScroll(
 
 <template>
   <div class="game-thread" ref="scroller" role="group" aria-label="Game thread">
-    <div class="thread-header" aria-hidden="true">
-      <span>Player</span>
-      <span>Tick</span>
-      <span>Decision</span>
-      <span>LLM cost</span>
-    </div>
-    <ul v-if="items.length > 0 || setupRows.length > 0" class="thread-list">
-      <li
-        v-for="row in setupRows"
-        :key="`setup:${row.player}`"
-        class="thread-item thread-item--decision"
-        :data-row-id="`setup:${row.player}`"
-      >
-        <PlayerTag class="thread-player" :player-id="row.player" />
-        <span class="thread-tick">Setup</span>
-        <span class="thread-action">Setup</span>
-        <span class="thread-cost">
-          <LlmCostTooltip
-            :calls="row.calls"
-            :total-budget-cost-units="totalCost(row.calls)"
-            :inspectable="row.calls.every(hasBodies)"
-            :accessible-label="row.calls.every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'"
-            @inspect="inspect(row.calls)"
-          />
-        </span>
-      </li>
-      <li
-        v-for="item in items"
-        :key="item.key"
-        class="thread-item"
-        :class="[
-          `thread-item--${item.kind}`,
-          { 'is-current': item.state === 'current', 'is-future': item.state === 'future' },
-        ]"
-        :data-active="(item.kind === 'decision' && item.state === 'current') || undefined"
-        :aria-current="item.kind === 'decision' && item.currentMarker ? 'true' : undefined"
-      >
-        <template v-if="item.kind === 'decision'">
-          <PlayerTag class="thread-player" :player-id="item.playerId" />
-          <span class="thread-tick">tick {{ item.tick }}</span>
-          <span class="thread-action">{{ item.action }}</span>
+    <div v-if="items.length > 0 || setupRows.length > 0" class="thread-table">
+      <div class="thread-header" aria-hidden="true">
+        <span>Player</span>
+        <span>Tick</span>
+        <span>Decision</span>
+        <span>LLM cost</span>
+      </div>
+      <ul class="thread-list">
+        <li
+          v-for="row in setupRows"
+          :key="`setup:${row.player}`"
+          class="thread-item thread-item--decision"
+          :data-row-id="`setup:${row.player}`"
+        >
+          <PlayerTag class="thread-player" :player-id="row.player" />
+          <span class="thread-tick">Setup</span>
+          <span class="thread-action">Setup</span>
           <span class="thread-cost">
-            <template v-if="llmPending">Loading</template>
-            <template v-else-if="llmUnavailable">Unavailable</template>
-            <template v-else-if="decisionCalls(item).length === 0">None</template>
             <LlmCostTooltip
-              v-else
-              :calls="decisionCalls(item)"
-              :total-budget-cost-units="totalCost(decisionCalls(item))"
-              :inspectable="decisionCalls(item).every(hasBodies)"
-              :accessible-label="decisionCalls(item).every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'"
-              @inspect="inspect(decisionCalls(item))"
+              :calls="row.calls"
+              :total-budget-cost-units="totalCost(row.calls)"
+              :inspectable="row.calls.every(hasBodies)"
+              :accessible-label="row.calls.every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'"
+              @inspect="inspect(row.calls)"
             />
           </span>
-        </template>
-        <template v-else>
-          <div class="thread-meta">
-            <PlayerTag class="thread-msg-player" :player-id="item.playerId" />
-            <span class="thread-from" :class="`thread-from--${item.sender.tone}`">{{ item.sender.label }}</span>
-            <UiBadge :variant="item.badge.variant">
-              <template v-if="item.badge.kind === 'broadcast'">broadcast</template>
-              <template v-else-if="item.badge.kind === 'to-you'">to you</template>
-              <template v-else>to <PlayerTag :player-id="item.badge.playerId" /></template>
-            </UiBadge>
-            <span class="thread-tick">tick {{ item.tick }}</span>
-          </div>
-          <p class="thread-text">{{ item.text }}</p>
-        </template>
-      </li>
-    </ul>
+        </li>
+        <li
+          v-for="item in items"
+          :key="item.key"
+          class="thread-item"
+          :class="[
+            `thread-item--${item.kind}`,
+            { 'is-current': item.state === 'current', 'is-future': item.state === 'future' },
+          ]"
+          :data-active="(item.kind === 'decision' && item.state === 'current') || undefined"
+          :aria-current="item.kind === 'decision' && item.currentMarker ? 'true' : undefined"
+        >
+          <template v-if="item.kind === 'decision'">
+            <PlayerTag class="thread-player" :player-id="item.playerId" />
+            <span class="thread-tick">{{ item.tick }}</span>
+            <span class="thread-action">{{ item.action }}</span>
+            <span class="thread-cost">
+              <template v-if="llmPending">Loading</template>
+              <template v-else-if="llmUnavailable">Unavailable</template>
+              <template v-else-if="decisionCalls(item).length === 0">None</template>
+              <LlmCostTooltip
+                v-else
+                :calls="decisionCalls(item)"
+                :total-budget-cost-units="totalCost(decisionCalls(item))"
+                :inspectable="decisionCalls(item).every(hasBodies)"
+                :accessible-label="decisionCalls(item).every(hasBodies) ? 'Inspect request and response' : 'LLM cost details'"
+                @inspect="inspect(decisionCalls(item))"
+              />
+            </span>
+          </template>
+          <template v-else>
+            <div class="thread-meta">
+              <PlayerTag class="thread-msg-player" :player-id="item.playerId" />
+              <span class="thread-from" :class="`thread-from--${item.sender.tone}`">{{ item.sender.label }}</span>
+              <UiBadge :variant="item.badge.variant">
+                <template v-if="item.badge.kind === 'broadcast'">broadcast</template>
+                <template v-else-if="item.badge.kind === 'to-you'">to you</template>
+                <template v-else>to <PlayerTag :player-id="item.badge.playerId" /></template>
+              </UiBadge>
+              <span class="thread-tick">tick {{ item.tick }}</span>
+            </div>
+            <p class="thread-text">{{ item.text }}</p>
+          </template>
+        </li>
+      </ul>
+    </div>
     <p v-else class="thread-empty">No decisions yet.</p>
 
     <UiDialog v-model:open="inspectorOpen" title="Inspect request and response">
@@ -317,9 +319,19 @@ const scroller = useActiveRowScroll(
 <style scoped>
 .game-thread {
   overflow-y: auto;
+  font-size: var(--text-xs);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+}
+
+/* One shared grid sizes the columns for every row. Player, tick, and cost shrink to their widest cell,
+   the decision takes the rest, and each row joins the columns through subgrid, so the header and every
+   decision line up even in a narrow side panel. Messages span the full width below their tick. */
+.thread-table {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  column-gap: var(--space-2);
 }
 
 .thread-list {
@@ -329,10 +341,20 @@ const scroller = useActiveRowScroll(
 }
 
 .thread-header,
+.thread-list,
+.thread-item {
+  grid-column: 1 / -1;
+}
+
+.thread-header,
+.thread-list,
 .thread-item--decision {
   display: grid;
-  grid-template-columns: 5rem 4rem minmax(0, 1fr) max-content;
-  gap: var(--space-2);
+  grid-template-columns: subgrid;
+}
+
+.thread-header,
+.thread-item--decision {
   align-items: baseline;
 }
 
@@ -344,7 +366,6 @@ const scroller = useActiveRowScroll(
   background: var(--color-surface-raised);
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
   font-weight: 600;
 }
 
@@ -360,7 +381,6 @@ const scroller = useActiveRowScroll(
 .thread-item--decision {
   padding: var(--space-1) var(--space-3);
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
 }
 
 .thread-cost {
@@ -400,13 +420,11 @@ const scroller = useActiveRowScroll(
 
 .thread-msg-player {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
   color: var(--color-text-muted);
 }
 
 .thread-from {
   font-weight: 600;
-  font-size: var(--text-xs);
 }
 
 /* The sender's color says whose it is, matching the live chat panel. */
@@ -419,15 +437,16 @@ const scroller = useActiveRowScroll(
 }
 
 .thread-tick {
-  margin-left: auto;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
   color: var(--color-text-muted);
+}
+
+.thread-meta .thread-tick {
+  margin-left: auto;
 }
 
 .thread-text {
   margin: var(--space-1) 0 0;
-  font-size: var(--text-sm);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -449,6 +468,5 @@ const scroller = useActiveRowScroll(
   margin: 0;
   padding: var(--space-3);
   color: var(--color-text-muted);
-  font-size: var(--text-xs);
 }
 </style>
