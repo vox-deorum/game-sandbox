@@ -80,7 +80,8 @@ const finalState = shallowRef<StepState | null>(null)
 const gameOverDismissed = ref(false)
 const listingEntry = ref<RecordingSummary | null>(null)
 const owned = ref(false)
-const decisions = ref<DecisionEntry[]>([])
+// Built once at load and never mutated, so a shallowRef spares thousands of entries a deep proxy.
+const decisions = shallowRef<DecisionEntry[]>([])
 // Recording telemetry is deliberately independent from the JSONL recording. Broken retained
 // telemetry must never prevent the renderer and transport from loading, and it must not be confused
 // with a successful empty telemetry payload.
@@ -154,10 +155,26 @@ const blindAttribution = computed(() => presentsMasked(attributionState.value))
 // transport position, matching the decision log's current-tick highlight. Targeted messages a
 // live spectator never saw are shown here on purpose; that is the recording contract.
 const hasChat = computed(() => chatLog.value.length > 0)
-const visibleChat = computed<ChatEntry[]>(() => {
+// The log is in tick order, so the visible messages are a prefix of it. Counting them separately means
+// the sliced list (and the thread woven from it) changes only when a message crosses the scrubber,
+// not on every tick.
+const visibleChatCount = computed(() => {
   const tick = replayState.value.tick
-  return tick === null ? [] : chatLog.value.filter((entry) => entry.tick <= tick)
+  if (tick === null) return 0
+  const log = chatLog.value
+  let low = 0
+  let high = log.length
+  while (low < high) {
+    const mid = (low + high) >> 1
+    if ((log[mid] as ChatEntry).tick <= tick) {
+      low = mid + 1
+    } else {
+      high = mid
+    }
+  }
+  return low
 })
+const visibleChat = computed<ChatEntry[]>(() => chatLog.value.slice(0, visibleChatCount.value))
 
 // The decision log sits beside a portrait canvas and below a landscape one until the viewport is wide
 // enough to hold both (the same rule as live; see useStageLayout).

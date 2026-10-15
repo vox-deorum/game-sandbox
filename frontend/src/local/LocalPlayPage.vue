@@ -63,7 +63,7 @@ const {
     // Returned so paced playout waits for this frame's transition before delivering the next.
     const drawn = renderState(state, options)
     lastState.value = state
-    appendMessages(state)
+    appendMessages([state])
     appendDecisions(state)
     return drawn
   },

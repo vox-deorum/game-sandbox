@@ -1,10 +1,11 @@
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import GameThread from '../../src/components/GameThread.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
 import type { DecisionEntry } from '../../src/lib/state.js'
 import { badgeTexts } from '../helpers/render.js'
+import { stubScrolling } from '../helpers/scroll.js'
 
 // A four-player Spades roster: three agents sharing a label plus the viewer's human player.
 const PLAYERS = {
@@ -241,5 +242,42 @@ describe('GameThread — Three Branches human play (step 6)', () => {
       'P2',
       'P1',
     ])
+  })
+
+  it('mounts only the rows near the viewport of a long game and follows the scrubbed tick', async () => {
+    const restore = stubScrolling()
+    try {
+      const long: DecisionEntry[] = Array.from({ length: 3000 }, (_, tick) => ({
+        tick,
+        player: 'player_0',
+        action: `move ${tick}`,
+      }))
+      const chat: ChatEntry[] = [{ tick: 1, from: 'player_1', to: null, text: 'hello village' }]
+      const { container, rerender } = render(GameThread, {
+        props: { decisions: long, chat, currentTick: 1, players: PLAYERS },
+      })
+      const rendered = () => container.querySelectorAll('.thread-item')
+      await waitFor(() => expect(rendered().length).toBeGreaterThan(0))
+      // A bounded window of rows, with spacers standing in for the rest of the game.
+      expect(rendered().length).toBeLessThan(100)
+      expect(container.querySelectorAll('.virtual-spacer')).toHaveLength(2)
+      expect(container.querySelector('[aria-current="true"]')).toHaveTextContent('move 1')
+      // The tick's message still rides right after its decision.
+      const texts = Array.from(rendered(), (row) => row.textContent ?? '')
+      const decision = texts.findIndex((text) => text.includes('move 1'))
+      expect(texts[decision + 1]).toContain('hello village')
+      expect(rendered()[decision + 1]?.classList.contains('is-current')).toBe(true)
+
+      await rerender({ decisions: long, chat, currentTick: 2500, players: PLAYERS })
+      await waitFor(() =>
+        expect(container.querySelector('[aria-current="true"]')).toHaveTextContent('move 2500'),
+      )
+      const current = container.querySelector('[aria-current="true"]')
+      expect(current?.classList.contains('is-current')).toBe(true)
+      expect(current?.nextElementSibling?.classList.contains('is-future')).toBe(true)
+      expect(rendered().length).toBeLessThan(100)
+    } finally {
+      restore()
+    }
   })
 })

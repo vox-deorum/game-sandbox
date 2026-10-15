@@ -9,14 +9,16 @@
   The cells are terse by nature — an action is all an agent emits per tick — and the value is formatted
   generically (formatAction): naming an action is the renderer's job, not the host log's. The player
   cell is a PlayerTag, so a game that names its players shows that name on hover and highlights the
-  player's figure.
+  player's figure. A long log (a Three Branches day) mounts only the rows near the viewport, with
+  spacer rows standing in for the rest (see useVirtualLog).
 -->
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
 import type { RecordingLlmCall } from '../api/client.js'
-import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
+import { useVirtualLog } from '../composables/useVirtualLog.js'
 import { formatAction } from '../lib/format.js'
+import { decisionCallsKey, groupSetupCalls, indexDecisionCalls } from '../lib/llm.js'
 import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
@@ -42,28 +44,14 @@ const props = withDefaults(
   { currentTick: null, llmUnavailable: false, llmPending: false },
 )
 
-interface SetupRow {
-  player: string
-  calls: RecordingLlmCall[]
-}
+const setupRows = computed(() =>
+  props.llmUnavailable || props.llmPending ? [] : groupSetupCalls(props.setupLlmCalls ?? []),
+)
 
-const setupRows = computed<SetupRow[]>(() => {
-  if (props.llmUnavailable || props.llmPending) return []
-  const byPlayer = new Map<string, RecordingLlmCall[]>()
-  for (const call of props.setupLlmCalls ?? []) {
-    const calls = byPlayer.get(call.player) ?? []
-    calls.push(call)
-    byPlayer.set(call.player, calls)
-  }
-  return [...byPlayer.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([player, calls]) => ({ player, calls }))
-})
+const callsByDecision = computed(() => indexDecisionCalls(props.llmCalls ?? []))
 
 function decisionCalls(entry: DecisionEntry): RecordingLlmCall[] {
-  return (props.llmCalls ?? []).filter(
-    (call) => call.tick === entry.tick && call.player === entry.player,
-  )
+  return callsByDecision.value.get(decisionCallsKey(entry.tick, entry.player)) ?? []
 }
 
 const showLlmCost = computed(
@@ -103,10 +91,13 @@ const activeIndex = computed(() =>
 )
 
 // Follow the first row in the active tick group. Every same-tick row receives the visual highlight.
-const scroller = useActiveRowScroll(
-  () => props.entries.length + setupRows.value.length,
-  () => activeIndex.value,
-)
+const { scroller, listStart, rows, padding, measure, virtual } = useVirtualLog({
+  items: () => props.entries,
+  key: (entry) => `${entry.tick}:${entry.player}`,
+  activeIndex: () => activeIndex.value,
+  leadingRows: () => setupRows.value.length,
+  estimateSize: () => 25,
+})
 </script>
 
 <template>
@@ -143,11 +134,16 @@ const scroller = useActiveRowScroll(
         </tr>
       </tbody>
       <tbody>
+        <tr v-if="virtual" ref="listStart" class="virtual-spacer" aria-hidden="true">
+          <td :colspan="showLlmCost ? 4 : 3" :style="{ height: `${padding.top}px` }" />
+        </tr>
         <tr
-          v-for="(entry, i) in entries"
+          v-for="{ index, item: entry } in rows"
           :key="`${entry.tick}:${entry.player}`"
+          :ref="measure"
+          :data-index="index"
           :data-active="entry.tick === activeTick || undefined"
-          :aria-current="i === activeIndex ? 'true' : undefined"
+          :aria-current="index === activeIndex ? 'true' : undefined"
         >
           <td class="player-col">
             <PlayerTag :player-id="entry.player" />
@@ -169,6 +165,9 @@ const scroller = useActiveRowScroll(
               @inspect="inspect(decisionCalls(entry))"
             />
           </td>
+        </tr>
+        <tr v-if="virtual" class="virtual-spacer" aria-hidden="true">
+          <td :colspan="showLlmCost ? 4 : 3" :style="{ height: `${padding.bottom}px` }" />
         </tr>
       </tbody>
     </table>
@@ -244,6 +243,12 @@ td {
 
 .cost-col {
   white-space: nowrap;
+}
+
+/* The stand-in for the unrendered rows of a long log: exactly its inline height, nothing drawn. */
+.virtual-spacer td {
+  padding: 0;
+  border: none;
 }
 
 .call-inspector-list {

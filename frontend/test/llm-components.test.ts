@@ -1,12 +1,17 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, ref } from 'vue'
-
+import type { RecordingLlmCall } from '../src/api/client.js'
 import LlmCostDetails from '../src/components/LlmCostDetails.vue'
 import LlmCostTooltip from '../src/components/LlmCostTooltip.vue'
 import RequestResponseView from '../src/components/RequestResponseView.vue'
 import UiDialog from '../src/components/ui/UiDialog.vue'
-import { formatLlmCost } from '../src/lib/llm.js'
+import {
+  decisionCallsKey,
+  formatLlmCost,
+  groupSetupCalls,
+  indexDecisionCalls,
+} from '../src/lib/llm.js'
 
 const calls = [
   {
@@ -33,6 +38,27 @@ describe('LLM shared presentation', () => {
   it('formats compact authoritative costs with an explicit units label', () => {
     expect(formatLlmCost(41600)).toBe('41.6k units')
     expect(formatLlmCost(1080)).toBe('1,080 units')
+  })
+
+  it('indexes tick calls by decision and groups setup calls by player', () => {
+    const recorded = (tick: number | null, player: string, model: string) =>
+      ({ ...calls[0], tick, player, model, usage_estimated: false }) as RecordingLlmCall
+    const first = recorded(5, 'player_0', 'a')
+    const second = recorded(5, 'player_0', 'b')
+    const other = recorded(5, 'player_1', 'c')
+    const setupB = recorded(null, 'player_1', 'd')
+    const setupA = recorded(null, 'player_0', 'e')
+
+    const index = indexDecisionCalls([first, setupB, other, second])
+    expect(index.get(decisionCallsKey(5, 'player_0'))).toEqual([first, second])
+    expect(index.get(decisionCallsKey(5, 'player_1'))).toEqual([other])
+    // Setup calls serve no decision, so the index leaves them out.
+    expect([...index.values()].flat()).not.toContain(setupB)
+
+    expect(groupSetupCalls([setupB, setupA])).toEqual([
+      { player: 'player_0', calls: [setupA] },
+      { player: 'player_1', calls: [setupB] },
+    ])
   })
 
   it('shows call counts, aliases, stored weights, charged token bases, and authoritative costs', () => {

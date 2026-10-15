@@ -13,13 +13,17 @@
   the game frame), and senderIdentity plus the shared recipient badge (broadcast, to you, or to another
   player) for messages. The merged view therefore honours the same blind policy and stays legible on a
   same-labelled roster.
+
+  A whole game can run to thousands of rows, so a long thread mounts only the rows near the viewport,
+  with spacers standing in for the rest (see useVirtualLog). The rows themselves never carry the
+  scrubber position: each rendered row reads its past, current, or future state from the current tick,
+  so scrubbing restyles a handful of rows instead of rebuilding the thread.
 -->
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
 import { computed, ref } from 'vue'
 
 import type { RecordingLlmCall } from '../api/client.js'
-import { useActiveRowScroll } from '../composables/useActiveRowScroll.js'
 import { usePlayerIdentity } from '../composables/usePlayerIdentity.js'
 import {
   type ChatEntry,
@@ -29,7 +33,9 @@ import {
   type SenderIdentity,
   senderIdentity,
 } from '../lib/chat.js'
+import { useVirtualLog } from '../composables/useVirtualLog.js'
 import { formatAction } from '../lib/format.js'
+import { decisionCallsKey, groupSetupCalls, indexDecisionCalls } from '../lib/llm.js'
 import type { DecisionEntry } from '../lib/state.js'
 import LlmCostDetails from './LlmCostDetails.vue'
 import LlmCostTooltip from './LlmCostTooltip.vue'
@@ -107,17 +113,14 @@ type ThreadState = 'past' | 'current' | 'future'
 interface DecisionItem {
   key: string
   kind: 'decision'
-  state: ThreadState
   action: string
   tick: number
   playerId: string
-  currentMarker: boolean
 }
 
 interface MessageItem {
   key: string
   kind: 'message'
-  state: ThreadState
   playerId: string
   sender: SenderIdentity
   badge: MessageBadge
@@ -127,39 +130,39 @@ interface MessageItem {
 
 type ThreadItem = DecisionItem | MessageItem
 
+// The decision rows grouped by tick, built only when the decisions change.
+const decisionGroups = computed(() => {
+  const byTick = new Map<number, DecisionItem[]>()
+  for (const decision of props.decisions) {
+    const item: DecisionItem = {
+      key: `d-${decision.tick}-${decision.player}`,
+      kind: 'decision',
+      action: formatAction(decision.action),
+      tick: decision.tick,
+      playerId: decision.player,
+    }
+    const group = byTick.get(decision.tick)
+    if (group === undefined) {
+      byTick.set(decision.tick, [item])
+    } else {
+      group.push(item)
+    }
+  }
+  return byTick
+})
+
 // Weave complete decision groups and messages into one ordered list. Messages are appended once after
 // every action-bearing entry for their tick.
 const items = computed<ThreadItem[]>(() => {
   const result: ThreadItem[] = []
-  const byTick = new Map<number, DecisionEntry[]>()
-  for (const decision of props.decisions) {
-    const group = byTick.get(decision.tick)
-    if (group === undefined) {
-      byTick.set(decision.tick, [decision])
-    } else {
-      group.push(decision)
+  for (const [tick, decisions] of decisionGroups.value) {
+    for (const decision of decisions) {
+      result.push(decision)
     }
-  }
-
-  for (const [tick, decisions] of byTick) {
-    const state: ThreadState =
-      tick === activeTick.value ? 'current' : activeTick.value !== null && tick > activeTick.value ? 'future' : 'past'
-    decisions.forEach((decision, index) => {
-      result.push({
-        key: `d-${decision.tick}-${decision.player}`,
-        kind: 'decision',
-        state,
-        action: formatAction(decision.action),
-        tick: decision.tick,
-        playerId: decision.player,
-        currentMarker: state === 'current' && index === 0,
-      })
-    })
     for (const entry of chatByTick.value.get(tick) ?? []) {
       result.push({
         key: `m-${messageKey(entry)}`,
         kind: 'message',
-        state: state === 'future' ? 'past' : state,
         playerId: entry.from,
         sender: senderIdentity(
           entry.from,
@@ -177,21 +180,26 @@ const items = computed<ThreadItem[]>(() => {
   return result
 })
 
-const setupRows = computed(() => {
-  if (props.llmUnavailable) return []
-  const byPlayer = new Map<string, RecordingLlmCall[]>()
-  for (const call of props.setupLlmCalls) {
-    const calls = byPlayer.get(call.player) ?? []
-    calls.push(call)
-    byPlayer.set(call.player, calls)
-  }
-  return [...byPlayer.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([player, calls]) => ({ player, calls }))
-})
+// The current tick's block is highlighted and the ticks ahead of it dimmed. A message is never ahead:
+// the caller reveals messages only up to the current tick.
+function rowState(item: ThreadItem): ThreadState {
+  if (item.tick === activeTick.value) return 'current'
+  return item.kind === 'decision' && activeTick.value !== null && item.tick > activeTick.value
+    ? 'future'
+    : 'past'
+}
+
+// The first decision of the current tick, which carries aria-current and is the row the log follows.
+const activeIndex = computed(() =>
+  items.value.findIndex((item) => item.kind === 'decision' && item.tick === activeTick.value),
+)
+
+const setupRows = computed(() => (props.llmUnavailable ? [] : groupSetupCalls(props.setupLlmCalls)))
+
+const callsByDecision = computed(() => indexDecisionCalls(props.llmCalls))
 
 function decisionCalls(item: DecisionItem): RecordingLlmCall[] {
-  return props.llmCalls.filter((call) => call.tick === item.tick && call.player === item.playerId)
+  return callsByDecision.value.get(decisionCallsKey(item.tick, item.playerId)) ?? []
 }
 
 function totalCost(calls: RecordingLlmCall[]): number {
@@ -212,10 +220,13 @@ function inspect(calls: RecordingLlmCall[]): void {
 }
 
 // Follow the scrubbed row: center the current tick, the same active-row scroll the decision log uses.
-const scroller = useActiveRowScroll(
-  () => props.decisions.length + setupRows.value.length,
-  () => activeTick.value ?? -1,
-)
+const { scroller, listStart, rows, padding, measure, virtual } = useVirtualLog({
+  items: () => items.value,
+  key: (item) => item.key,
+  activeIndex: () => activeIndex.value,
+  leadingRows: () => setupRows.value.length,
+  estimateSize: (item) => (item.kind === 'decision' ? 23 : 56),
+})
 </script>
 
 <template>
@@ -248,15 +259,24 @@ const scroller = useActiveRowScroll(
           </span>
         </li>
         <li
-          v-for="item in items"
+          v-if="virtual"
+          ref="listStart"
+          class="virtual-spacer"
+          aria-hidden="true"
+          :style="{ height: `${padding.top}px` }"
+        />
+        <li
+          v-for="{ index, item } in rows"
           :key="item.key"
+          :ref="measure"
+          :data-index="index"
           class="thread-item"
           :class="[
             `thread-item--${item.kind}`,
-            { 'is-current': item.state === 'current', 'is-future': item.state === 'future' },
+            { 'is-current': rowState(item) === 'current', 'is-future': rowState(item) === 'future' },
           ]"
-          :data-active="(item.kind === 'decision' && item.state === 'current') || undefined"
-          :aria-current="item.kind === 'decision' && item.currentMarker ? 'true' : undefined"
+          :data-active="(item.kind === 'decision' && rowState(item) === 'current') || undefined"
+          :aria-current="index === activeIndex ? 'true' : undefined"
         >
           <template v-if="item.kind === 'decision'">
             <PlayerTag class="thread-player" :player-id="item.playerId" />
@@ -290,6 +310,12 @@ const scroller = useActiveRowScroll(
             <p class="thread-text">{{ item.text }}</p>
           </template>
         </li>
+        <li
+          v-if="virtual"
+          class="virtual-spacer"
+          aria-hidden="true"
+          :style="{ height: `${padding.bottom}px` }"
+        />
       </ul>
     </div>
     <p v-else class="thread-empty">No decisions yet.</p>
@@ -342,7 +368,8 @@ const scroller = useActiveRowScroll(
 
 .thread-header,
 .thread-list,
-.thread-item {
+.thread-item,
+.virtual-spacer {
   grid-column: 1 / -1;
 }
 
@@ -373,7 +400,10 @@ const scroller = useActiveRowScroll(
   border-top: 1px solid var(--color-border);
 }
 
-.thread-item:first-child {
+/* The first row has no rule above it. In a long thread the top spacer leads the list, so the first
+   row is the one right after an empty spacer. */
+.thread-item:first-child,
+.virtual-spacer:first-child + .thread-item[data-index='0'] {
   border-top: none;
 }
 

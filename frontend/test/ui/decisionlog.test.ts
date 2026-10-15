@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { RecordingLlmCall } from '../../src/api/client.js'
 import DecisionLog from '../../src/components/DecisionLog.vue'
+import { stubScrolling } from '../helpers/scroll.js'
 
 function call(overrides: Partial<RecordingLlmCall> = {}): RecordingLlmCall {
   return {
@@ -244,5 +245,32 @@ describe('DecisionLog', () => {
     })
     expect(screen.queryByRole('button', { name: 'Inspect request and response' })).toBeNull()
     expect(screen.getByRole('button', { name: /LLM cost details/ })).toBeInTheDocument()
+  })
+
+  it('mounts only the rows near the viewport of a long log and follows the scrubbed tick', async () => {
+    const restore = stubScrolling()
+    try {
+      const entries = Array.from({ length: 5000 }, (_, tick) => ({
+        tick,
+        player: 'player_0',
+        action: tick,
+      }))
+      const { container, rerender } = render(DecisionLog, { props: { entries, currentTick: 2 } })
+      const rendered = () => container.querySelectorAll('tbody tr[data-index]')
+      await waitFor(() => expect(rendered().length).toBeGreaterThan(0))
+      // A bounded window of rows, with spacers standing in for the rest of the game.
+      expect(rendered().length).toBeLessThan(100)
+      expect(container.querySelectorAll('tr.virtual-spacer')).toHaveLength(2)
+      expect(container.querySelector('tr[aria-current="true"]')).toHaveTextContent('2')
+
+      // Scrubbing far ahead scrolls the log there and mounts the new current row.
+      await rerender({ entries, currentTick: 4000 })
+      await waitFor(() =>
+        expect(container.querySelector('tr[aria-current="true"]')).toHaveTextContent('4000'),
+      )
+      expect(rendered().length).toBeLessThan(100)
+    } finally {
+      restore()
+    }
   })
 })

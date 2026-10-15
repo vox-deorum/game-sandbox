@@ -169,7 +169,7 @@ const {
       // Accumulate messages before the decision-log gate: an actionless opening frame still carries
       // any human-queued messages. onState is called at render (drain) time, so a message appears
       // exactly when its state line renders, not ahead of it.
-      appendMessages(state)
+      appendMessages([state])
       // Opening frames and reward-only deltas carry no actions, so the shared adapter omits them.
       appendDecisions(state)
       return drawn
@@ -329,8 +329,8 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
     header.value = parsed.header
     decisions.value = parsed.states.flatMap(decisionEntries)
     // A directly opened ended session never streams through onState, so build its message log from the
-    // same parsed states — the full exchange, read-only, with no live socket.
-    parsed.states.forEach(appendMessages)
+    // same parsed states — the full exchange, read-only, with no live socket — in one batch.
+    appendMessages(parsed.states)
     mountRenderer(parsed.header)
     const finalState = parsed.states.at(-1)
     if (finalState !== undefined) {

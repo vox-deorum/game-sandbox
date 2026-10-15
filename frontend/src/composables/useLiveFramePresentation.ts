@@ -1,5 +1,5 @@
 import type { StepState } from '@game-sandbox/schema'
-import { computed, type Ref, ref } from 'vue'
+import { computed, type Ref, shallowRef } from 'vue'
 
 import type { ConnectionState } from '../api/socket.js'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
@@ -27,8 +27,11 @@ export function useLiveFramePresentation({
   connection,
   health,
 }: LiveFramePresentationOptions) {
-  const decisions = ref<DecisionEntry[]>([])
-  const chatLog = ref<ChatEntry[]>([])
+  // A long session appends thousands of entries, so the logs are shallow refs replaced with a longer
+  // array per appended state rather than deep proxies over every entry. A new array is also what tells
+  // the log components, which receive it as a prop, that it grew.
+  const decisions = shallowRef<DecisionEntry[]>([])
+  const chatLog = shallowRef<ChatEntry[]>([])
   const seenDecisions = new Set<string>()
   const seenMessages = new Set<string>()
 
@@ -38,21 +41,30 @@ export function useLiveFramePresentation({
       const key = `${entry.tick}\0${entry.player}`
       if (!seenDecisions.has(key)) {
         seenDecisions.add(key)
-        decisions.value.push(entry)
         appended.push(entry)
       }
+    }
+    if (appended.length > 0) {
+      decisions.value = [...decisions.value, ...appended]
     }
     return appended
   }
 
-  function appendMessages(state: StepState): void {
-    for (const message of state.messages ?? []) {
-      const entry: ChatEntry = { tick: state.tick, ...message }
-      const key = messageKey(entry)
-      if (!seenMessages.has(key)) {
-        seenMessages.add(key)
-        chatLog.value.push(entry)
+  /** Append the new messages of a batch of states, publishing the longer log once for the batch. */
+  function appendMessages(states: readonly StepState[]): void {
+    const appended: ChatEntry[] = []
+    for (const state of states) {
+      for (const message of state.messages ?? []) {
+        const entry: ChatEntry = { tick: state.tick, ...message }
+        const key = messageKey(entry)
+        if (!seenMessages.has(key)) {
+          seenMessages.add(key)
+          appended.push(entry)
+        }
       }
+    }
+    if (appended.length > 0) {
+      chatLog.value = [...chatLog.value, ...appended]
     }
   }
 
