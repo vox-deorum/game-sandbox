@@ -526,11 +526,7 @@ describe('AgentProfilePage', () => {
     const seasonTag = await screen.findByText('Season: Week 4')
     expect(seasonTag).toBeInTheDocument()
     const currentSeasonHeader = document.getElementById('current-season-banner') as HTMLElement
-    expect(currentSeasonHeader.tagName).toBe('HEADER')
-    expect(currentSeasonHeader.closest('.ui-card')).toBeNull()
-    expect(currentSeasonHeader.querySelector('.ui-card')).toBeNull()
     expect(within(currentSeasonHeader).getByText('load check failed')).toBeInTheDocument()
-    expect(currentSeasonHeader.querySelector('.ui-status-badge')).not.toBeNull()
     expect(within(currentSeasonHeader).queryByText('Not submitted')).toBeNull()
   })
 

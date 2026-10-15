@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminSubmissionRow } from '../src/api/client.js'
-import { formatDate } from '../src/lib/format.js'
+import { useFixedDateTimeFormat } from './helpers/intl.js'
 
 vi.mock('../src/api/client.js', () => ({
   listSeasonSubmissions: vi.fn(),
@@ -31,7 +31,11 @@ function row(overrides: Partial<AdminSubmissionRow> = {}): AdminSubmissionRow {
 }
 
 describe('SeasonSubmissions', () => {
-  afterEach(() => vi.clearAllMocks())
+  useFixedDateTimeFormat()
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
 
   it('links the submission date to its source and renders the available downloads', async () => {
     const submission = row()
@@ -48,7 +52,7 @@ describe('SeasonSubmissions', () => {
     expect(link).toHaveAttribute('href', '/api/admin/submissions/sub-abcdef12/download')
     const all = screen.getByRole('link', { name: /Download all/ })
     expect(all).toHaveAttribute('download', 'season-iter-1.tar.gz')
-    expect(all).toHaveClass('ui-button', 'secondary', 'tight')
+    expect(all).toHaveAttribute('href', '/api/admin/seasons/iter-1/submissions/download')
     expect(screen.getByRole('heading', { name: 'Submissions', level: 2 })).toBeInTheDocument()
 
     expect(screen.getAllByRole('columnheader').map((header) => header.textContent)).toEqual([
@@ -61,7 +65,7 @@ describe('SeasonSubmissions', () => {
       .getAllByRole('link')
       .find((candidate) => candidate.getAttribute('href') === 'https://example.test/repo')
     expect(sourceLink).toHaveAttribute('title', 'https://example.test/repo @ c0ffee12')
-    expect(sourceLink).toHaveTextContent(formatDate(submission.created_at) ?? submission.created_at)
+    expect(sourceLink).toHaveTextContent('Jun 12, 2026, 12:00 AM')
   })
 
   it('disables the download for a submission without a snapshot', async () => {
@@ -81,7 +85,7 @@ describe('SeasonSubmissions', () => {
     vi.mocked(listSeasonSubmissions).mockResolvedValue([submission])
     render(SeasonSubmissions, { props: { seasonId: 'iter-1' } })
 
-    const submittedAt = formatDate(submission.created_at) ?? submission.created_at
+    const submittedAt = 'Jun 12, 2026, 12:00 AM'
     await screen.findByText(submittedAt)
     expect(screen.queryByRole('link', { name: submittedAt })).toBeNull()
   })

@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   cameraLimits,
-  cameraProbeValue,
   centerCamera,
   clampCamera,
   fitCamera,
@@ -114,10 +113,6 @@ describe('camera reducers', () => {
     const projected = viewPoint(camera, view, world)
     expect((projected.x - transform.x) / transform.scale).toBeCloseTo(world.x)
     expect((projected.y - transform.y) / transform.scale).toBeCloseTo(world.y)
-  })
-
-  it('formats the camera probe value', () => {
-    expect(cameraProbeValue({ zoom: 1.24, x: 600, y: 418 })).toBe('1.24@600,418')
   })
 })
 

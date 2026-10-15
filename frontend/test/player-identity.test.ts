@@ -6,17 +6,13 @@ import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
-import { defineComponent, h, ref, shallowRef, type VNode } from 'vue'
+import { defineComponent, h, nextTick, ref, shallowRef, type VNode } from 'vue'
 
 import ChatPanel from '../src/components/ChatPanel.vue'
 import DecisionLog from '../src/components/DecisionLog.vue'
 import GameThread from '../src/components/GameThread.vue'
 import PlayerTag from '../src/components/PlayerTag.vue'
-import {
-  providePlayerIdentity,
-  sharedHighlight,
-  usePlayerIdentity,
-} from '../src/composables/usePlayerIdentity.js'
+import { providePlayerIdentity, sharedHighlight } from '../src/composables/usePlayerIdentity.js'
 import { useRendererMount } from '../src/composables/useRendererMount.js'
 import { messageBadge, senderIdentity } from '../src/lib/chat.js'
 import { registerRenderer } from '../src/renderers/registry.js'
@@ -341,7 +337,7 @@ describe('decision rows with a renderer identity', () => {
 })
 
 describe('useRendererMount player identity', () => {
-  it('provides the renderer profiles per state, replacing them only on change, and forwards the highlight', () => {
+  it('updates names and teams in consuming chat and forwards player highlights', async () => {
     const highlightPlayer = vi.fn()
     const instance: RendererInstance = {
       internalSize: { width: 1, height: 1 },
@@ -353,25 +349,30 @@ describe('useRendererMount player identity', () => {
           name: state.tick >= 2 ? 'unit at tick late' : 'unit at tick early',
           team: state.tick >= 4 ? 'blue' : 'red',
         },
+        player_2: { team: 'red' },
       }),
       highlightPlayer,
     }
-    registerRenderer('identity-test', { mount: () => instance }, '')
+    registerRenderer('identity-updates-test', { mount: () => instance }, '')
 
     let mounted!: ReturnType<typeof useRendererMount>
-    let injected!: ReturnType<typeof usePlayerIdentity>
     const Child = defineComponent({
-      setup() {
-        injected = usePlayerIdentity()
-        return () => null
-      },
+      setup: () => () =>
+        h('div', [
+          h(PlayerTag, { playerId: 'player_0' }),
+          h(ChatPanel, {
+            entries: [{ tick: 1, from: 'player_0', to: null, text: 'Ready.' }],
+            players: PLAYERS,
+            viewerPlayers: ['player_2'],
+          }),
+        ]),
     })
-    mount(
+    const wrapper = mount(
       defineComponent({
         setup() {
           mounted = useRendererMount({
             host: ref(document.createElement('div')),
-            meta: ref({ renderer: 'identity-test' } as EnvironmentMeta),
+            meta: ref({ renderer: 'identity-updates-test' } as EnvironmentMeta),
           })
           return () => h(Child)
         },
@@ -379,32 +380,24 @@ describe('useRendererMount player identity', () => {
     )
     mounted.mount({} as RecordingHeader)
 
-    void mounted.render({ tick: 0 } as StepState)
-    const first = injected.profiles.value
-    expect(first).toEqual({ player_0: { name: 'unit at tick early', team: 'red' } })
-    void mounted.render({ tick: 1 } as StepState)
-    expect(injected.profiles.value).toBe(first)
-    // A changed name replaces the ref.
-    void mounted.render({ tick: 2 } as StepState)
-    expect(injected.profiles.value).toEqual({
-      player_0: { name: 'unit at tick late', team: 'red' },
-    })
-    const second = injected.profiles.value
-    void mounted.render({ tick: 3 } as StepState)
-    expect(injected.profiles.value).toBe(second)
-    // A team change replaces it just the same.
-    void mounted.render({ tick: 4 } as StepState)
-    expect(injected.profiles.value).toEqual({
-      player_0: { name: 'unit at tick late', team: 'blue' },
-    })
+    await mounted.render({ tick: 0 } as StepState)
+    await nextTick()
+    expect(wrapper.get('.chat-from').text()).toBe('unit at tick early')
+    expect(wrapper.get('.chat-from').classes()).toContain('chat-from--ally')
+    expect(wrapper.get('.player-tag button').attributes('aria-label')).toBe(
+      'P0, unit at tick early',
+    )
 
-    const tag = {}
-    injected.highlight(tag, 'player_0')
+    await mounted.render({ tick: 2 } as StepState)
+    await nextTick()
+    expect(wrapper.get('.chat-from').text()).toBe('unit at tick late')
+    expect(wrapper.get('.player-tag button').attributes('aria-label')).toBe('P0, unit at tick late')
+
+    await mounted.render({ tick: 4 } as StepState)
+    await nextTick()
+    expect(wrapper.get('.chat-from').classes()).toContain('chat-from--other')
+
+    await wrapper.get('.player-tag').trigger('mouseenter')
     expect(highlightPlayer).toHaveBeenCalledWith('player_0')
-    // A tag that holds nothing withdrawing never reaches the renderer; the holder's withdrawal does.
-    injected.highlight({}, null)
-    expect(highlightPlayer).toHaveBeenCalledTimes(1)
-    injected.highlight(tag, null)
-    expect(highlightPlayer).toHaveBeenLastCalledWith(null)
   })
 })

@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminLogsResponse } from '../src/api/client.js'
-import { formatLogTime } from '../src/lib/format.js'
+import { useFixedDateTimeFormat } from './helpers/intl.js'
 import { signedInMe } from './helpers/me.js'
 import { memoryRouter, renderWithMe } from './helpers/render.js'
 
@@ -43,15 +43,15 @@ async function renderPage() {
 }
 
 describe('AdminLogsPage', () => {
+  useFixedDateTimeFormat()
+
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('admin-1', 'admin'))
     vi.mocked(getAdminLogs).mockResolvedValue(response())
   })
 
-  afterEach(() => {
-    vi.useRealTimers()
-  })
+  afterEach(() => vi.useRealTimers())
 
   it('gates the page for non-operators', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('user-1', 'normal'))
@@ -65,10 +65,7 @@ describe('AdminLogsPage', () => {
     await renderPage()
 
     expect(await screen.findByText('request failed')).toBeInTheDocument()
-    // The timestamp column renders the shared compact local clock time, not the wire ISO string.
-    expect(
-      screen.getByText(formatLogTime(Date.parse('2026-08-29T01:02:03.000Z'))),
-    ).toBeInTheDocument()
+    expect(screen.getByText('01:02:03')).toBeInTheDocument()
     expect(screen.getByText('warn')).toBeInTheDocument()
     expect(screen.getAllByText('http')).toHaveLength(2)
     expect(screen.getByText('1 shown from 1 retained (512 B)')).toBeInTheDocument()

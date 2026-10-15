@@ -14,6 +14,7 @@ import {
   spadesMeta,
   spadesPlayers,
 } from './helpers/fixtures.js'
+import { expectStandings } from './helpers/render.js'
 
 let handlers: SessionSocketHandlers
 let sent: unknown[]
@@ -323,9 +324,14 @@ describe('LocalPlayPage', () => {
     handlers.onSessionStatus?.('ended', 'terminated')
 
     const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
-    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
-    expect(gameOver).toHaveTextContent('4')
-    expect(gameOver).toHaveTextContent('2')
+    expectStandings(
+      gameOver,
+      [
+        ['S0', 'North', '4'],
+        ['S1', 'South', '2'],
+      ],
+      'S0 won',
+    )
   })
 
   it('falls back to accumulated state scores until a result envelope arrives', async () => {
@@ -357,9 +363,14 @@ describe('LocalPlayPage', () => {
     handlers.onSessionStatus?.('ended', 'terminated')
 
     const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
-    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
-    expect(gameOver).toHaveTextContent('4')
-    expect(gameOver).toHaveTextContent('2')
+    expectStandings(
+      gameOver,
+      [
+        ['S0', 'North', '4'],
+        ['S1', 'South', '2'],
+      ],
+      'S0 won',
+    )
   })
 
   it('buffers an all-agent local session at its viewing cadence', async () => {

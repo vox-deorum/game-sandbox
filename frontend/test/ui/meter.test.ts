@@ -5,7 +5,7 @@ import UiMeter from '../../src/components/ui/UiMeter.vue'
 
 describe('UiMeter', () => {
   it('exposes the typed meter values and always renders its text value', () => {
-    const { container } = render(UiMeter, {
+    render(UiMeter, {
       props: {
         value: 41600,
         max: 100000,
@@ -20,6 +20,5 @@ describe('UiMeter', () => {
     )
     expect(screen.getByRole('meter')).toHaveAttribute('max', '100000')
     expect(screen.getByText('41.6k of 100k budget units used')).toBeInTheDocument()
-    expect(container.querySelector('.ui-meter .track')).not.toBeNull()
   })
 })

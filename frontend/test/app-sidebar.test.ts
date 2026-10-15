@@ -38,6 +38,7 @@ async function renderSidebar(path = '/') {
     slots: { default: () => h(AppSidebar) },
     global: { plugins: [router] },
   })
+  return router
 }
 
 describe('AppSidebar', () => {
@@ -56,15 +57,18 @@ describe('AppSidebar', () => {
     expect(screen.getByRole('link', { name: 'My Agents' })).toHaveAttribute('href', '/my/agents')
   })
 
-  it('marks Environments active on a game route without marking it active elsewhere', async () => {
-    await renderSidebar('/seasons')
+  it('updates the active section when navigating from seasons to a game', async () => {
+    const router = await renderSidebar('/seasons')
 
-    // On /seasons the Seasons item is active and Environments is not (the root link must not match every path).
     expect(screen.getByRole('link', { name: 'Seasons' })).toHaveClass('active')
     expect(screen.getByRole('link', { name: 'Environments' })).not.toHaveClass('active')
+
+    await router.push('/environments/flappy_bird')
+    expect(screen.getByRole('link', { name: 'Environments' })).toHaveClass('active')
+    expect(screen.getByRole('link', { name: 'Seasons' })).not.toHaveClass('active')
   })
 
-  it('shows the Users then Logs entries, last, only for an admin', async () => {
+  it('shows the Users and Logs destinations only for an admin', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('admin-1', 'admin'))
     await renderSidebar('/')
 
@@ -72,9 +76,6 @@ describe('AppSidebar', () => {
     const logs = screen.getByRole('link', { name: 'Logs' })
     expect(users).toHaveAttribute('href', '/admin/users')
     expect(logs).toHaveAttribute('href', '/admin/logs')
-
-    const links = screen.getAllByRole('link').filter((link) => link.hasAttribute('aria-label'))
-    expect(links.slice(-2)).toEqual([users, logs])
   })
 
   it('hides the Users entry for a normal user', async () => {

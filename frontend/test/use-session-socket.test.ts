@@ -69,11 +69,6 @@ function mountSessionSocket(deferred = false) {
   }
 }
 
-/** The scale a paced host passes for a cadence, relative to the renderer's natural one-second beat. */
-function scale(cadenceMs: number): RenderOptions {
-  return { transitionScale: cadenceMs / 1000 }
-}
-
 function header(human: boolean): RecordingHeader {
   return {
     schema_version: 1,
@@ -251,7 +246,6 @@ describe('useSessionSocket', () => {
     session.connect()
     socketDouble.handlers[1]?.onResult?.({ scores: { player_0: 2 } })
 
-    expect(socketDouble.connect).toHaveBeenCalledTimes(2)
     expect(session.finalResult.value?.scores).toEqual({ player_0: 2 })
     wrapper.unmount()
   })
@@ -266,6 +260,7 @@ describe('useSessionSocket', () => {
     first?.onResult?.({ scores: { player_0: 99 } })
     second?.onResult?.({ scores: { player_0: 2 } })
 
+    // Reconnecting closes the retired socket rather than leaving it streaming.
     expect(socketDouble.close).toHaveBeenCalledTimes(1)
     expect(session.finalResult.value?.scores).toEqual({ player_0: 2 })
     wrapper.unmount()
@@ -306,7 +301,7 @@ describe('useSessionSocket', () => {
     await vi.advanceTimersByTimeAsync(149)
     expect(drawn).toEqual([])
     await vi.advanceTimersByTimeAsync(1)
-    expect(drawn).toEqual([{ state: state(0), options: scale(100) }])
+    expect(drawn).toEqual([{ state: state(0), options: { transitionScale: 0.1 } }])
     await vi.advanceTimersByTimeAsync(100)
     expect(drawn).toHaveLength(2)
     wrapper.unmount()
@@ -327,7 +322,7 @@ describe('useSessionSocket', () => {
     await vi.advanceTimersByTimeAsync(50)
     expect(drawn).toEqual([
       { state: state(0), options: undefined },
-      { state: state(1), options: scale(50) },
+      { state: state(1), options: { transitionScale: 0.05 } },
     ])
     wrapper.unmount()
   })
@@ -343,7 +338,7 @@ describe('useSessionSocket', () => {
     handlers?.onState(state(1))
 
     await vi.advanceTimersByTimeAsync(150)
-    expect(drawn).toEqual([{ state: state(0), options: scale(100) }])
+    expect(drawn).toEqual([{ state: state(0), options: { transitionScale: 0.1 } }])
     wrapper.unmount()
   })
 

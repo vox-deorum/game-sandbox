@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 import type { RunGameView } from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
-import { signedInMe } from './helpers/me.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 
 vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(async () => ({ user: null })),
@@ -92,5 +92,93 @@ describe('GamesTable', () => {
     const seats = screen.getAllByTestId('game-seat')
     expect(seats.map((seat) => seat.textContent?.trim())).toEqual(['Ada', 'Bob', 'Naive agent'])
     expect(seats.some((seat) => seat.classList.contains('winner'))).toBe(false)
+  })
+  it('pairs unordered results with their seat indexes', async () => {
+    await renderTable([
+      game({
+        results: [
+          { seat_index: 2, episode_score: -26, failed: true },
+          { seat_index: 0, episode_score: 26, failed: false },
+          { seat_index: 1, episode_score: 3.5, failed: false },
+        ],
+      }),
+    ])
+    const seats = screen.getAllByTestId('game-seat')
+    expect(seats.map((seat) => seat.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Ada 26',
+      'Bob 3.50',
+      'Naive agent -26 failed',
+    ])
+    expect(seats.map((seat) => seat.classList.contains('winner'))).toEqual([true, false, false])
+  })
+
+  it('ranks zero above negative scores', async () => {
+    await renderTable([
+      game({
+        results: [
+          { seat_index: 0, episode_score: -1, failed: false },
+          { seat_index: 1, episode_score: 0, failed: false },
+          { seat_index: 2, episode_score: -3, failed: false },
+        ],
+      }),
+    ])
+    const seats = screen.getAllByTestId('game-seat')
+    expect(seats.map((seat) => seat.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+      'Ada -1',
+      'Bob 0',
+      'Naive agent -3',
+    ])
+    expect(seats.map((seat) => seat.classList.contains('winner'))).toEqual([false, true, false])
+  })
+
+  it('excludes a failed seat tied at the top from the winners', async () => {
+    await renderTable([
+      game({
+        results: [
+          { seat_index: 0, episode_score: 10, failed: true },
+          { seat_index: 1, episode_score: 10, failed: false },
+          { seat_index: 2, episode_score: 2, failed: false },
+        ],
+      }),
+    ])
+    const seats = screen.getAllByTestId('game-seat')
+    expect(seats[0]).toHaveTextContent('Ada 10 failed')
+    expect(seats.map((seat) => seat.classList.contains('winner'))).toEqual([false, true, false])
+  })
+
+  it('declares no winner when all seats failed', async () => {
+    await renderTable([
+      game({
+        results: [
+          { seat_index: 0, episode_score: 10, failed: true },
+          { seat_index: 1, episode_score: 3, failed: true },
+          { seat_index: 2, episode_score: 1, failed: true },
+        ],
+      }),
+    ])
+    const seats = screen.getAllByTestId('game-seat')
+    for (const seat of seats) {
+      expect(seat).toHaveTextContent('failed')
+      expect(seat).not.toHaveClass('winner')
+    }
+  })
+
+  it.each([
+    ['anonymous', anonymousMe],
+    ['guest', signedInMe('guest-one', 'guest')],
+  ])('masks submission names and identity tooltips for %s viewers', async (_label, me) => {
+    vi.mocked(getMe).mockResolvedValue(me)
+    await renderTable([game()])
+    const names = screen.getAllByTestId('seat-name')
+    expect(names[0]).toHaveTextContent(/^Agent [a-z0-9]+$/i)
+    expect(names[1]).toHaveTextContent(/^Agent [a-z0-9]+$/i)
+    expect(names[2]).toHaveTextContent('Naive agent')
+    expect(names[0]?.textContent).not.toBe(names[1]?.textContent)
+    expect(screen.queryByText('Ada')).toBeNull()
+    expect(screen.queryByText('Bob')).toBeNull()
+    const row = screen.getByTestId('game-row')
+    expect(row).not.toHaveTextContent('user-a')
+    expect(row).not.toHaveTextContent('user-b')
+    expect(row.querySelector('[title]')).toBeNull()
   })
 })

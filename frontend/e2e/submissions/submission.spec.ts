@@ -86,7 +86,8 @@ test('a submitted agent validates to ready and runs in a watch session', async (
 
   // Browse and rate as a regular member, not the operator, so the playable-season anonymity contract
   // is exercised end to end.
-  await authenticateBrowser(page.context(), await as(JUDGES[1]))
+  const judge = await as(JUDGES[1])
+  await authenticateBrowser(page.context(), judge)
 
   // The season section names the play target, while the watch picker lists the play season's ready
   // agents anonymously and highlights the unrated one with the Not rated / Rate affordance. The whole
@@ -120,6 +121,8 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   // A real scripted session launches with the built overlay and streams into the renderer. Docker can
   // take longer than the default expect timeout after the earlier container-heavy journeys.
   await expect(page).toHaveURL(/\/sessions\//, { timeout: 60_000 })
+  const sessionId = new URL(page.url()).pathname.split('/').at(-1)
+  if (sessionId === undefined) throw new Error('watch session id was missing')
   await expect(page.locator('canvas.renderer-canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Pause' }).click()
   await expect(page.locator('.overlay-banner')).toHaveText('Paused')
@@ -128,10 +131,10 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   // Stop the paused run, then the rating panel should reveal immediately above the canvas.
   const stop = page.getByRole('button', { name: 'Stop' })
   await stop.click()
-  await expect(page.getByRole('link', { name: 'Open replay' })).toBeVisible()
-  const ratingsPanel = page.locator('.ratings-reveal')
+  const openReplay = page.getByRole('link', { name: 'Open replay' })
+  await expect(openReplay).toBeVisible()
+  const ratingsPanel = page.getByTestId('ratings-reveal')
   await expect(ratingsPanel).toBeVisible()
-  await expect(ratingsPanel).toHaveCSS('transition-property', /grid-template-rows/)
   await expect(ratingsPanel.getByText(OPERATOR_RATING_PROMPT)).toBeVisible()
   const panelBox = await ratingsPanel.boundingBox()
   const canvasBox = await page.locator('canvas.renderer-canvas').boundingBox()
@@ -144,6 +147,39 @@ test('a submitted agent validates to ready and runs in a watch session', async (
   await ratingsPanel.locator('textarea').first().fill('Steady under pressure')
   await ratingsPanel.getByRole('button', { name: 'Save ratings' }).click()
   await expect(ratingsPanel.getByText('Saved ✓')).toBeVisible()
+
+  // Reopen this session's recording at its final frame and edit the saved rating there. The replay
+  // form should prefill the session value, and saving through the recording endpoint should update
+  // the same effective rating visible through the session endpoint.
+  await openReplay.click()
+  const replayStage = page.getByRole('group', { name: 'Replay stage' })
+  await replayStage.click()
+  await replayStage.press('End')
+  const replayRatings = page.getByTestId('ratings-reveal')
+  await expect(replayRatings).toBeVisible()
+  const replayScore = replayRatings.getByRole('radiogroup').first()
+  await expect(replayScore.getByRole('button', { name: '5', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  const replayComment = replayRatings.locator('textarea').first()
+  await expect(replayComment).toHaveValue('Steady under pressure')
+  await replayScore.getByRole('button', { name: '4', exact: true }).click()
+  await replayComment.fill('Strong finish after the edit')
+  await replayRatings.getByRole('button', { name: 'Save ratings' }).click()
+  await expect(replayRatings.getByText('Saved ✓')).toBeVisible()
+
+  const sessionRatingRead = await judge.get(`/api/sessions/${sessionId}/ratings`)
+  expect(sessionRatingRead.status()).toBe(200)
+  const sessionRatingView = (await sessionRatingRead.json()) as {
+    agents: { your_rating: number | null; your_feedback: string | null }[]
+  }
+  expect(sessionRatingView.agents).toContainEqual(
+    expect.objectContaining({
+      your_rating: 4,
+      your_feedback: 'Strong finish after the edit',
+    }),
+  )
 
   // Back on the environment page, the same anonymous row now reads Rated with the Watch again action.
   await page.goto(`/environments/${ENV_ID}`)

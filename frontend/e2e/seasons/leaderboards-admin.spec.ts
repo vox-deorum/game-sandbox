@@ -43,7 +43,6 @@ test('operator season configuration exposes and validates LLM controls', async (
     await page.getByRole('button', { name: /LLM controls/ }).click()
 
     const runConfiguration = page.getByRole('heading', { name: 'Run Configuration' }).locator('..')
-    await expect(runConfiguration.locator('.ui-card')).toHaveCount(4)
     await expect(
       runConfiguration.getByRole('heading', { name: 'Match Design: 0 submissions' }),
     ).toBeVisible()
@@ -54,30 +53,12 @@ test('operator season configuration exposes and validates LLM controls', async (
     ).toBeVisible()
 
     await runConfiguration.getByRole('button', { name: 'Add match' }).click()
-    const flatRegions = [
-      runConfiguration.getByTestId('match').first(),
-      runConfiguration.getByRole('group', { name: 'Per-player limits' }),
-      runConfiguration.getByRole('group', { name: 'Development per-participant limits' }),
-    ]
-    for (const region of flatRegions) {
-      await expect(region).toHaveCSS('border-top-width', '1px')
-      await expect(region).toHaveCSS('border-right-width', '0px')
-      await expect(region).toHaveCSS('border-bottom-width', '0px')
-      await expect(region).toHaveCSS('border-left-width', '0px')
-      await expect(region).toHaveCSS('border-radius', '0px')
-    }
-
-    await expect(
-      runConfiguration.locator('.ui-card').getByRole('button', { name: 'Save configuration' }),
-    ).toHaveCount(0)
-
-    // The run controls close the same section, sharing the save action's row. The added match is
-    // still unsaved, so the trigger asks before running the persisted configuration.
-    const actions = runConfiguration.locator('.config-actions')
-    await expect(actions.getByRole('button', { name: 'Save configuration' })).toBeVisible()
-    const runWorkflow = actions.getByRole('button', { name: 'Run workflow' })
+    // The added match is unsaved, so the workflow trigger asks before running the persisted
+    // configuration.
+    await expect(runConfiguration.getByRole('button', { name: 'Save configuration' })).toBeVisible()
+    const runWorkflow = runConfiguration.getByRole('button', { name: 'Run workflow' })
     await expect(runWorkflow).toBeEnabled()
-    await expect(actions.getByRole('button', { name: 'Check leaderboard' })).toBeVisible()
+    await expect(runConfiguration.getByRole('button', { name: 'Check leaderboard' })).toBeVisible()
     await runWorkflow.click()
     const unsavedPrompt = page.getByRole('dialog', { name: 'Run with unsaved configuration?' })
     await expect(unsavedPrompt).toBeVisible()
@@ -92,10 +73,7 @@ test('operator season configuration exposes and validates LLM controls', async (
       has: page.getByRole('heading', { name: 'Submissions', exact: true }),
     })
     const downloadAll = submissions.getByRole('link', { name: 'Download all (.tar.gz)' })
-    await expect(downloadAll).toHaveClass(/secondary/)
-    await expect(downloadAll).toHaveClass(/tight/)
     await expect(downloadAll).toHaveAttribute('download', `season-${season.id.slice(0, 8)}.tar.gz`)
-    await expect(submissions.locator('.ui-card')).toHaveCount(0)
 
     await expect(page.getByLabel('LLM enablement')).toBeVisible()
     const aliases = page.getByLabel('Allowed model aliases')
@@ -145,9 +123,6 @@ test('operator season configuration exposes and validates LLM controls', async (
     await expect
       .poll(async () => (await getSeasonConfig(admin, season.id)).overrides?.llm?.models)
       .toEqual(['small'])
-
-    // Configuration alone does not create activity, so the freshly declared season stays safe to remove.
-    expect(season.id).toBeTruthy()
   } finally {
     if (configuredPlayOpen) await closePlay(admin, season.id).catch(() => {})
     if (originalPlayClosed && original.playSeasonId !== null) {

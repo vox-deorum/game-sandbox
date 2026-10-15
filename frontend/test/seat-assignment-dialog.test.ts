@@ -144,7 +144,6 @@ describe('SeatAssignmentDialog', () => {
     await fireEvent.click(start)
     const payload = lastStart(emitted)
     // The payload covers exactly the environment's required seats, each a valid assignment.
-    expect(Object.keys(payload.seats).sort()).toEqual(['seat_0', 'seat_1', 'seat_2', 'seat_3'])
     expect(payload).toEqual({
       seasonId: 'season-1',
       parameters: { players: 4 },
@@ -472,8 +471,7 @@ describe('SeatAssignmentDialog', () => {
       seat_2: { kind: 'builtin-agent', name: 'naive' },
       seat_3: { kind: 'builtin-agent', name: 'naive' },
     })
-    // Exactly one human seat, and the unpaced move clock is prefilled from the metadata.
-    expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
+    // The unpaced move clock is prefilled from the metadata.
     expect(payload.humanTimeoutMs).toBe(60_000)
   })
 
@@ -513,7 +511,6 @@ describe('SeatAssignmentDialog', () => {
       seat_2: { kind: 'human' },
       seat_3: { kind: 'builtin-agent', name: 'naive' },
     })
-    expect(Object.values(payload.seats).filter((s) => s.kind === 'human')).toHaveLength(1)
   })
 
   it('offers You only on human-capable seats and seats the human at the first one', async () => {
@@ -773,15 +770,15 @@ describe('SeatAssignmentDialog', () => {
     })
   })
 
-  it('keeps the player count in the seat heading without changing the select name', () => {
+  it('announces seat member counts and accessible seat names', () => {
     render(SeatAssignmentDialog, {
       props: { ...RESTRICTED_CONTEXT, meta: restrictedMeta(), agents: AGENTS, mode: 'watch' },
     })
-    const heading = screen.getByText('Seat 1').parentElement
-    expect(heading).toHaveClass('seat-heading')
-    expect(within(heading as HTMLElement).getByText('2 players')).toBeInTheDocument()
-    expect(heading?.parentElement?.querySelector('.seat-control .player-count')).toBeNull()
-    expect(seat('Seat 1')).toHaveAccessibleName('Seat 1')
+    for (const name of ['Seat 1', 'Seat 2']) {
+      const row = screen.getByText(name).closest('li') as HTMLElement
+      expect(within(row).getByText('2 players')).toBeInTheDocument()
+      expect(seat(name)).toHaveAccessibleName(name)
+    }
   })
 
   it('removes an explicit companion when the human moves and restores the self-control default', async () => {

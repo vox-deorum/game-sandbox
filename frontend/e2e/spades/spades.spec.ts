@@ -699,12 +699,24 @@ test('a Spades season: two example agents, a scheduled partnership matchup, then
     await expect(page.getByText(/[1-9]\d* games run/)).toBeVisible()
 
     // The public Matchups table lists every game of the run, each with its seats and its own replay
-    // link. More than one game proves the multi-seat schedule expanded (three here: two ordered
-    // submission seatings plus the Naive-only baseline).
+    // link. Assert the complete schedule so either submitted seat order and the Naive-only baseline
+    // must all be present.
     const matchups = page.getByRole('region', { name: 'Matchups' })
     await expect(matchups).toBeVisible()
     const gameRows = matchups.getByTestId('game-row')
-    expect(await gameRows.count()).toBeGreaterThan(1)
+    await expect(gameRows).toHaveCount(3)
+    const playerSummaries: string[] = []
+    for (const row of await gameRows.all()) {
+      await expect(row.getByTestId('seat-score')).toHaveCount(2)
+      playerSummaries.push((await row.getByTestId('seat-name').allInnerTexts()).join(' · '))
+    }
+    expect(playerSummaries).toEqual(
+      expect.arrayContaining([
+        `${SPADES_OWNERS.counter} · ${SPADES_OWNERS.signaler}`,
+        `${SPADES_OWNERS.signaler} · ${SPADES_OWNERS.counter}`,
+        'Naive agent · Naive agent',
+      ]),
+    )
 
     // "Partners share the team score": open a scheduled game's replay and read the shared
     // cross-environment game-over standings card (frontend/src/components/GameOverCard.vue, built from

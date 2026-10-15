@@ -3,7 +3,12 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 
-import type { AgentRefWire, RateableAgent, SessionRatings as Ratings } from '../src/api/client.js'
+import type {
+  AgentRefWire,
+  RateableAgent,
+  RatingSource,
+  SessionRatings as Ratings,
+} from '../src/api/client.js'
 import { MeProvider } from '../src/me.js'
 import { signedInMe } from './helpers/me.js'
 
@@ -42,10 +47,13 @@ function view(agents: RateableAgent[], overrides: Partial<Ratings> = {}): Rating
 const SUBMISSION: AgentRefWire = { kind: 'submission', submission_id: 'sub-eve' }
 const NAIVE: AgentRefWire = { kind: 'builtin', name: 'naive' }
 
-function renderPanel(attribution: Partial<Pick<RecordingHeader, 'players' | 'seats'>> = {}) {
+function renderPanel(
+  attribution: Partial<Pick<RecordingHeader, 'players' | 'seats'>> = {},
+  source: RatingSource = { kind: 'session', id: 's1' },
+) {
   return render(MeProvider, {
     slots: {
-      default: () => h(SessionRatings, { source: { kind: 'session', id: 's1' }, ...attribution }),
+      default: () => h(SessionRatings, { source, ...attribution }),
     },
   })
 }
@@ -123,30 +131,6 @@ describe('SessionRatings', () => {
     expect(screen.queryByText('Rate the Agents')).toBeNull()
   })
 
-  it('renders a control per rateable agent, including Naive and none for the own agent', async () => {
-    vi.mocked(getSessionRatings).mockResolvedValue({
-      ok: true,
-      ratings: view([
-        agent({ agent: SUBMISSION, display_name: 'Your agent', is_own: true }),
-        agent({
-          agent: { kind: 'submission', submission_id: 'sub-bob' },
-          display_name: 'Agent 2',
-        }),
-        agent({ agent: NAIVE }),
-      ]),
-    })
-    renderPanel()
-
-    await screen.findByText('Rate the Agents')
-    expect(screen.getByTestId('ratings-reveal')).toHaveClass('ratings-reveal')
-    // The own agent is shown but has no rating control.
-    expect(screen.getByText('Your agent')).toBeInTheDocument()
-    expect(screen.getByText(/can't rate your own agent/)).toBeInTheDocument()
-    // The other submitted agent and the Naive baseline each get a 1-5 radiogroup.
-    expect(screen.getByRole('radiogroup', { name: /Rate Agent 2/ })).toBeInTheDocument()
-    expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
-  })
-
   it('renders a rating control per agent in a shared multi-agent (Hearts) session', async () => {
     // A four-seat Hearts session shared by three submitted agents and the Naive baseline. Each agent
     // is attributed and rated independently — the new per-agent-in-a-shared-session behavior.
@@ -177,8 +161,9 @@ describe('SessionRatings', () => {
     expect(screen.getByRole('radiogroup', { name: /Rate Agent 2/ })).toBeInTheDocument()
     expect(screen.getByRole('radiogroup', { name: /Rate Naive baseline/ })).toBeInTheDocument()
     // The caller's own seat in the shared session is shown but carries no rating control.
-    expect(screen.getByText('Your agent')).toBeInTheDocument()
+    const ownAgent = screen.getByText('Your agent').closest('li') as HTMLElement
     expect(screen.queryByRole('radiogroup', { name: /Rate Your agent/ })).toBeNull()
+    expect(within(ownAgent).queryByPlaceholderText('Tell the author what you thought')).toBeNull()
   })
 
   it('shows the season prompt once for the panel and the author prompt next to its own agent', async () => {
@@ -208,33 +193,37 @@ describe('SessionRatings', () => {
     expect(within(submissionItem).getByText('The author wants you to rate by:')).toBeInTheDocument()
     expect(within(submissionItem).queryByText('Judge overall skill.')).toBeNull()
     // Naive has no author, so it carries no per-agent prompt at all.
-    expect(within(naiveItem).queryByText(/From the author/)).toBeNull()
+    expect(within(naiveItem).queryByText('The author wants you to rate by:')).toBeNull()
     expect(within(naiveItem).queryByText('Judge overall skill.')).toBeNull()
   })
 
-  it('pre-fills a prior rating and submits a changed score, reflecting the saved state', async () => {
+  it.each([
+    ['session', { kind: 'session', id: 's1' }],
+    ['recording', { kind: 'recording', id: 'rec-1' }],
+  ] as const)('pre-fills and saves a changed rating and comment for a %s source', async (_kind, source) => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
-      ratings: view([agent({ agent: NAIVE, your_rating: 3 })]),
+      ratings: view([
+        agent({ agent: NAIVE, your_rating: 3, your_feedback: 'A useful prior note' }),
+      ]),
     })
     vi.mocked(submitRatings).mockResolvedValue({
       ok: true,
-      ratings: view([agent({ agent: NAIVE, your_rating: 5 })]),
+      ratings: view([agent({ agent: NAIVE, your_rating: 5, your_feedback: 'Still strong' })]),
     })
-    renderPanel()
+    renderPanel({}, source)
 
     const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
     expect(within(group).getByRole('button', { name: '3' })).toHaveAttribute('aria-pressed', 'true')
+    const comment = screen.getByPlaceholderText('Tell the author what you thought')
+    expect(comment).toHaveValue('A useful prior note')
 
-    // Change to 5, add the now-required comment, and save.
+    // Change to 5, update the existing comment, and save.
     await fireEvent.click(within(group).getByRole('button', { name: '5' }))
-    await fireEvent.update(
-      screen.getByPlaceholderText('Tell the author what you thought'),
-      'Still strong',
-    )
+    await fireEvent.update(comment, 'Still strong')
     await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
 
-    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith({ kind: 'session', id: 's1' }, [
+    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith(source, [
       { agent: NAIVE, score: 5, feedback: 'Still strong' },
     ])
     await screen.findByText('Saved ✓')
@@ -244,6 +233,7 @@ describe('SessionRatings', () => {
         'true',
       ),
     )
+    expect(comment).toHaveValue('Still strong')
   })
 
   it('keeps the panel read-only with no save control when the play window is closed', async () => {
@@ -317,29 +307,71 @@ describe('SessionRatings', () => {
     expect(save).toBeEnabled()
   })
 
-  it('submits the typed comment with its score in the batch', async () => {
+  it('does not save a scored rating with a whitespace-only comment', async () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
       ratings: view([agent({ agent: NAIVE })]),
     })
-    vi.mocked(submitRatings).mockResolvedValue({
+    renderPanel()
+
+    const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
+    await fireEvent.click(within(group).getByRole('button', { name: '4' }))
+    const comment = screen.getByPlaceholderText('Tell the author what you thought')
+    await fireEvent.update(comment, '  \n  ')
+
+    expect(screen.getByRole('button', { name: 'Save ratings' })).toBeDisabled()
+    expect(screen.getByText('Add a comment before saving.')).toBeInTheDocument()
+    expect(submitRatings).not.toHaveBeenCalled()
+  })
+
+  it('waits for a save, retains a refused draft, and lets the user retry', async () => {
+    vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
-      ratings: view([agent({ agent: NAIVE, your_rating: 5 })]),
+      ratings: view([agent({ agent: NAIVE })]),
     })
+    let resolveSave: ((result: Awaited<ReturnType<typeof submitRatings>>) => void) | undefined
+    vi.mocked(submitRatings).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve
+        }),
+    )
     renderPanel()
 
     const group = await screen.findByRole('radiogroup', { name: /Rate Naive baseline/ })
     await fireEvent.click(within(group).getByRole('button', { name: '5' }))
-    await fireEvent.update(
-      screen.getByPlaceholderText('Tell the author what you thought'),
-      'Steady under pressure',
-    )
-    await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
+    const comment = screen.getByPlaceholderText('Tell the author what you thought')
+    const longDraft = '😀'.repeat(1001)
+    await fireEvent.update(comment, longDraft)
+    const save = screen.getByRole<HTMLButtonElement>('button', { name: 'Save ratings' })
 
-    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith({ kind: 'session', id: 's1' }, [
-      { agent: NAIVE, score: 5, feedback: 'Steady under pressure' },
+    await fireEvent.click(save)
+    await waitFor(() => expect(submitRatings).toHaveBeenCalledTimes(1))
+    expect(save).toBeDisabled()
+    save.click()
+    expect(submitRatings).toHaveBeenCalledTimes(1)
+    expect(screen.queryByText('Saved ✓')).toBeNull()
+
+    resolveSave?.({ ok: false, reason: 'feedback_too_long' })
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'One comment is too long. Trim it and save again.',
+    )
+    expect(comment).toHaveValue(longDraft)
+    expect(screen.queryByText('Saved ✓')).toBeNull()
+
+    vi.mocked(submitRatings).mockResolvedValueOnce({
+      ok: true,
+      ratings: view([agent({ agent: NAIVE, your_rating: 5, your_feedback: 'Trimmed note' })]),
+    })
+    await fireEvent.update(comment, 'Trimmed note')
+    await fireEvent.click(save)
+
+    expect(submitRatings).toHaveBeenCalledTimes(2)
+    expect(submitRatings).toHaveBeenLastCalledWith({ kind: 'session', id: 's1' }, [
+      { agent: NAIVE, score: 5, feedback: 'Trimmed note' },
     ])
     await screen.findByText('Saved ✓')
+    expect(comment).toHaveValue('Trimmed note')
   })
 
   it('tracks the comment length live and flags an overlong comment', async () => {
@@ -351,14 +383,19 @@ describe('SessionRatings', () => {
 
     await screen.findByText('Rate the Agents')
     const textarea = screen.getByPlaceholderText('Tell the author what you thought')
-    await fireEvent.update(textarea, 'twelve chars')
-    const counter = screen.getByText('12 / 1000')
+    await fireEvent.update(textarea, '😀'.repeat(1000))
+    const counter = screen.getByText('1000 / 1000')
     expect(counter).toBeInTheDocument()
     expect(counter).not.toHaveClass('over')
+    expect(textarea).not.toHaveAttribute('aria-invalid', 'true')
 
-    await fireEvent.update(textarea, 'x'.repeat(1001))
+    await fireEvent.update(textarea, '😀'.repeat(1001))
     expect(screen.getByText('1001 / 1000')).toHaveClass('over')
-    expect(screen.getByText('Too long by 1 characters.')).toBeInTheDocument()
+    expect(screen.getByText('Too long by 1 character.')).toBeInTheDocument()
+    expect(textarea).toHaveAttribute('aria-invalid', 'true')
+
+    await fireEvent.update(textarea, '😀'.repeat(1002))
+    expect(screen.getByText('Too long by 2 characters.')).toBeInTheDocument()
   })
 
   it('reopens with a prior comment prefilled in the textarea', async () => {

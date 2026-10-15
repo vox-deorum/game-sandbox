@@ -1,5 +1,4 @@
-import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
-import { render, screen } from '@testing-library/vue'
+import { cleanup, render, screen } from '@testing-library/vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { h } from 'vue'
 import type { Board, Me } from '../src/api/client.js'
@@ -70,12 +69,22 @@ describe('LeaderboardBoards', () => {
     expect(link).toHaveAttribute('title', 'user-a')
   })
 
-  it('shows a signed-out viewer the stable hash label and hides the id tooltip', async () => {
+  it('redacts owner identity consistently for anonymous and guest viewers', async () => {
     viewAs(anonymousMe)
-    const link = await screen.findByRole('link', { name: maskedAgentLabel('user-a') })
-    // The profile link stays (URLs carry only the opaque id), but the raw-id tooltip is gone.
-    expect(link).toHaveAttribute('href', '/environments/flappy_bird/agents/user-a')
-    expect(link).not.toHaveAttribute('title')
+    const anonymousLink = await screen.findByRole('link', { name: /^Agent [a-z0-9]+$/i })
+    const anonymousLabel = anonymousLink.textContent
+    expect(anonymousLabel).toBeTruthy()
+    expect(anonymousLabel).not.toContain('Ada Lovelace')
+    expect(anonymousLabel).not.toContain('user-a')
+    expect(anonymousLink).toHaveAttribute('href', '/environments/flappy_bird/agents/user-a')
+    expect(anonymousLink).not.toHaveAttribute('title')
+
+    cleanup()
+    viewAs(signedInMe('guest-one', 'guest'))
+    const guestLink = await screen.findByRole('link', { name: /^Agent [a-z0-9]+$/i })
+    expect(guestLink.textContent).toBe(anonymousLabel)
+    expect(guestLink).toHaveAttribute('href', '/environments/flappy_bird/agents/user-a')
+    expect(guestLink).not.toHaveAttribute('title')
     expect(screen.queryByText('Ada Lovelace')).toBeNull()
   })
 })

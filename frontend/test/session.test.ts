@@ -16,7 +16,7 @@ import {
   spadesPlayers,
 } from './helpers/fixtures.js'
 import { anonymousMe, signedInMe } from './helpers/me.js'
-import { memoryRouter, renderWithMe } from './helpers/render.js'
+import { expectStandings, memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
 const HEADER = flappyHeader()
@@ -906,9 +906,14 @@ describe('SessionPage', () => {
     handlers.onSessionStatus?.('ended', 'terminated')
 
     const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
-    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
-    expect(within(gameOver).getByText('7')).toBeInTheDocument()
-    expect(within(gameOver).getByText('3')).toBeInTheDocument()
+    expectStandings(
+      gameOver,
+      [
+        ['S0', 'North', '7'],
+        ['S1', 'South', '3'],
+      ],
+      'S0 won',
+    )
   })
 
   it('drops malformed result scores before rendering standings', async () => {
@@ -1198,9 +1203,14 @@ describe('SessionPage', () => {
     await renderSession()
 
     const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
-    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
-    expect(within(gameOver).getByText('7')).toBeInTheDocument()
-    expect(within(gameOver).getByText('3')).toBeInTheDocument()
+    expectStandings(
+      gameOver,
+      [
+        ['S0', 'North', '7'],
+        ['S1', 'South', '3'],
+      ],
+      'S0 won',
+    )
   })
 
   it('gives a spectator no controls and no input', async () => {

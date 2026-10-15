@@ -13,7 +13,7 @@ import {
   spadesPlayers,
 } from './helpers/fixtures.js'
 import { anonymousMe, signedInMe } from './helpers/me.js'
-import { badgeTexts, memoryRouter, renderWithMe } from './helpers/render.js'
+import { badgeTexts, expectStandings, memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
 
@@ -137,7 +137,6 @@ describe('ReplayPage', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
     const controls = view.container.querySelector('.replay-controls')
     const renderer = view.container.querySelector('.renderer-host')
-    expect(controls?.querySelectorAll('.ui-button.tight')).toHaveLength(3)
     expect(
       controls !== null &&
         renderer !== null &&
@@ -424,7 +423,10 @@ describe('ReplayPage', () => {
     await waitFor(() => expect(drawn.at(-1)?.tick).toBe(2))
   })
 
-  it('shows the game-over card at the final frame of a completed run', async () => {
+  it.each([
+    'terminated',
+    'truncated',
+  ])('shows the game-over card at the final frame after %s', async (reason) => {
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     vi.mocked(listRecordings).mockResolvedValue([
       {
@@ -442,7 +444,7 @@ describe('ReplayPage', () => {
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
-        termination_reason: 'terminated',
+        termination_reason: reason,
         season_id: null,
       },
     ])
@@ -501,6 +503,10 @@ describe('ReplayPage', () => {
 
       await fireEvent.keyDown(stage, { key: 'End' })
       expect(await screen.findByRole('heading', { name: 'Rate the Agents' })).toBeInTheDocument()
+      const panel = screen.getByTestId('ratings-reveal')
+      expect(Boolean(panel.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+        true,
+      )
       expect(getSessionRatings).toHaveBeenCalledWith({ kind: 'recording', id: 'rec-1' })
 
       await fireEvent.keyDown(stage, { key: 'Home' })
@@ -528,7 +534,55 @@ describe('ReplayPage', () => {
       await waitFor(() => expect(listSeasons).toHaveBeenCalled())
       await fireEvent.keyDown(view.container.querySelector('.stage') as HTMLElement, { key: 'End' })
       await screen.findByRole('dialog', { name: 'Game over' })
+      expect(screen.queryByRole('heading', { name: 'Rate the Agents' })).toBeNull()
       expect(getSessionRatings).not.toHaveBeenCalled()
+    })
+    it('offers no rating panel at the final frame of a seasonless replay', async () => {
+      rateableReplay()
+      vi.mocked(listRecordings).mockResolvedValue([
+        {
+          id: 'rec-1',
+          header: flappyHeader(),
+          user_id: 'operator',
+          created_at: '2026-06-11T00:00:00.000Z',
+          pinned: false,
+          termination_reason: 'terminated',
+          season_id: null,
+        },
+      ])
+      vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+      const view = await renderReplay()
+      await screen.findByRole('button', { name: 'Play' })
+      await fireEvent.keyDown(view.container.querySelector('.stage') as HTMLElement, { key: 'End' })
+      await screen.findByRole('dialog', { name: 'Game over' })
+      expect(screen.queryByRole('heading', { name: 'Rate the Agents' })).toBeNull()
+      expect(getSessionRatings).not.toHaveBeenCalled()
+    })
+
+    it('reveals ratings for a final-tick deep link after season metadata arrives', async () => {
+      rateableReplay()
+      let resolveSeasons!: (seasons: PublicSeasonView[]) => void
+      vi.mocked(listSeasons).mockReturnValue(
+        new Promise((resolve) => {
+          resolveSeasons = resolve
+        }),
+      )
+      const view = await renderReplay('/replays/rec-1?t=3')
+      await waitFor(() => expect(drawn.at(-1)?.tick).toBe(3))
+      await waitFor(() => expect(listSeasons).toHaveBeenCalled())
+      expect(screen.queryByRole('heading', { name: 'Rate the Agents' })).toBeNull()
+      expect(getSessionRatings).not.toHaveBeenCalled()
+
+      resolveSeasons([openSeason()])
+      expect(await screen.findByRole('heading', { name: 'Rate the Agents' })).toBeInTheDocument()
+      expect(getSessionRatings).toHaveBeenCalledWith({ kind: 'recording', id: 'rec-1' })
+      const panel = screen.getByTestId('ratings-reveal')
+      const stage = view.container.querySelector('.stage') as HTMLElement
+      expect(Boolean(panel.compareDocumentPosition(stage) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(
+        true,
+      )
+      await fireEvent.keyDown(stage, { key: 'Home' })
+      expect(screen.getByRole('heading', { name: 'Rate the Agents' })).toBeInTheDocument()
     })
   })
 
@@ -580,12 +634,22 @@ describe('ReplayPage', () => {
     await fireEvent.keyDown(view.container.querySelector('.stage') as HTMLElement, { key: 'End' })
 
     const gameOver = await screen.findByRole('dialog', { name: 'Game over' })
-    expect(gameOver.querySelectorAll('.row')).toHaveLength(2)
-    expect(gameOver).toHaveTextContent('7')
-    expect(gameOver).toHaveTextContent('3')
+    expectStandings(
+      gameOver,
+      [
+        ['S0', 'North', '7'],
+        ['S1', 'South', '3'],
+      ],
+      'S0 won',
+    )
   })
 
-  it('shows no game-over card at the final frame when the run did not complete', async () => {
+  it.each([
+    null,
+    'stopped',
+    'episode_limit',
+    'error',
+  ])('shows no final standings for an incomplete run (%s)', async (reason) => {
     vi.mocked(getRecording).mockResolvedValue(replayRecording())
     vi.mocked(listRecordings).mockResolvedValue([
       {
@@ -603,12 +667,13 @@ describe('ReplayPage', () => {
         user_id: 'dev-user',
         created_at: '2026-06-11T00:00:00.000Z',
         pinned: false,
-        termination_reason: null,
+        termination_reason: reason,
         season_id: null,
       },
     ])
     const view = await renderReplay()
     await screen.findByRole('button', { name: 'Play' })
+    await screen.findByRole('button', { name: 'Pin recording' })
     const stage = view.container.querySelector('.stage') as HTMLElement
     await fireEvent.keyDown(stage, { key: 'End' })
     expect(drawn.at(-1)?.tick).toBe(3)
@@ -643,11 +708,8 @@ describe('ReplayPage', () => {
         season_id: null,
       },
     ])
-    const view = await renderReplay()
+    await renderReplay()
     const pinButton = await screen.findByRole('button', { name: 'Pin recording' })
-    const controls = view.container.querySelector('.replay-controls')
-    expect(controls?.lastElementChild).toBe(pinButton)
-    expect(controls?.querySelectorAll('.ui-button.tight')).toHaveLength(4)
     await fireEvent.click(pinButton)
     expect(vi.mocked(pinRecording)).toHaveBeenCalledWith('rec-1')
     expect(await screen.findByRole('button', { name: 'Pinned ✓' })).toBeInTheDocument()

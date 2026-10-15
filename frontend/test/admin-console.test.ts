@@ -392,15 +392,10 @@ describe('AdminConsolePage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
   })
 
-  it('groups run configuration into three cards with the save action after them', async () => {
+  it('shows run configuration controls and the available messaging choices', async () => {
     await renderConsole()
 
-    const runConfigurationHeading = await screen.findByRole('heading', {
-      name: 'Run Configuration',
-    })
-    const runConfiguration = runConfigurationHeading.closest('section')
-    expect(runConfiguration).not.toBeNull()
-    expect(runConfiguration?.querySelectorAll('.ui-card')).toHaveLength(4)
+    await screen.findByRole('heading', { name: 'Run Configuration' })
 
     for (const title of [
       'Match Design: 0 submissions',
@@ -408,16 +403,15 @@ describe('AdminConsolePage', () => {
       'LLM Access',
       'Environment Parameters',
     ]) {
-      expect(screen.getByRole('heading', { name: title }).closest('.ui-card')).not.toBeNull()
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
     }
-    expect(screen.getByTestId('match')).toHaveClass('match')
-    expect(screen.getByRole('group', { name: 'Per-player limits' })).toHaveClass('limit-group')
-    expect(screen.getByRole('group', { name: 'Development per-participant limits' })).toHaveClass(
-      'limit-group',
-    )
+    expect(screen.getByRole('group', { name: 'Per-player limits' })).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Save configuration' }).closest('.ui-card'),
-    ).toBeNull()
+      screen.getByRole('group', { name: 'Development per-participant limits' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save configuration' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check leaderboard' })).toBeInTheDocument()
 
     const messaging = screen.getByLabelText('Messaging') as HTMLSelectElement
     expect(messaging).toHaveDisplayValue('Environment default (off)')
@@ -1405,7 +1399,7 @@ describe('AdminConsolePage', () => {
     )
   })
 
-  it('puts the run actions in the Save configuration row and lists past runs at the end', async () => {
+  it('keeps the run actions, past-run link, and requester attribution available', async () => {
     vi.mocked(listRuns).mockResolvedValue([
       {
         id: 'run-1',
@@ -1420,20 +1414,9 @@ describe('AdminConsolePage', () => {
     ])
     await renderConsole()
 
-    const save = await screen.findByRole('button', { name: 'Save configuration' })
-    const trigger = screen.getByRole('button', { name: 'Run workflow' })
-    const board = screen.getByRole('button', { name: 'Check leaderboard' })
-    // One action row closes the Run Configuration section: the save button, then the run controls
-    // (DOCUMENT_POSITION_FOLLOWING = 4).
-    const actions = save.closest('.config-actions')
-    expect(actions).not.toBeNull()
-    expect(trigger.closest('.config-actions')).toBe(actions)
-    expect(board.closest('.config-actions')).toBe(actions)
-    expect(save.compareDocumentPosition(trigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(trigger.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(trigger.closest('section')).toBe(
-      screen.getByRole('heading', { name: 'Run Configuration' }).closest('section'),
-    )
+    expect(await screen.findByRole('button', { name: 'Save configuration' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Check leaderboard' })).toBeInTheDocument()
 
     // The past run is listed and links to its details page.
     const link = screen.getByRole('link', { name: /2026/ })

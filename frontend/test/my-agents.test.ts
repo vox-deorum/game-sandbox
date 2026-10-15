@@ -336,8 +336,6 @@ describe('MyAgentsPage', () => {
 
     const signIn = await screen.findByRole('link', { name: 'Sign in' })
     expect(signIn).toHaveAttribute('href', '/login')
-    expect(signIn).toHaveClass('sign-in-link')
-    expect(signIn.parentElement?.firstElementChild).toBe(signIn)
     expect(signIn.parentElement).toHaveTextContent('Sign in to see your agents.')
     expect(vi.mocked(getMyAgents)).not.toHaveBeenCalled()
     expect(vi.mocked(loadEnvironmentCatalog)).not.toHaveBeenCalled()

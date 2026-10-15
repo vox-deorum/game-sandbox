@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import UiConfirmDialog from '../../src/components/ui/UiConfirmDialog.vue'
@@ -55,11 +55,57 @@ describe('UiDialog', () => {
     expect(openRef.value).toBe(false)
   })
 
+  it('traps focus at both dialog edges and returns focus to the opener', async () => {
+    const openRef = ref(false)
+    const Harness = defineComponent(
+      () => () =>
+        h('div', [
+          h('button', { type: 'button', onClick: () => (openRef.value = true) }, 'Open dialog'),
+          h(
+            UiDialog,
+            {
+              open: openRef.value,
+              'onUpdate:open': (value: boolean) => (openRef.value = value),
+              title: 'Focus dialog',
+            },
+            {
+              default: () =>
+                h('div', [
+                  h('button', { type: 'button' }, 'First action'),
+                  h('button', { type: 'button' }, 'Last action'),
+                ]),
+            },
+          ),
+        ]),
+    )
+    render(Harness)
+    const opener = screen.getByRole('button', { name: 'Open dialog' })
+    opener.focus()
+    await fireEvent.click(opener)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Focus dialog' })
+    const first = within(dialog).getByRole('button', { name: 'Close' })
+    const last = within(dialog).getByRole('button', { name: 'Last action' })
+
+    last.focus()
+    await fireEvent.keyDown(last, { key: 'Tab' })
+    expect(first).toHaveFocus()
+
+    first.focus()
+    await fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    await fireEvent.keyDown(dialog, { key: 'Escape' })
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Focus dialog' })).not.toBeInTheDocument()
+      expect(opener).toHaveFocus()
+    })
+  })
+
   it('renders a header X close button and closes when it is clicked', async () => {
     const { Harness, openRef } = makeHarness(true)
     render(Harness)
     const close = await screen.findByRole('button', { name: 'Close' })
-    expect(close).toHaveClass('ui-dialog-close')
     await fireEvent.click(close)
     expect(openRef.value).toBe(false)
   })

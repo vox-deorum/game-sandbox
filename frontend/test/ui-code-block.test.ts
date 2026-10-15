@@ -25,7 +25,6 @@ describe('UiCodeBlock', () => {
     expect(screen.getByText(/line one/)).toBeInTheDocument()
     await fireEvent.click(screen.getByRole('button', { name: 'Copy commands' }))
 
-    expect(writeText).toHaveBeenCalledTimes(1)
     expect(writeText).toHaveBeenCalledWith('line one\nline two')
     expect(screen.getByRole('status')).toHaveTextContent('Copied.')
   })

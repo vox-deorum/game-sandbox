@@ -158,7 +158,7 @@ function commentHint(agent: RateableView): string | null {
   }
   const over = codePointLength(comment) - RATING_FEEDBACK_MAX
   if (over > 0) {
-    return `Too long by ${over} characters.`
+    return `Too long by ${over} ${over === 1 ? 'character' : 'characters'}.`
   }
   return null
 }

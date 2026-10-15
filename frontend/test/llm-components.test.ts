@@ -97,18 +97,19 @@ describe('LLM shared presentation', () => {
     )
   })
 
-  it('uses exact Request and Response headings, wraps code, and copies each body', async () => {
+  it('shows Request and Response headings and copies each body', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.assign(navigator, { clipboard: { writeText } })
-    const { container } = render(RequestResponseView, {
+    render(RequestResponseView, {
       props: { request: { prompt: 'hello' }, response: { answer: 'world' } },
     })
 
     expect(screen.getByRole('heading', { name: 'Request' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Response' })).toBeInTheDocument()
-    expect(container.querySelectorAll('pre')).toHaveLength(2)
     await fireEvent.click(screen.getByRole('button', { name: 'Copy request' }))
     expect(writeText).toHaveBeenCalledWith('{\n  "prompt": "hello"\n}')
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy response' }))
+    expect(writeText).toHaveBeenLastCalledWith('{\n  "answer": "world"\n}')
   })
 
   it('reports clipboard rejection without leaving stale success feedback', async () => {

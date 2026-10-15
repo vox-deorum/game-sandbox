@@ -280,8 +280,10 @@ describe('api client', () => {
     const body = JSON.parse(init.body as string)
     // The start contract carries exact seat ids, snake-case `submission_id` only on a submission,
     // and no derived `mode` field because the backend derives it from the assignment.
-    expect(body).toMatchObject({
+    expect(body).toEqual({
       env_id: 'hearts',
+      season_id: 'season-1',
+      parameters: { players: 4 },
       seed: 4242,
       human_timeout_ms: 2000,
       seats: {
@@ -291,9 +293,6 @@ describe('api client', () => {
         seat_3: { kind: 'builtin-agent', name: 'naive' },
       },
     })
-    expect(body).not.toHaveProperty('mode')
-    expect(body).not.toHaveProperty('submission_id')
-    expect(body.seats.seat_1).not.toHaveProperty('submissionId')
   })
 
   it('maps a human seat companion onto the nested wire assignment', async () => {
@@ -450,7 +449,16 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/environments/flappy%20bird/watch-agents')
   })
 
-  it('posts the ratings batch and maps a play-closed conflict', async () => {
+  it.each([
+    {
+      source: { kind: 'session' as const, id: 's1' },
+      url: '/api/sessions/s1/ratings',
+    },
+    {
+      source: { kind: 'recording' as const, id: 'r1' },
+      url: '/api/recordings/r1/ratings',
+    },
+  ])('posts the ratings batch to $url and maps a play-closed conflict', async ({ source, url }) => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({
         season_id: 'iter-1',
@@ -462,15 +470,15 @@ describe('api client', () => {
     const batch = [
       { agent: { kind: 'builtin' as const, name: 'naive' }, score: 4, feedback: 'good' },
     ]
-    expect((await submitRatings({ kind: 'session', id: 's1' }, batch)).ok).toBe(true)
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('/api/sessions/s1/ratings')
+    expect((await submitRatings(source, batch)).ok).toBe(true)
+    const [requestUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(requestUrl).toBe(url)
     expect(init.method).toBe('POST')
     expect(JSON.parse(init.body as string)).toEqual({ ratings: batch })
 
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ code: 'play_closed' }, 409))
-    expect(await submitRatings({ kind: 'session', id: 's1' }, batch)).toEqual({
+    expect(await submitRatings(source, batch)).toEqual({
       ok: false,
       reason: 'play_closed',
     })

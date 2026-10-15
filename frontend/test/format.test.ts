@@ -1,19 +1,30 @@
 import type { StepState } from '@game-sandbox/schema'
 import { describe, expect, it } from 'vitest'
 
-import { formatDate, formatDuration, formatPlayer, formatSeat } from '../src/lib/format.js'
+import {
+  formatDate,
+  formatDuration,
+  formatLogTime,
+  formatPlayer,
+  formatSeat,
+} from '../src/lib/format.js'
 import { decisionEntries, latestPlayerScores, toPlayerScores } from '../src/lib/state.js'
 import { formatScoreMap } from '../src/replay/summary.js'
+import { useFixedDateTimeFormat } from './helpers/intl.js'
 
 describe('formatDate', () => {
-  it('accepts an ISO string and a Date, formatting both the same, and passes null/undefined through', () => {
+  useFixedDateTimeFormat()
+
+  it('formats a UTC date in the selected locale and passes null/undefined through', () => {
     const iso = '2026-06-01T12:00:00.000Z'
-    // A Date (e.g. Better Auth's already-revived createdAt) formats identically to its ISO string, so
-    // callers need not round-trip a Date back through String().
-    expect(formatDate(new Date(iso))).toBe(formatDate(iso))
-    expect(formatDate(iso)).not.toBeNull()
+    expect(formatDate(iso)).toBe('Jun 1, 2026, 12:00 PM')
+    expect(formatDate(new Date(iso))).toBe('Jun 1, 2026, 12:00 PM')
     expect(formatDate(null)).toBeNull()
     expect(formatDate(undefined)).toBeNull()
+  })
+
+  it('formats log timestamps as a 24-hour clock in the viewer time zone', () => {
+    expect(formatLogTime(Date.parse('2026-06-01T09:07:05.000Z'))).toBe('09:07:05')
   })
 })
 

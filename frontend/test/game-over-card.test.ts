@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import GameOverCard from '../src/components/GameOverCard.vue'
+import { expectStandings } from './helpers/render.js'
 
 /** A terminal step state carrying a seat-indexed leaderboard overlay (the four-seat game-over shape). */
 function stepState(overlay: Record<string, unknown>): StepState {
@@ -20,8 +21,8 @@ describe('GameOverCard', () => {
     // A Spades board where every seat is the same baseline: without the seat tag the four rows would
     // all read "Naive agent" with no way to tell which is which.
     const state = stepState({
-      leaderboard_scores: [10, 5, 0, -5],
-      display_scores: [10, 5, 0, -5],
+      leaderboard_scores: [0, -5, 10, 5],
+      display_scores: [0, -5, 10, 5],
       terminal: true,
     })
     const header: RecordingHeader = {
@@ -47,22 +48,31 @@ describe('GameOverCard', () => {
       props: {
         state,
         header,
-        playerScores: { player_0: 10, player_1: 5, player_2: 0, player_3: -5 },
+        playerScores: { player_0: 0, player_1: -5, player_2: 10, player_3: 5 },
       },
     })
 
     // Ranked best-first. Rows are seats, so they carry seat tags ("S0") rather than player tags
     // ("P0"): the two are numbered independently and a seat may cover more than one player.
     const seats = screen.getAllByText(/^S\d$/).map((el) => el.textContent)
-    expect(seats).toEqual(['S0', 'S1', 'S2', 'S3'])
+    expect(seats).toEqual(['S2', 'S3', 'S0', 'S1'])
+    expectStandings(
+      document.body,
+      [
+        ['S2', 'Naive agent', '10'],
+        ['S3', 'Naive agent', '5'],
+        ['S0', 'Naive agent', '0'],
+        ['S1', 'Naive agent', '-5'],
+      ],
+      'S2 won',
+    )
     expect(screen.getAllByText('Naive agent')).toHaveLength(4)
-    expect(screen.getByText('S0 won')).toBeInTheDocument()
   })
 
   it('labels a wide seat and shows its player membership', () => {
     const state = stepState({
-      leaderboard_scores: [10, 5, 6],
-      display_scores: [10, 5, 6],
+      leaderboard_scores: [10, 7, 2],
+      display_scores: [10, 7, 2],
       terminal: true,
     })
     const header: RecordingHeader = {
@@ -82,12 +92,17 @@ describe('GameOverCard', () => {
     }
 
     render(GameOverCard, {
-      props: { state, header, playerScores: { player_0: 10, player_1: 5, player_2: 6 } },
+      props: { state, header, playerScores: { player_0: 10, player_1: 7, player_2: 2 } },
     })
 
-    expect(screen.getByText('S0')).toBeInTheDocument()
-    expect(screen.getByText('P0, P2')).toBeInTheDocument()
-    expect(screen.getByText("Alice's agent")).toBeInTheDocument()
+    expectStandings(
+      document.body,
+      [
+        ['S1', 'Naive agent', '7'],
+        ['S0', "Alice's agent", 'P0, P2', '6'],
+      ],
+      'S1 won',
+    )
   })
 
   it('keeps the canonical tie copy when opposing seats share the top score', () => {

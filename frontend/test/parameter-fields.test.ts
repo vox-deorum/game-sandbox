@@ -42,12 +42,57 @@ describe('ParameterFields', () => {
         'onUpdate:modelValue': update,
       },
     })
-    expect(screen.queryByLabelText('Seats')).toBeNull()
+    expect(screen.queryByLabelText('Players')).toBeNull()
     expect(screen.queryByRole('combobox', { name: 'Preset' })).toBeNull()
     expect(screen.getByLabelText('Pipe gap')).toHaveValue(90)
     expect(screen.getByLabelText('Wind')).toHaveDisplayValue('Off')
     await fireEvent.update(screen.getByLabelText('Pipe gap'), '110')
     expect(update).toHaveBeenLastCalledWith({ players: 1, pipe_gap: 110, enabled: false })
+  })
+
+  it('keeps a one-option multi-choice editable and preserves hidden parameter values', async () => {
+    const update = vi.fn<(value: Record<string, ParameterValue>) => void>()
+    const declarations: EnvParameter[] = [
+      {
+        name: 'players',
+        title: 'Players',
+        description: 'Players.',
+        type: 'int',
+        default: 1,
+        min: 1,
+        max: 1,
+      },
+      {
+        name: 'mode',
+        title: 'Mode',
+        description: 'Rules.',
+        type: 'choice',
+        default: 'standard',
+        choices: [{ value: 'standard', label: 'Standard' }],
+      },
+      {
+        name: 'extras',
+        title: 'Extras',
+        description: 'Optional rules.',
+        type: 'multi_choice',
+        default: [],
+        choices: [{ value: 'wind', label: 'Wind' }],
+      },
+    ]
+    render(ParameterFields, {
+      props: {
+        declarations,
+        modelValue: { players: 1, mode: 'standard', extras: [] },
+        'onUpdate:modelValue': update,
+      },
+    })
+
+    expect(screen.queryByLabelText('Players')).toBeNull()
+    expect(screen.queryByLabelText('Mode')).toBeNull()
+    const wind = screen.getByRole('checkbox', { name: 'Wind' })
+    expect(wind).toBeEnabled()
+    await fireEvent.click(wind)
+    expect(update).toHaveBeenLastCalledWith({ players: 1, mode: 'standard', extras: ['wind'] })
   })
 
   it('explains a blank numeric value and reports the form invalid', async () => {

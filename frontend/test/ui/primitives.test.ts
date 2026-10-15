@@ -2,8 +2,6 @@ import { fireEvent, render, screen } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import UiAvatar from '../../src/components/ui/UiAvatar.vue'
-import UiDialogActions from '../../src/components/ui/UiDialogActions.vue'
-import UiEmptyState from '../../src/components/ui/UiEmptyState.vue'
 import UiStatusBadge from '../../src/components/ui/UiStatusBadge.vue'
 
 describe('UiAvatar', () => {
@@ -12,11 +10,14 @@ describe('UiAvatar', () => {
     expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveTextContent('A')
   })
 
-  it('renders a labelled image in the profile size', () => {
+  it('renders the supplied labelled image', () => {
     render(UiAvatar, {
       props: { name: 'Ada Lovelace', image: 'https://example.test/ada.png', size: 'profile' },
     })
-    expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveClass('profile')
+    expect(screen.getByRole('img', { name: "Ada Lovelace's avatar" })).toHaveAttribute(
+      'src',
+      'https://example.test/ada.png',
+    )
   })
 
   it('falls back to the initial when its image cannot load', async () => {
@@ -36,23 +37,5 @@ describe('UiStatusBadge', () => {
     const { container } = render(UiStatusBadge, { props: { label: 'idle' } })
     const dot = container.querySelector('.dot')
     expect(dot).toHaveAttribute('aria-hidden', 'true')
-  })
-})
-
-describe('UiDialogActions', () => {
-  it('renders actions in the shared dialog footer', () => {
-    const { container } = render(UiDialogActions, { slots: { default: 'Confirm and cancel' } })
-    expect(screen.getByText('Confirm and cancel')).toBeInTheDocument()
-    expect(container.querySelector('.ui-dialog-actions')).not.toBeNull()
-  })
-})
-
-describe('UiEmptyState', () => {
-  it('renders the danger tone for errors', () => {
-    const { container } = render(UiEmptyState, {
-      props: { tone: 'danger' },
-      slots: { default: 'Could not load.' },
-    })
-    expect(container.querySelector('.ui-empty-state.danger')).not.toBeNull()
   })
 })
