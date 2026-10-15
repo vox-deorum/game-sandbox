@@ -345,12 +345,17 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     // The public Matchups table lists every game of the run, each with its seats and its own replay
     // link: how a reader reaches each game of a multi-seat matchup that the board's one representative
     // replay per agent cannot show. Assert the exact three-game schedule and both submitted seat orders
-    // so an unordered scheduler regression cannot pass on the Naive baseline alone.
+    // so an unordered scheduler regression cannot pass on the Naive baseline alone. Every seat of a
+    // finished game also shows its score from the run's recorded results.
     const matchups = page.getByRole('region', { name: 'Matchups' })
     await expect(matchups).toBeVisible()
     const gameRows = matchups.getByTestId('game-row')
     await expect(gameRows).toHaveCount(3)
-    const playerSummaries = await gameRows.locator('td:nth-child(2)').allInnerTexts()
+    const playerSummaries: string[] = []
+    for (const row of await gameRows.all()) {
+      await expect(row.getByTestId('seat-score')).toHaveCount(4)
+      playerSummaries.push((await row.getByTestId('seat-name').allInnerTexts()).join(' · '))
+    }
     expect(playerSummaries).toEqual(
       expect.arrayContaining([
         `${HEARTS_OWNERS.oracle} · ${HEARTS_OWNERS.moonshot} · Naive agent · Naive agent`,

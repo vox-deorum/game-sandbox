@@ -544,6 +544,39 @@ describe('retention', () => {
         season_id: null,
       })
     })
+
+    it('lists a tournament game recording under its run’s season', async () => {
+      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+      const run = await createRunOrFail(storage, season.id, 'op', () => ({
+        parametersSnapshot: { players: 1 },
+        scheduledGames: [
+          {
+            match_index: 0,
+            game_index: 0,
+            seed: 1,
+            seats: [{ kind: 'builtin', name: 'naive' }],
+            seat_plan: 'solo',
+          },
+        ],
+        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+      }))
+      const game = (await storage.listRunGames(run.id))[0]
+      if (game === undefined) {
+        throw new Error('expected a scheduled game')
+      }
+      await storage.attachRunGameRecording(game.id, 'tournament')
+      await writeRecording({
+        id: 'tournament',
+        user_id: 'op',
+        env_id: 'flappy_bird',
+        created_at: ago(1),
+        termination_reason: 'terminated',
+      })
+
+      const byId = new Map((await makeRetention().list()).map((r) => [r.id, r]))
+      // No session claims it, so the season comes from the run the game belongs to.
+      expect(byId.get('tournament')).toMatchObject({ season_id: season.id })
+    })
   })
 
   describe('pinning', () => {

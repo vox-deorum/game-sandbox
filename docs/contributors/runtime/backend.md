@@ -52,7 +52,7 @@ Browser
 | `src/submission/` | Source resolution, validation, image build, worker, snapshots, eviction |
 | `src/admin/` | Operator-only season and workflow API |
 | `src/leaderboards/` | Public season and leaderboard reads |
-| `src/ratings/` | Session ratings and author prompts |
+| `src/ratings/` | Session and replay ratings and author prompts |
 | `src/llm/` | OpenAI-compatible proxy, scoped grants, admission, retries, token estimation, and scope availability |
 | `src/storage/llm/` | Execution-scoped successful-call telemetry and development ledgers |
 | `src/workflow/` | Workflow runner interface, events, and recovery |
@@ -277,7 +277,8 @@ Routes live under `/api`. Request bodies use Fastify JSON-schema validation, and
 | `/api/environments/:envId/agents/:ownerId/feedback` | Agent owner's anonymous peer feedback |
 | `/api/seasons` | Public season index |
 | `/api/environments/:envId/leaderboards` | Current and historical released boards |
-| `/api/sessions/:sessionId/ratings` | Read and write session ratings |
+| `/api/sessions/:id/ratings` | Read and write a finished session's ratings |
+| `/api/recordings/:id/ratings` | Read and write a replay's ratings |
 | `/api/seasons/:seasonId/agent-rating-prompt` | Author prompt |
 | `/api/admin/seasons/:id/ratings` | Season peer ratings grouped by agent and rater |
 | `/api/llm-development/seasons` and `/api/seasons/:seasonId/llm-development*` | Development-key eligibility, usage, call history, and key rotation |
@@ -305,9 +306,13 @@ Unreleased board data is available only through operator-gated routes. Public bo
 
 ## Ratings
 
+Ratings arrive through two routes that share one validation path: `/api/sessions/:id/ratings` for a finished session and `/api/recordings/:id/ratings` for a replay. Both write the same effective rating, stored once per season, rater, and agent, so rating from a session or from a replay updates one row.
+
+A recording's origin decides its season: the session that produced it, or, for a tournament game that no session claims, the run game that recorded it and that run's season. Storage owns this rule in `src/storage/kysely/recordings.ts`: `findRecordingOrigin` serves the rating routes and the replay stream's name masking, and `listRecordingSeasons` applies the same rule in bulk for the replay listing. A recording a session produced follows its session's rules. A tournament game's recording is rateable once the game is no longer pending or running.
+
 The recording header's `players` map is the authority for which agents took part. The backend resolves submission ownership from storage and ignores human entries.
 
-Rating writes validate the full batch before saving anything and reject any batch that breaks the [leaderboard specification's](../../specs/leaderboard.md) rating rules: score range, session membership, self-rating, unfinished or unattributed sessions, and a closed play window. Each rating also carries a required written comment, validated with the shared `codePointLength` helper: it is trimmed, blank-after-trim is refused (`empty_feedback`), and a comment over 1,000 code points is refused (`feedback_too_long`).
+Rating writes validate the full batch before saving anything and reject any batch that breaks the [leaderboard specification's](../../specs/leaderboard.md) rating rules: score range, membership (the rated agent is in the game), self-rating, unfinished or unattributed games, and a closed play window. Refusals carry stable codes on both routes: `no_such_session` or `no_such_recording` (404) for a missing subject, and `not_rateable` or `not_finished` (409) for an unrateable or unfinished game. `play_closed` refuses writes once the season's play window closes. Each rating also carries a required written comment, validated with the shared `codePointLength` helper: it is trimmed, blank-after-trim is refused (`empty_feedback`), and a comment over 1,000 code points is refused (`feedback_too_long`).
 
 Rerating upserts both the score and the comment. The rating read returns the caller's prior score and comment so the panel prefills, and closed play returns a read-only view with prior ratings and prompts.
 

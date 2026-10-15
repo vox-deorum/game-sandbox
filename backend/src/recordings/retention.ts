@@ -55,9 +55,9 @@ export interface RecordingListing {
   /** The winning seat id (`seat_0`, `seat_1`, ...), -1 for a tie, or null without ranking data. */
   winner_id: string | -1 | null
   /**
-   * The season the producing session competed in, joined from the session row, so a replay carries
-   * the play-open (or submission) season it belongs to. Null when no session claims the recording
-   * (foreign debris).
+   * The season the recording belongs to: the producing session's season when a session claims it,
+   * else the season of the tournament run whose game recorded it. Null when neither applies (foreign
+   * debris).
    */
   season_id: string | null
 }
@@ -272,22 +272,21 @@ export class Retention {
    * matched against their header's environment.
    */
   async list(filter?: { env?: string }): Promise<RecordingListing[]> {
-    const [volume, rows, sessions] = await Promise.all([
+    const [volume, rows, sessions, seasonByRecording] = await Promise.all([
       this.recordings.list(),
       this.storage.listRecordings(),
       this.storage.listSessions(),
+      this.storage.listRecordingSeasons(),
     ])
     const rowById = new Map(rows.map((row) => [row.id, row]))
-    // The termination reason and season live on the session, keyed back to the recording it produced.
-    // Only an ended session carries a reason; a running session's recording lists with a null reason
-    // until it ends, then falls back to the recording row's own reason (set for an automated run that
-    // had no session). The season is the play-open (or submission) season the session competed in.
+    // The termination reason lives on the session, keyed back to the recording it produced. Only an
+    // ended session carries a reason; a running session's recording lists with a null reason until it
+    // ends, then falls back to the recording row's own reason (set for an automated run that had no
+    // session). The season comes from the recording's origin (its session, else its tournament run).
     const reasonByRecording = new Map<string, string | null>()
-    const seasonByRecording = new Map<string, string | null>()
     for (const session of sessions) {
       if (session.recording_id !== null) {
         reasonByRecording.set(session.recording_id, session.termination_reason)
-        seasonByRecording.set(session.recording_id, session.season_id)
       }
     }
 

@@ -4,7 +4,11 @@ There are two leaderboards per environment per season: an automated board and a 
 
 ## Leaderboard views
 
+The page shows the selected season's header and boards, then (operators only) the season's peer ratings, then the **All Seasons** table, then the **Matchups** table.
+
 A selected season's leaderboard header shows release time and board counts as plain metadata, followed by a compact **Settings** summary from the server-resolved settings returned with that season's boards. An unreleased operator preview uses a semantic badge for its exceptional state. The summary uses the same default-to-season differences as the environment overview and My Submissions. The **All Seasons** section is a clean season index and does not repeat the selected season's settings.
+
+The **Matchups** table lists every game of the latest completed run. Each seat in its Players column shows its normalized per-game episode score after the agent name, where higher is better. The top non-failed score is bold, and every seat tied at the top is bold. A seat that failed carries a **failed** tag, and its score is the environment's forfeit score. The operator's run-details page lists a run's games the same way. A game shows scores only once every seat has a result, so a pending, running, or interrupted game shows names only. See [Frontend](frontend.md#feedback) for rating a listed game from its replay while play is open.
 
 ## Automated board
 
@@ -53,7 +57,7 @@ Matches keep their frozen seeds and assignments but may finish out of schedule o
 
 ## Human-feedback board
 
-The human-feedback board shows each agent's mean rating, population standard deviation, and rating count. An agent needs at least three ratings to be ranked, so a single early rating cannot rank it. If the agent's author has set a rating prompt, the board shows a shortened version beneath the agent's name and the full text on hover. These three statistics are all the board shows; the written comments never appear on it. They are private to the agent's owner once the season is released and to the operator. See [Frontend](frontend.md) and [Seasons](seasons.md#public-gates).
+The human-feedback board shows each agent's mean rating, population standard deviation, and rating count. Ratings come from finished sessions and from replays, both only while the season's play window is open, and a rater holds one effective rating per agent per season no matter where it was written. An agent needs at least three ratings to be ranked, so a single early rating cannot rank it. If the agent's author has set a rating prompt, the board shows a shortened version beneath the agent's name and the full text on hover. These three statistics are all the board shows; the written comments never appear on it. They are private to the agent's owner once the season is released and to the operator. See [Frontend](frontend.md) and [Seasons](seasons.md#public-gates).
 
 Each rating combines a score on a 1 to 5 scale with a required written comment of up to 1,000 Unicode code points. Two optional prompts may guide the score:
 
@@ -62,4 +66,4 @@ Each rating combines a score on a 1 to 5 scale with a required written comment o
 
 The prompts only guide the score; the comment is the rater's own words.
 
-Users cannot rate their own submitted agents. A named builtin is rateable only in a session that also contains a submitted agent. Each builtin keeps a separate rating identity through its stable name. See [Frontend](frontend.md).
+Users cannot rate their own submitted agents. A named builtin is rateable only in a game that also contains a submitted agent, whether that game is a session or a replay. Each builtin keeps a separate rating identity through its stable name. See [Frontend](frontend.md).

@@ -402,7 +402,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
          redirect: they may watch a public session through its end without signing in. -->
     <SessionRatings
       v-if="status === 'ended' && me.me?.user != null"
-      :session-id="id"
+      :source="{ kind: 'session', id }"
       :players="header?.players"
       :seats="header?.seats"
     />

@@ -37,6 +37,8 @@ Chat is stored in the state for each step, as [Communication](communication.md) 
 
 A naturally completed session or automated match ends its replay with the final-standings card, ranked by seat. The termination reason comes from the live session; an automated match has no user-facing live-session row, so it stores the reason directly. A stopped, timed-out, or crashed run shows no final standings. See [Frontend](frontend.md) for how a replay presents results.
 
+A recording belongs to the season of the session that produced it. An automated match's recording, which has no session, belongs to the season of its run. While that season's play window is open, a signed-in viewer of the replay can rate the agents in it. See [Frontend](frontend.md#feedback) for the rating panel on a replay.
+
 ## Retention
 
 Every session is recorded. Storage remains bounded:

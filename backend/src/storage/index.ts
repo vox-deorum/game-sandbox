@@ -145,6 +145,15 @@ export interface NewRecordingInput {
   llm_session_id?: string | null
 }
 
+/**
+ * Where a recording came from, which fixes the season it belongs to: the session that produced it, or
+ * (for a tournament game, which no session claims) the scheduled game that recorded it, with that
+ * game's run season and status.
+ */
+export type RecordingOrigin =
+  | { kind: 'session'; season_id: string | null; session: Session }
+  | { kind: 'run_game'; season_id: string; status: GameStatus }
+
 /** Why an atomic recording-cleanup claim did or did not remove the current row. */
 export type RecordingCleanupClaimResult =
   | 'claimed'
@@ -441,6 +450,13 @@ export interface Storage {
   listRecordings(): Promise<Recording[]>
   /** One recording row by id, or `undefined` (a directory with no row, foreign debris). */
   getRecording(id: string): Promise<Recording | undefined>
+  /**
+   * The session or tournament game a recording came from, and so its season; the one owner of that
+   * rule for masking, listing, and rating. Undefined when neither claims the recording.
+   */
+  findRecordingOrigin(recordingId: string): Promise<RecordingOrigin | undefined>
+  /** Recording id to season id by {@link findRecordingOrigin}'s rule, for every claimed recording. */
+  listRecordingSeasons(): Promise<Map<string, string | null>>
   /** Set or clear a recording's pinned flag. */
   setRecordingPinned(id: string, pinned: boolean): Promise<boolean>
   /** How many recordings a user has pinned; backs the pin-quota guard. */
@@ -600,7 +616,7 @@ export interface Storage {
   attachRunGameRecording(gameId: string, recordingId: string): Promise<void>
   /** Record one per-seat game result with its concrete agent columns and timing aggregates. */
   recordGameResult(input: RecordGameResultInput): Promise<GameResult>
-  /** Every game result for a run (joined through its games), for the board aggregation. */
+  /** Every game result for a run (joined through its games), ordered by game then seat. */
   listGameResultsByRun(runId: string): Promise<GameResult[]>
 
   /** Rewrite a season's placement rows for a newly completed run (supersedes the prior set). */

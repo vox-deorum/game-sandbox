@@ -453,6 +453,7 @@ describe('LeaderboardsPage', () => {
               game_index: 0,
               seed: 0,
               seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+              results: [],
               status: 'completed',
               recording_id: 'rec-a',
               started_at: null,
@@ -468,8 +469,49 @@ describe('LeaderboardsPage', () => {
     await renderAt('/environments/flappy_bird/leaderboards')
 
     const gameRow = await screen.findByTestId('game-row')
-    const playersCell = within(gameRow).getByText('alice')
+    const playersCell = within(gameRow).getByText('alice').closest('td')
     expect(playersCell).toHaveAttribute('title', 'alice')
+  })
+
+  it('lists All Seasons above Matchups, with each seat scored in the Players column', async () => {
+    vi.mocked(listSeasons).mockResolvedValue([
+      { ...season({ id: 'iter-1', label: 'Week 1' }), submission_count: 2, game_count: 1 },
+    ])
+    vi.mocked(getEnvironmentLeaderboards).mockResolvedValue({
+      current: {
+        season: season(),
+        settings: settings(),
+        board: {
+          ...board(),
+          games: [
+            {
+              id: 'g1',
+              run_id: 'run-1',
+              match_index: 0,
+              game_index: 0,
+              seed: 0,
+              seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+              results: [{ seat_index: 0, episode_score: 12, failed: false }],
+              status: 'completed',
+              recording_id: 'rec-a',
+              started_at: null,
+              ended_at: null,
+              error: null,
+            },
+          ],
+        },
+      },
+      submission_season_id: null,
+      play_season_id: null,
+    })
+    await renderAt('/environments/flappy_bird/leaderboards')
+
+    const seasons = await screen.findByRole('region', { name: 'Seasons' })
+    const matchups = screen.getByRole('region', { name: 'Matchups' })
+    expect(
+      seasons.compareDocumentPosition(matchups) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(within(matchups).getByTestId('seat-score')).toHaveTextContent('12')
   })
 
   it('requests only the released listing for a non-operator', async () => {

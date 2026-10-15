@@ -2,7 +2,9 @@
  * The participant rating API (Stage 6.6), Docker-free with `:memory:` storage and recordings written
  * straight to a temp volume. These prove the rateable-agent set is read from the finished recording
  * header, the own-agent owner is resolved server-side, the whole payload validates before any write,
- * and the three session gates (no season, no recording, closed play) reject as specified.
+ * and the three session gates (no season, no recording, closed play) reject as specified. The
+ * recording routes rate a replay: a tournament game against its run's season once it has finished,
+ * and a session's recording through that session's rules.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs'
@@ -18,15 +20,17 @@ import { buildApp } from '../../src/app.js'
 import { Retention } from '../../src/recordings/retention.js'
 import { RecordingsStore } from '../../src/recordings/store.js'
 import { Orchestrator } from '../../src/session/orchestrator.js'
-import type { Season, Storage } from '../../src/storage/index.js'
+import type { GameStatus, Season, Storage } from '../../src/storage/index.js'
 import type { TestUsers } from '../support/auth.js'
 import { FakeDriver } from '../support/fake-driver.js'
 import {
+  createRunOrFail,
   makeConfig,
   makeEnvironments,
   makeSubmissionDeps,
   openTestStack,
 } from '../support/harness.js'
+import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
 
 const ENV_ID = 'flappy_bird'
 
@@ -152,6 +156,33 @@ describe('rating API', () => {
       await storage.markEnded(id, 'terminated', new Date().toISOString())
     }
     return id
+  }
+
+  /** Schedule a one-game run in the season whose game recorded `recordingId`, at the given status. */
+  async function tournamentGame(
+    seasonId: string,
+    recordingId: string,
+    status: GameStatus = 'completed',
+  ): Promise<void> {
+    const run = await createRunOrFail(storage, seasonId, 'operator', () => ({
+      parametersSnapshot: { players: 1 },
+      scheduledGames: [
+        {
+          match_index: 0,
+          game_index: 0,
+          seed: 1,
+          seats: [{ kind: 'builtin', name: 'naive' }],
+          seat_plan: 'solo',
+        },
+      ],
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    const game = (await storage.listRunGames(run.id))[0]
+    if (game === undefined) {
+      throw new Error('expected a scheduled game')
+    }
+    await storage.attachRunGameRecording(game.id, recordingId)
+    await storage.setRunGameStatus(game.id, status)
   }
 
   function hash(s: string): number {
@@ -529,7 +560,7 @@ describe('rating API', () => {
     expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
   })
 
-  it('returns session_not_rateable for a null-season session', async () => {
+  it('returns not_rateable for a null-season session', async () => {
     const recId = await writeRecording('flappy_bird-f', {
       player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
@@ -540,10 +571,10 @@ describe('rating API', () => {
       headers: BOB,
     })
     expect(res.statusCode).toBe(409)
-    expect((res.json() as { code: string }).code).toBe('session_not_rateable')
+    expect((res.json() as { code: string }).code).toBe('not_rateable')
   })
 
-  it('returns session_not_finished when no recording is on the volume', async () => {
+  it('returns not_finished when no recording is on the volume', async () => {
     const season = await playOpenSeason()
     const sessionId = await seedSession({ seasonId: season.id, recordingId: null })
     const res = await app.inject({
@@ -555,10 +586,10 @@ describe('rating API', () => {
       },
     })
     expect(res.statusCode).toBe(409)
-    expect((res.json() as { code: string }).code).toBe('session_not_finished')
+    expect((res.json() as { code: string }).code).toBe('not_finished')
   })
 
-  it('returns session_not_finished for a session that has not ended yet', async () => {
+  it('returns not_finished for a session that has not ended yet', async () => {
     const season = await playOpenSeason()
     const recId = await writeRecording('flappy_bird-run', {
       player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
@@ -575,7 +606,7 @@ describe('rating API', () => {
       headers: BOB,
     })
     expect(res.statusCode).toBe(409)
-    expect((res.json() as { code: string }).code).toBe('session_not_finished')
+    expect((res.json() as { code: string }).code).toBe('not_finished')
   })
 
   it('rejects writes against a closed play window and marks reads read-only', async () => {
@@ -867,5 +898,151 @@ describe('rating API', () => {
     expect(denied.statusCode).toBe(409)
     expect((denied.json() as { code: string }).code).toBe('submissions_closed')
     expect(await storage.getAgentRatingPrompt(season.id, aliceId)).toBeUndefined()
+  })
+  describe('rating a replay', () => {
+    it('rates a finished tournament game against its run season', async () => {
+      const season = await playOpenSeason()
+      const subId = await submissionFor(season.id, aliceId)
+      const recId = await writeRecording('flappy_bird-t1', {
+        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      })
+      await tournamentGame(season.id, recId)
+
+      const read = await app.inject({
+        method: 'GET',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: BOB,
+      })
+      expect(read.statusCode).toBe(200)
+      expect(read.json()).toMatchObject({ season_id: season.id, read_only: false })
+
+      const write = await app.inject({
+        method: 'POST',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: BOB,
+        payload: {
+          ratings: [
+            { agent: { kind: 'submission', submission_id: subId }, score: 2, feedback: 'slow' },
+          ],
+        },
+      })
+      expect(write.statusCode).toBe(200)
+      const stored = await storage.getRating(season.id, bobId, {
+        kind: 'submission',
+        submission_id: subId,
+        user_id: aliceId,
+      })
+      expect(stored).toMatchObject({ score: 2, feedback: 'slow' })
+    })
+
+    it('refuses a tournament game that is still running', async () => {
+      const season = await playOpenSeason()
+      const subId = await submissionFor(season.id, aliceId)
+      const recId = await writeRecording('flappy_bird-t2', {
+        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      })
+      await tournamentGame(season.id, recId, 'running')
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: BOB,
+      })
+      expect(res.statusCode).toBe(409)
+      expect((res.json() as { code: string }).code).toBe('not_finished')
+    })
+
+    it('refuses a closed season and the caller own agent', async () => {
+      const season = await playOpenSeason()
+      const subId = await submissionFor(season.id, aliceId)
+      const recId = await writeRecording('flappy_bird-t3', {
+        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      })
+      await tournamentGame(season.id, recId)
+      const payload = {
+        ratings: [
+          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'mine' },
+        ],
+      }
+
+      const own = await app.inject({
+        method: 'POST',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: ALICE,
+        payload,
+      })
+      expect(own.statusCode).toBe(400)
+      expect((own.json() as { code: string }).code).toBe('own_agent')
+
+      await storage.setPlayStatus(season.id, 'closed')
+      const closed = await app.inject({
+        method: 'POST',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: BOB,
+        payload,
+      })
+      expect(closed.statusCode).toBe(409)
+      expect((closed.json() as { code: string }).code).toBe('play_closed')
+      expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
+    })
+
+    it('rates a session recording through its session season', async () => {
+      const season = await playOpenSeason()
+      const subId = await submissionFor(season.id, aliceId)
+      const recId = await writeRecording('flappy_bird-t4', {
+        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      })
+      await seedSession({ seasonId: season.id, recordingId: recId })
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: BOB,
+      })
+      expect(res.statusCode).toBe(200)
+      expect(res.json()).toMatchObject({ season_id: season.id })
+    })
+
+    it('404s a missing recording and refuses one with no season', async () => {
+      const missing = await app.inject({
+        method: 'GET',
+        url: '/api/recordings/flappy_bird-none/ratings',
+        headers: BOB,
+      })
+      expect(missing.statusCode).toBe(404)
+      expect((missing.json() as { code: string }).code).toBe('no_such_recording')
+
+      const recId = await writeRecording('flappy_bird-t5', {
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      })
+      const seasonless = await app.inject({
+        method: 'GET',
+        url: `/api/recordings/${recId}/ratings`,
+        headers: BOB,
+      })
+      expect(seasonless.statusCode).toBe(409)
+      expect((seasonless.json() as { code: string }).code).toBe('not_rateable')
+    })
+
+    it('masks a tournament replay stream for a non-operator while play is open', async () => {
+      const season = await playOpenSeason()
+      const subId = await submissionFor(season.id, aliceId)
+      const recId = await writeRecording('flappy_bird-t6', {
+        player_0: {
+          kind: 'agent',
+          label: "alice's agent",
+          submission_id: subId,
+          user: aliceId,
+        },
+      })
+      await tournamentGame(season.id, recId)
+      const label = async (headers: Record<string, string>): Promise<string> => {
+        const res = await app.inject({ method: 'GET', url: `/api/recordings/${recId}`, headers })
+        const header = JSON.parse(res.body.split('\n')[0] ?? '{}') as {
+          players: Record<string, { label: string }>
+        }
+        return header.players.player_0?.label ?? ''
+      }
+      expect(await label(BOB)).toBe('Agent')
+      expect(await label(OPERATOR)).toBe("alice's agent")
+    })
   })
 })

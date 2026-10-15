@@ -195,18 +195,6 @@ watch(requestedSeasonId, load, { immediate: true })
       <SeasonRatings :season-id="season.id" />
     </section>
 
-    <!-- The matchup table: every game of the latest completed run, so a reader can reach each game of a
-         multi-seat matchup, where the boards link only one representative replay per agent. Static (no
-         live status overlay), and only shown when the released run produced games. -->
-    <section
-      v-if="board !== null && board.games.length > 0"
-      class="leaderboards-matchups"
-      aria-label="Matchups"
-    >
-      <h2>Matchups</h2>
-      <GamesTable :games="board.games" :live-status="{}" />
-    </section>
-
     <section v-if="history.length > 0" class="leaderboards-history" aria-label="Seasons">
       <h2>All Seasons</h2>
       <table class="history-table">
@@ -234,6 +222,18 @@ watch(requestedSeasonId, load, { immediate: true })
           </tr>
         </tbody>
       </table>
+    </section>
+
+    <!-- The matchup table: every game of the latest completed run, so a reader can reach each game of a
+         multi-seat matchup, where the boards link only one representative replay per agent. Static (no
+         live status overlay), and only shown when the released run produced games. -->
+    <section
+      v-if="board !== null && board.games.length > 0"
+      class="leaderboards-matchups"
+      aria-label="Matchups"
+    >
+      <h2>Matchups</h2>
+      <GamesTable :games="board.games" :live-status="{}" />
     </section>
   </section>
 </template>

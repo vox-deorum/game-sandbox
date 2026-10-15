@@ -325,11 +325,17 @@ describe('public leaderboard API', () => {
           board: {
             automated: Array<{ agent: Record<string, unknown>; llm_weighted_cost: number | null }>
             human: Array<{ agent: Record<string, unknown> }>
-            games: Array<{ seats: Array<Record<string, unknown>> }>
+            games: Array<{ seats: Array<Record<string, unknown>>; results: unknown[] }>
           }
         }
       }
     ).current.board
+
+    // Each matchup row carries its per-seat scores in seat order.
+    expect(board.games.map((game) => game.results)).toEqual([
+      [{ seat_index: 0, episode_score: 5, failed: false }],
+      [{ seat_index: 0, episode_score: 4, failed: false }],
+    ])
 
     const automatedKnown = board.automated.find((row) => row.agent.user_id === aliceId)
     expect(automatedKnown?.agent).toMatchObject({ user_id: aliceId, user_name: 'alice' })

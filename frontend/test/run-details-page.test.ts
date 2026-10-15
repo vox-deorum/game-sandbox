@@ -39,6 +39,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
         game_index: 0,
         seed: 0,
         seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+        results: [],
         status: 'running',
         recording_id: 'rec-9',
         started_at: null,
@@ -52,6 +53,7 @@ function runView(overrides: Partial<RunView> = {}): RunView {
         game_index: 1,
         seed: 1,
         seats: [{ kind: 'builtin', name: 'naive' }],
+        results: [],
         status: 'pending',
         recording_id: null,
         started_at: null,
@@ -119,12 +121,12 @@ describe('RunDetailsPage', () => {
     expect(screen.getAllByRole('link', { name: 'Replay' })).toHaveLength(1)
     // No user_name on either game's seats, so the players summary falls back to the stable id (the
     // second game's lone seat is the ownerless Naive baseline, in its own row).
-    const playersCell = screen.getByText('alice')
+    const playersCell = screen.getByText('alice').closest('td')
     expect(playersCell).toBeInTheDocument()
     // GamesTable never applies blind masking (admin run games), so the cell also carries the
     // submission's stable id as a tooltip.
     expect(playersCell).toHaveAttribute('title', 'alice')
-    const naiveCell = screen.getByText('naive')
+    const naiveCell = screen.getByText('naive').closest('td')
     expect(naiveCell).toBeInTheDocument()
     // An all-Naive seat list has no submission id to show, so its cell carries no tooltip.
     expect(naiveCell).not.toHaveAttribute('title')
@@ -159,6 +161,7 @@ describe('RunDetailsPage', () => {
                 user_name: 'Alice Nguyen',
               },
             ],
+            results: [],
             status: 'running',
             recording_id: 'rec-9',
             started_at: null,
@@ -170,7 +173,7 @@ describe('RunDetailsPage', () => {
     )
     await renderPage()
 
-    const playersCell = await screen.findByText('Alice Nguyen')
+    const playersCell = (await screen.findByText('Alice Nguyen')).closest('td')
     expect(screen.queryByText('alice', { exact: true })).toBeNull()
     // The display name shows, but the stable id still rides as the cell's tooltip.
     expect(playersCell).toHaveAttribute('title', 'alice')

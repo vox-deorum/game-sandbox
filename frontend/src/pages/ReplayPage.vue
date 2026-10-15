@@ -5,15 +5,19 @@
   schema package's Ajv reader is Node-only); a header version this viewer does not understand becomes a
   friendly "needs a newer viewer" message.
 
-  The viewer is draw-only by construction: the renderer mounts with no sendAction and no controlled
+  The stage is draw-only by construction: the renderer mounts with no sendAction and no controlled
   players. The transport is fully keyboard operable from the stage region (space toggles play, the arrows
   step, Home and End jump), and the scrubber exposes its position to assistive tech. The decision log
   replays from the same recorded states the transport walks, staying in sync with the scrubber.
+
+  While the recording's season is open for play, a signed-in viewer who reaches the final frame gets the
+  same rating panel the session page shows after a session ends, revealed above the stage. It stays once
+  revealed, so scrubbing back to rewatch a moment does not take it away.
 -->
 <script setup lang="ts">
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
-import { computed, nextTick, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onMounted, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -32,6 +36,7 @@ import GameThread from '../components/GameThread.vue'
 import ReplayTransport from '../components/ReplayTransport.vue'
 import SeatAttribution from '../components/SeatAttribution.vue'
 import RunMetadata from '../components/RunMetadata.vue'
+import SessionRatings from '../components/SessionRatings.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
@@ -107,15 +112,26 @@ const { noRenderer, aspectRatio, mount: mountRenderer, render: renderState } = u
   meta,
 })
 const { state: replayState, transport, init: initTransport, onKeydown } = useReplayTransport()
+const atFinalFrame = computed(
+  () => replayState.value.total > 0 && replayState.value.index >= replayState.value.total - 1,
+)
 // The leaderboard appears once the playhead reaches the final frame of a run that finished play
 // (mirrors the live page), and stays dismissable. The producing session's termination reason comes
 // with the listing; a run that was stopped or crashed shows no final standings, and an unclaimed
 // recording (no listing reason) stays conservative and shows none.
 const showGameOver = computed(
-  () =>
-    replayState.value.total > 0 &&
-    replayState.value.index >= replayState.value.total - 1 &&
-    isCompletedOutcome(listingEntry.value?.termination_reason ?? null),
+  () => atFinalFrame.value && isCompletedOutcome(listingEntry.value?.termination_reason ?? null),
+)
+// The rating panel is revealed the first time the viewer reaches the final frame and never hidden
+// again, and only while the season is open for play (a closed or seasonless replay offers none).
+const ratingsRevealed = ref(false)
+watch(atFinalFrame, (reached) => {
+  if (reached) {
+    ratingsRevealed.value = true
+  }
+})
+const showRatings = computed(
+  () => ratingsRevealed.value && seasonPlayable.value === true && me.me?.user != null,
 )
 const { pinned, busy: pinBusy, error: pinError, toggle: togglePin } = usePinning(id)
 // Fail closed: anyone not confirmed an operator (including an unresolved identity) sees the blind
@@ -373,6 +389,14 @@ onMounted(async () => {
     <UiEmptyState v-if="llmTelemetryUnavailable" tone="danger">
       LLM cost data unavailable.
     </UiEmptyState>
+
+    <!-- Feedback for the replayed agents, revealed above the stage at the final frame. -->
+    <SessionRatings
+      v-if="showRatings"
+      :source="{ kind: 'recording', id }"
+      :players="header?.players"
+      :seats="header?.seats"
+    />
 
     <StageFrame
       v-model:fullscreen="stageFullscreen"

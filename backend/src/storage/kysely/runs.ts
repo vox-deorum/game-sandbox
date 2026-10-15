@@ -340,6 +340,8 @@ export async function listGameResultsByRun(
     .innerJoin('season_run_games', 'season_run_games.id', 'game_results.game_id')
     .where('season_run_games.run_id', '=', runId)
     .selectAll('game_results')
+    .orderBy('game_results.game_id', 'asc')
+    .orderBy('game_results.seat_index', 'asc')
     .execute()
   return rows.map(decodeGameResult)
 }

@@ -173,6 +173,7 @@ function runningRun(): RunView {
         game_index: 0,
         seed: 0,
         seats: [{ kind: 'submission', submission_id: 's1', user_id: 'alice' }],
+        results: [],
         status: 'pending',
         recording_id: null,
         started_at: null,

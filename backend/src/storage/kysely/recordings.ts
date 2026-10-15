@@ -4,8 +4,9 @@
  */
 import type { Kysely } from 'kysely'
 
-import type { NewRecordingInput } from '../index.js'
+import type { NewRecordingInput, RecordingOrigin } from '../index.js'
 import type { Database, Recording } from '../schema.js'
+import { decodeSession } from './sessions.js'
 
 export async function createRecording(
   db: Kysely<Database>,
@@ -57,4 +58,66 @@ export async function countPinnedByUser(db: Kysely<Database>, userId: string): P
     .where('pinned', '=', 1)
     .executeTakeFirst()
   return Number(row?.count ?? 0)
+}
+
+/**
+ * Where a recording came from: the session that produced it, else the scheduled tournament game that
+ * recorded it. A session claim wins, so a recording always has one origin and one season.
+ */
+export async function findRecordingOrigin(
+  db: Kysely<Database>,
+  recordingId: string,
+): Promise<RecordingOrigin | undefined> {
+  const session = await db
+    .selectFrom('sessions')
+    .selectAll()
+    .where('recording_id', '=', recordingId)
+    .executeTakeFirst()
+  if (session !== undefined) {
+    const decoded = decodeSession(session)
+    return { kind: 'session', season_id: decoded.season_id, session: decoded }
+  }
+  const game = await runGameRecordings(db)
+    .where('season_run_games.recording_id', '=', recordingId)
+    .executeTakeFirst()
+  return game === undefined
+    ? undefined
+    : { kind: 'run_game', season_id: game.season_id, status: game.status }
+}
+
+/**
+ * Recording id to season id for every recording a session or a tournament game claims, by the same
+ * session-first rule as {@link findRecordingOrigin}, for the replay listing.
+ */
+export async function listRecordingSeasons(
+  db: Kysely<Database>,
+): Promise<Map<string, string | null>> {
+  const [games, sessions] = await Promise.all([
+    runGameRecordings(db).where('season_run_games.recording_id', 'is not', null).execute(),
+    db
+      .selectFrom('sessions')
+      .select(['recording_id', 'season_id'])
+      .where('recording_id', 'is not', null)
+      .execute(),
+  ])
+  const seasons = new Map<string, string | null>()
+  // Sessions are applied last so their claim wins.
+  for (const row of [...games, ...sessions]) {
+    if (row.recording_id !== null) {
+      seasons.set(row.recording_id, row.season_id)
+    }
+  }
+  return seasons
+}
+
+/** Scheduled games joined to their run, with the recording, season, and game status. */
+function runGameRecordings(db: Kysely<Database>) {
+  return db
+    .selectFrom('season_run_games')
+    .innerJoin('season_runs', 'season_runs.id', 'season_run_games.run_id')
+    .select([
+      'season_run_games.recording_id as recording_id',
+      'season_runs.season_id as season_id',
+      'season_run_games.status as status',
+    ])
 }

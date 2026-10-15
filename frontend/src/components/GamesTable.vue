@@ -1,8 +1,13 @@
 <!--
   A run's scheduled games as a table. Each row identifies the game (m{match}·g{game}·seed), names the
-  agents in its seats, shows its status — the live overlay while a run streams, else the persisted
-  status — and links to the game's replay once a recording exists. A game with no recording yet (still
-  pending/running, or a failure that produced none) shows an em dash.
+  agents in its seats with each seat's score once the game has recorded results, shows its status (the
+  live overlay while a run streams, else the persisted status), and links to the game's replay once a
+  recording exists. A game with no recording yet (still pending/running, or a failure that produced
+  none) shows an em dash.
+
+  Scores are the normalized per-game scores (higher is better), so the top scorer, bold, is the game's
+  winner (every seat tied for the top is bold). A seat that failed carries a "failed" tag; its score is
+  the environment's forfeit score and never counts as the top.
 
   Shared chrome: the operator run-details page renders it with a live per-game status overlay, and the
   public released-season page renders it as a static matchup table (no overlay) so a reader can reach
@@ -12,8 +17,10 @@
 import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { RouterLink } from 'vue-router'
 
-import type { BoardAgentRef, GameStatus, RunGameView } from '../api/client.js'
+import type { BoardAgentRef, GameSeatResult, GameStatus, RunGameView } from '../api/client.js'
+import { formatScore } from '../lib/format.js'
 import { hidesNames, useMe } from '../me.js'
+import UiBadge from './ui/UiBadge.vue'
 import UiStatusBadge from './ui/UiStatusBadge.vue'
 
 const props = defineProps<{
@@ -51,9 +58,31 @@ function seatLabel(seat: BoardAgentRef): string {
   return seat.label ?? seat.name
 }
 
-/** A compact one-line summary of the agents in a game's seats, in seat order. */
-function playersSummary(seats: BoardAgentRef[]): string {
-  return seats.length === 0 ? '—' : seats.map(seatLabel).join(' · ')
+/** One seat of a game as the Players cell shows it: its label, its result, and whether it won. */
+interface SeatEntry {
+  label: string
+  result: GameSeatResult | undefined
+  winner: boolean
+}
+
+/** The seats of a game in seat order, each paired with its result and marked when it scored the top. */
+function seatEntries(game: RunGameView): SeatEntry[] {
+  const results = new Map(game.results.map((result) => [result.seat_index, result]))
+  const scores = game.results.filter((result) => !result.failed).map((r) => r.episode_score)
+  const top = scores.length === 0 ? undefined : Math.max(...scores)
+  return game.seats.map((seat, index) => {
+    const result = results.get(index)
+    return {
+      label: seatLabel(seat),
+      result,
+      winner: result !== undefined && !result.failed && result.episode_score === top,
+    }
+  })
+}
+
+/** A per-game score: whole numbers as they are, fractional ones to two decimals. */
+function seatScore(score: number): string {
+  return Number.isInteger(score) ? String(score) : formatScore(score)
 }
 
 /** The stable ids behind a game's submission seats, joined for a tooltip. Never shown to a masked
@@ -80,7 +109,23 @@ function playersTitle(seats: BoardAgentRef[]): string | undefined {
     <tbody>
       <tr v-for="game in games" :key="game.id" data-testid="game-row">
         <td class="game-id">m{{ game.match_index }} · g{{ game.game_index }} · seed {{ game.seed }}</td>
-        <td :title="playersTitle(game.seats)">{{ playersSummary(game.seats) }}</td>
+        <td :title="playersTitle(game.seats)">
+          <span v-if="game.seats.length === 0">—</span>
+          <template v-for="(entry, index) in seatEntries(game)" :key="index">
+            <span v-if="index > 0" class="separator"> · </span>
+            <span class="seat" :class="{ winner: entry.winner }" data-testid="game-seat">
+              <span data-testid="seat-name">{{ entry.label }}</span>
+              <template v-if="entry.result !== undefined">
+                {{ ' ' }}<span class="seat-score" data-testid="seat-score">{{
+                  seatScore(entry.result.episode_score)
+                }}</span>
+              </template>
+              <template v-if="entry.result?.failed">
+                {{ ' ' }}<UiBadge variant="accent">failed</UiBadge>
+              </template>
+            </span>
+          </template>
+        </td>
         <td>
           <UiStatusBadge
             :tone="STATUS_TONE[gameStatus(game.game_index, game.status)]"
@@ -137,5 +182,17 @@ function playersTitle(seats: BoardAgentRef[]): string | undefined {
 
 .muted {
   color: var(--color-text-muted);
+}
+
+.separator {
+  color: var(--color-text-muted);
+}
+
+.seat-score {
+  font-variant-numeric: tabular-nums;
+}
+
+.winner {
+  font-weight: 600;
 }
 </style>

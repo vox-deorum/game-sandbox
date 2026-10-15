@@ -398,22 +398,43 @@ describe('api client', () => {
 
   it('reads a session rating view and maps the unrateable conflicts onto typed reasons', async () => {
     const view = {
-      session_id: 's1',
       season_id: 'iter-1',
       read_only: false,
       season_prompt: null,
       agents: [],
     }
     stubFetch(async () => jsonResponse(view))
-    expect(await getSessionRatings('s1')).toEqual({ ok: true, ratings: view })
+    expect(await getSessionRatings({ kind: 'session', id: 's1' })).toEqual({
+      ok: true,
+      ratings: view,
+    })
 
     vi.unstubAllGlobals()
-    stubFetch(async () => jsonResponse({ code: 'session_not_finished' }, 409))
-    expect(await getSessionRatings('s1')).toEqual({ ok: false, reason: 'not_finished' })
+    stubFetch(async () => jsonResponse({ code: 'not_finished' }, 409))
+    expect(await getSessionRatings({ kind: 'session', id: 's1' })).toEqual({
+      ok: false,
+      reason: 'not_finished',
+    })
 
     vi.unstubAllGlobals()
-    stubFetch(async () => jsonResponse({ code: 'session_not_rateable' }, 409))
-    expect(await getSessionRatings('s1')).toEqual({ ok: false, reason: 'not_rateable' })
+    stubFetch(async () => jsonResponse({ code: 'not_rateable' }, 409))
+    expect(await getSessionRatings({ kind: 'session', id: 's1' })).toEqual({
+      ok: false,
+      reason: 'not_rateable',
+    })
+  })
+
+  it('reads ratings for a recording from the recording route', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({
+        season_id: 'iter-1',
+        read_only: false,
+        season_prompt: null,
+        agents: [],
+      }),
+    )
+    expect((await getSessionRatings({ kind: 'recording', id: 'rec-1' })).ok).toBe(true)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/recordings/rec-1/ratings')
   })
 
   it('reads the viewer-specific anonymous watch-agent list', async () => {
@@ -432,7 +453,6 @@ describe('api client', () => {
   it('posts the ratings batch and maps a play-closed conflict', async () => {
     const fetchMock = stubFetch(async () =>
       jsonResponse({
-        session_id: 's1',
         season_id: 'iter-1',
         read_only: false,
         season_prompt: null,
@@ -442,7 +462,7 @@ describe('api client', () => {
     const batch = [
       { agent: { kind: 'builtin' as const, name: 'naive' }, score: 4, feedback: 'good' },
     ]
-    expect((await submitRatings('s1', batch)).ok).toBe(true)
+    expect((await submitRatings({ kind: 'session', id: 's1' }, batch)).ok).toBe(true)
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
     expect(url).toBe('/api/sessions/s1/ratings')
     expect(init.method).toBe('POST')
@@ -450,18 +470,27 @@ describe('api client', () => {
 
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ code: 'play_closed' }, 409))
-    expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'play_closed' })
+    expect(await submitRatings({ kind: 'session', id: 's1' }, batch)).toEqual({
+      ok: false,
+      reason: 'play_closed',
+    })
   })
 
   it('maps the empty-feedback and overlong-comment refusals onto their typed reasons', async () => {
     const batch = [{ agent: { kind: 'builtin' as const, name: 'naive' }, score: 4, feedback: '' }]
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ code: 'empty_feedback' }, 400))
-    expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'empty_feedback' })
+    expect(await submitRatings({ kind: 'session', id: 's1' }, batch)).toEqual({
+      ok: false,
+      reason: 'empty_feedback',
+    })
 
     vi.unstubAllGlobals()
     stubFetch(async () => jsonResponse({ code: 'feedback_too_long' }, 400))
-    expect(await submitRatings('s1', batch)).toEqual({ ok: false, reason: 'feedback_too_long' })
+    expect(await submitRatings({ kind: 'session', id: 's1' }, batch)).toEqual({
+      ok: false,
+      reason: 'feedback_too_long',
+    })
   })
 
   it("reads an owner's anonymous peer feedback from the environment agent route", async () => {

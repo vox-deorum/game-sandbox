@@ -12,7 +12,7 @@ import {
   spadesMeta,
   spadesPlayers,
 } from './helpers/fixtures.js'
-import { signedInMe } from './helpers/me.js'
+import { anonymousMe, signedInMe } from './helpers/me.js'
 import { badgeTexts, memoryRouter, renderWithMe } from './helpers/render.js'
 
 const META = flappyMeta({ description: '' })
@@ -53,6 +53,7 @@ vi.mock('../src/api/client.js', () => ({
   listSeasons: vi.fn(async () => []),
   watchAgentNumbers: vi.fn(async () => ({})),
   getMe: vi.fn(),
+  getSessionRatings: vi.fn(),
   pinRecording: vi.fn(async () => ({ ok: true })),
   unpinRecording: vi.fn(async () => ({ ok: true })),
 }))
@@ -63,6 +64,7 @@ import {
   getMe,
   getRecording,
   getRecordingLlm,
+  getSessionRatings,
   listRecordings,
   listSeasons,
   pinRecording,
@@ -116,6 +118,7 @@ describe('ReplayPage', () => {
     vi.mocked(listRecordings).mockResolvedValue([])
     vi.mocked(listSeasons).mockResolvedValue([])
     vi.mocked(watchAgentNumbers).mockResolvedValue({})
+    vi.mocked(getSessionRatings).mockResolvedValue({ ok: false, reason: 'not_rateable' })
   })
 
   it('loads, mounts a draw-only renderer, and renders transport controls', async () => {
@@ -450,6 +453,83 @@ describe('ReplayPage', () => {
     expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
     await fireEvent.keyDown(stage, { key: 'End' })
     expect(await screen.findByRole('dialog', { name: 'Game over' })).toBeInTheDocument()
+  })
+
+  describe('rating panel', () => {
+    /** A finished tournament replay in `season-1`, carrying one rateable submitted agent. */
+    function rateableReplay(): void {
+      vi.mocked(getRecording).mockResolvedValue(replayRecording())
+      vi.mocked(listRecordings).mockResolvedValue([
+        {
+          id: 'rec-1',
+          header: flappyHeader(),
+          user_id: 'operator',
+          created_at: '2026-06-11T00:00:00.000Z',
+          pinned: false,
+          termination_reason: 'terminated',
+          season_id: 'season-1',
+        },
+      ])
+      vi.mocked(getSessionRatings).mockResolvedValue({
+        ok: true,
+        ratings: {
+          season_id: 'season-1',
+          read_only: false,
+          season_prompt: null,
+          agents: [
+            {
+              agent: { kind: 'submission', submission_id: 'sub-1' },
+              display_name: 'Agent 1',
+              is_own: false,
+              author_prompt: null,
+              your_rating: null,
+              your_feedback: null,
+            },
+          ],
+        },
+      })
+    }
+
+    it('reveals at the final frame of an open season and stays when scrubbing back', async () => {
+      rateableReplay()
+      vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+      const view = await renderReplay()
+      await screen.findByRole('button', { name: 'Play' })
+      const stage = view.container.querySelector('.stage') as HTMLElement
+      await waitFor(() => expect(listSeasons).toHaveBeenCalled())
+      expect(screen.queryByRole('heading', { name: 'Rate the Agents' })).toBeNull()
+
+      await fireEvent.keyDown(stage, { key: 'End' })
+      expect(await screen.findByRole('heading', { name: 'Rate the Agents' })).toBeInTheDocument()
+      expect(getSessionRatings).toHaveBeenCalledWith({ kind: 'recording', id: 'rec-1' })
+
+      await fireEvent.keyDown(stage, { key: 'Home' })
+      expect(screen.getByRole('heading', { name: 'Rate the Agents' })).toBeInTheDocument()
+    })
+
+    it('offers no panel once the season has closed play', async () => {
+      rateableReplay()
+      vi.mocked(listSeasons).mockResolvedValue([openSeason({ play_status: 'closed' })])
+      const view = await renderReplay()
+      await screen.findByRole('button', { name: 'Play' })
+      await waitFor(() => expect(listSeasons).toHaveBeenCalled())
+      await fireEvent.keyDown(view.container.querySelector('.stage') as HTMLElement, { key: 'End' })
+      await screen.findByRole('dialog', { name: 'Game over' })
+      expect(screen.queryByRole('heading', { name: 'Rate the Agents' })).toBeNull()
+      expect(getSessionRatings).not.toHaveBeenCalled()
+    })
+
+    it('offers no panel to an anonymous visitor', async () => {
+      vi.mocked(getMe).mockResolvedValue(anonymousMe)
+      rateableReplay()
+      vi.mocked(listSeasons).mockResolvedValue([openSeason()])
+      const view = await renderReplay()
+      await screen.findByRole('button', { name: 'Play' })
+      await waitFor(() => expect(listSeasons).toHaveBeenCalled())
+      await fireEvent.keyDown(view.container.querySelector('.stage') as HTMLElement, { key: 'End' })
+      await screen.findByRole('dialog', { name: 'Game over' })
+      expect(getSessionRatings).not.toHaveBeenCalled()
+    })
   })
 
   it('uses latest recorded scores when the final replay state omits an inactive player', async () => {

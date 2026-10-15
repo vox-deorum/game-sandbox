@@ -31,7 +31,6 @@ function agent(overrides: Partial<RateableAgent> & { agent: AgentRefWire }): Rat
 
 function view(agents: RateableAgent[], overrides: Partial<Ratings> = {}): Ratings {
   return {
-    session_id: 's1',
     season_id: 'iter-1',
     read_only: false,
     season_prompt: null,
@@ -45,7 +44,9 @@ const NAIVE: AgentRefWire = { kind: 'builtin', name: 'naive' }
 
 function renderPanel(attribution: Partial<Pick<RecordingHeader, 'players' | 'seats'>> = {}) {
   return render(MeProvider, {
-    slots: { default: () => h(SessionRatings, { sessionId: 's1', ...attribution }) },
+    slots: {
+      default: () => h(SessionRatings, { source: { kind: 'session', id: 's1' }, ...attribution }),
+    },
   })
 }
 
@@ -233,7 +234,7 @@ describe('SessionRatings', () => {
     )
     await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
 
-    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [
+    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith({ kind: 'session', id: 's1' }, [
       { agent: NAIVE, score: 5, feedback: 'Still strong' },
     ])
     await screen.findByText('Saved ✓')
@@ -335,7 +336,7 @@ describe('SessionRatings', () => {
     )
     await fireEvent.click(screen.getByRole('button', { name: 'Save ratings' }))
 
-    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith('s1', [
+    expect(vi.mocked(submitRatings)).toHaveBeenCalledWith({ kind: 'session', id: 's1' }, [
       { agent: NAIVE, score: 5, feedback: 'Steady under pressure' },
     ])
     await screen.findByText('Saved ✓')

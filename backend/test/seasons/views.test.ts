@@ -45,6 +45,24 @@ describe('season view agent-reference decoding', () => {
     ])
   })
 
+  it('reports results only once every seat has one', () => {
+    const twoSeats = {
+      ...game,
+      seats: JSON.stringify([
+        { kind: 'builtin', name: 'naive' },
+        { kind: 'builtin', name: 'random' },
+      ]),
+    }
+    const first = { seat_index: 0, episode_score: 3, failed: false }
+    const second = { seat_index: 1, episode_score: 1, failed: true }
+    expect(
+      runGameView(twoSeats, undefined, undefined, new Map([['game-1', [first]]])).results,
+    ).toEqual([])
+    expect(
+      runGameView(twoSeats, undefined, undefined, new Map([['game-1', [first, second]]])).results,
+    ).toEqual([first, second])
+  })
+
   it('rejects malformed game and snapshot references', () => {
     expect(() => runGameView({ ...game, seats: JSON.stringify([{ kind: 'builtin' }]) })).toThrow(
       /valid agent references/,

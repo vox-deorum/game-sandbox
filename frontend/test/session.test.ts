@@ -952,7 +952,6 @@ describe('SessionPage', () => {
     vi.mocked(getSessionRatings).mockResolvedValue({
       ok: true,
       ratings: {
-        session_id: 's1',
         season_id: 'flappy_bird-iter-1',
         read_only: false,
         season_prompt: 'Judge survival.',

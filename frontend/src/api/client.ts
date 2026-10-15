@@ -735,7 +735,7 @@ export type AgentRefWire =
   | { kind: 'submission'; submission_id: string }
   | { kind: 'builtin'; name: string }
 
-/** One rateable agent in a session, as the rating read/write returns it. */
+/** One rateable agent in a game, as the rating read/write returns it. */
 export interface RateableAgent {
   agent: AgentRefWire
   /** Viewer-appropriate name, anonymous while a non-operator rates a playable season. */
@@ -750,9 +750,8 @@ export interface RateableAgent {
   your_feedback: string | null
 }
 
-/** The rating read/write payload for one session: the season prompt and the per-agent view. */
+/** The rating read/write payload for one game: the season prompt and the per-agent view. */
 export interface SessionRatings {
-  session_id: string
   season_id: string
   /** True when the season's play window is closed: prior ratings show, but no new write is taken. */
   read_only: boolean
@@ -762,17 +761,29 @@ export interface SessionRatings {
 }
 
 /**
- * Reading a finished session's ratings: the view, or a reason it is not rateable. An old session with
- * no season and one without a finalized recording both come back unrateable, so the post-session UI
- * simply renders nothing rather than an error.
+ * What a rating is given from: a finished live session, or a replay's recording (a tournament game or
+ * a session's recording). Either way the rating counts toward the game's season.
+ */
+export type RatingSource = { kind: 'session' | 'recording'; id: string }
+
+/** The ratings URL for a source. */
+function ratingsPath(source: RatingSource): string {
+  const collection = source.kind === 'session' ? 'sessions' : 'recordings'
+  return `/${collection}/${encodeURIComponent(source.id)}/ratings`
+}
+
+/**
+ * Reading a finished game's ratings: the view, or a reason it is not rateable. A game with no season
+ * and one without a finalized recording both come back unrateable, so the rating panel simply renders
+ * nothing rather than an error.
  */
 export type SessionRatingsResult =
   | { ok: true; ratings: SessionRatings }
   | { ok: false; reason: 'not_rateable' | 'not_finished' | 'failed' }
 
-/** Read the caller's existing ratings and the two applicable prompts for a finished session's agents. */
-export async function getSessionRatings(sessionId: string): Promise<SessionRatingsResult> {
-  const res = await request(`/sessions/${encodeURIComponent(sessionId)}/ratings`)
+/** Read the caller's existing ratings and the two applicable prompts for a finished game's agents. */
+export async function getSessionRatings(source: RatingSource): Promise<SessionRatingsResult> {
+  const res = await request(ratingsPath(source))
   if (res.ok) {
     return { ok: true, ratings: (await res.json()) as SessionRatings }
   }
@@ -795,13 +806,13 @@ export type SubmitRatingsResult =
         | 'failed'
     }
 
-/** Submit a batch of `{ agent, score, feedback }` ratings for a session. The whole batch saves or
+/** Submit a batch of `{ agent, score, feedback }` ratings for a game. The whole batch saves or
  * none does; the comment is required with every score. */
 export async function submitRatings(
-  sessionId: string,
+  source: RatingSource,
   ratings: ReadonlyArray<{ agent: AgentRefWire; score: number; feedback: string }>,
 ): Promise<SubmitRatingsResult> {
-  const res = await request(`/sessions/${encodeURIComponent(sessionId)}/ratings`, {
+  const res = await request(ratingsPath(source), {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ ratings }),
@@ -813,11 +824,8 @@ export async function submitRatings(
   if (body.code === 'play_closed') {
     return { ok: false, reason: 'play_closed' }
   }
-  if (body.code === 'session_not_rateable') {
-    return { ok: false, reason: 'not_rateable' }
-  }
-  if (body.code === 'session_not_finished') {
-    return { ok: false, reason: 'not_finished' }
+  if (body.code === 'not_rateable' || body.code === 'not_finished') {
+    return { ok: false, reason: body.code }
   }
   if (body.code === 'empty_feedback') {
     return { ok: false, reason: 'empty_feedback' }
@@ -833,13 +841,7 @@ export async function submitRatings(
 
 /** Map the read endpoint's conflict code onto the reason the UI branches on. */
 function rateabilityReason(code: string | undefined): 'not_rateable' | 'not_finished' | 'failed' {
-  if (code === 'session_not_rateable') {
-    return 'not_rateable'
-  }
-  if (code === 'session_not_finished') {
-    return 'not_finished'
-  }
-  return 'failed'
+  return code === 'not_rateable' || code === 'not_finished' ? code : 'failed'
 }
 
 /** The author's per-season rating prompt, as the get/set routes return it (null when unset). */
@@ -1052,6 +1054,13 @@ export interface Board {
   games: RunGameView[]
 }
 
+/** How one seat of a finished game scored: normalized so higher is better, a forfeit when failed. */
+export interface GameSeatResult {
+  seat_index: number
+  episode_score: number
+  failed: boolean
+}
+
 /** One scheduled game with its resolved seats decoded; the run panel shows per-game status. */
 export interface RunGameView {
   id: string
@@ -1060,6 +1069,8 @@ export interface RunGameView {
   game_index: number
   seed: number
   seats: BoardAgentRef[]
+  /** Per-seat scores in seat order, empty until the game finishes. */
+  results: GameSeatResult[]
   status: GameStatus
   recording_id: string | null
   started_at: string | null

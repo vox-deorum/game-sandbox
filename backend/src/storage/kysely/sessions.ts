@@ -11,7 +11,7 @@ import type { Database, Session, TerminationReason } from '../schema.js'
 /** The non-terminal session statuses that count as "active" for the one-per-user rule. */
 const ACTIVE_STATUSES = ['starting', 'running'] as const
 
-function decodeSession(row: Omit<Session, 'parameters'> & { parameters: string }): Session {
+export function decodeSession(row: Omit<Session, 'parameters'> & { parameters: string }): Session {
   return { ...row, parameters: parseParameterMap(row.parameters) }
 }
 

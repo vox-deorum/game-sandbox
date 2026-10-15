@@ -62,6 +62,7 @@ import {
   agentOwnerIds,
   gameOwnerIds,
   ownerIdsForRun,
+  resultsByGame,
   runGameView,
   runSummaryView,
   runView,
@@ -913,6 +914,9 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         }
         const latest = await deps.storage.getLatestRun(season.id)
         const games = latest === undefined ? [] : await deps.storage.listRunGames(latest.id)
+        const latestResults = resultsByGame(
+          latest === undefined ? [] : await deps.storage.listGameResultsByRun(latest.id),
+        )
         // This is the same active-ready roster predicate the run transaction snapshots through
         // `createRunWithSchedule`. The count lets the browser project a draft without exposing the
         // roster or inventing a second eligibility rule.
@@ -930,6 +934,14 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         const human = await deps.storage.getHumanBoard(season.id, automated)
         const completedGames =
           completed === undefined ? [] : await deps.storage.listRunGames(completed.id)
+        const completedResults =
+          completed?.id === latest?.id
+            ? latestResults
+            : resultsByGame(
+                completed === undefined
+                  ? []
+                  : await deps.storage.listGameResultsByRun(completed.id),
+              )
         // One batched name lookup covering everything this view attributes: the latest run's
         // requester, its frozen roster and scheduled seats, and both boards with their matchup table.
         const names = await deps.userDirectory.namesFor([
@@ -943,14 +955,15 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           season: seasonView(season),
           settings: resolveSeasonDisplaySettings(meta, season, deps.llm),
           eligible_submission_count: eligibleSubmissionCount,
-          latest_run: latest === undefined ? null : runView(latest, games, names, meta),
+          latest_run:
+            latest === undefined ? null : runView(latest, games, names, meta, latestResults),
           board: {
             automated: automated.map((row) => ({
               ...row,
               agent: enrichAgentRef(row.agent, names, meta),
             })),
             human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
-            games: completedGames.map((game) => runGameView(game, names, meta)),
+            games: completedGames.map((game) => runGameView(game, names, meta, completedResults)),
           },
         })
       })
@@ -981,7 +994,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           if (run === undefined || run.season_id !== request.params.id) {
             return reply.code(404).send({ error: 'no such run' })
           }
-          const games = await deps.storage.listRunGames(run.id)
+          const [games, results] = await Promise.all([
+            deps.storage.listRunGames(run.id),
+            deps.storage.listGameResultsByRun(run.id),
+          ])
           // Batch the requester plus every roster and seated owner id in one lookup.
           const names = await deps.userDirectory.namesFor([
             run.requested_by,
@@ -990,7 +1006,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
           // The run's environment metadata, so a built-in seat is enriched with its declared label.
           const season = await deps.storage.getSeason(run.season_id)
           const meta = season === undefined ? undefined : deps.environments.get(season.env_id)
-          return reply.code(200).send(runView(run, games, names, meta))
+          return reply.code(200).send(runView(run, games, names, meta, resultsByGame(results)))
         },
       )
 

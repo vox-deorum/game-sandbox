@@ -14,7 +14,7 @@ export interface RecordingRouteDeps {
   recordings: RecordingsStore
   retention: Retention
   identity: RequestIdentity
-  storage: Pick<Storage, 'getSeason' | 'listSessions'>
+  storage: Pick<Storage, 'getSeason' | 'findRecordingOrigin'>
   userDirectory: UserDirectory
 }
 
@@ -82,20 +82,17 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
     if (!(await deps.recordings.exists(request.params.id))) {
       return reply.code(404).send({ error: 'no such recording' })
     }
-    // The raw stream is masked the same way the listing is: resolve the caller, find the producing
-    // session's season, and if this is a blind view rewrite only the header line before streaming the
-    // (unchanged) state lines. A non-blind view streams the file untouched, the fast common path.
+    // The raw stream is masked the same way the listing is: resolve the caller, find the recording's
+    // season (the producing session's, else the tournament run's), and if this is a blind view rewrite
+    // only the header line before streaming the (unchanged) state lines. A non-blind view streams the
+    // file untouched, the fast common path.
     const caller = await identity.resolveUser(request)
     const visible = namesVisible(caller)
     const header = await deps.recordings.readHeader(request.params.id)
     const players = header?.players
-    const session = (await deps.storage.listSessions()).find(
-      (row) => row.recording_id === request.params.id,
-    )
+    const seasonId = (await deps.storage.findRecordingOrigin(request.params.id))?.season_id ?? null
     const playStatus =
-      session?.season_id == null
-        ? undefined
-        : (await deps.storage.getSeason(session.season_id))?.play_status
+      seasonId === null ? undefined : (await deps.storage.getSeason(seasonId))?.play_status
     reply.type('application/x-ndjson')
     if (
       header === undefined ||

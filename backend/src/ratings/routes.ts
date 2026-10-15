@@ -1,18 +1,22 @@
 /**
- * The participant rating API (Stage 6.6): collecting 1-5 ratings after a session and the agent
- * author's per-season rating prompt. These are participant actions attributed to the resolved
- * Stage 4 identity, never a body-supplied user, so they live in the plain HTTP layer rather than the
- * operator-gated `/api/admin` prefix.
+ * The participant rating API (Stage 6.6): collecting 1-5 ratings after a session or at the end of a
+ * replay, and the agent author's per-season rating prompt. These are participant actions attributed
+ * to the resolved Stage 4 identity, never a body-supplied user, so they live in the plain HTTP layer
+ * rather than the operator-gated `/api/admin` prefix.
  *
- * The authoritative source of which agents a session involved is the finished recording's header
+ * A rating is stored per (season, rater, agent), so the session or recording in the URL only selects
+ * the season and the agents to offer. A session rates against its own season. A recording rates
+ * against the season of the session that produced it, or, for a tournament game that no session
+ * claims, the season of the game's run.
+ *
+ * The authoritative source of which agents a game involved is the finished recording's header
  * `players` attribution: it names every player's driver (human, submission, or the built-in Naive
- * baseline), for both submitted and built-in players. The header entry shape is the recording schema's;
- * this module
- * is the one place it is translated into the `AgentRef` the rest of the stage stores — an `agent`
- * entry with a `submission_id` becomes a `submission` ref (its owner resolved server-side from the
- * submission, never trusted from the header), an `agent` entry with a `builtin_name` becomes a named
- * built-in ref, and `human` entries are skipped.
- * A resolved set containing only the built-in baseline is intentionally returned as empty.
+ * baseline). The header entry shape is the recording schema's; this module is the one place it is
+ * translated into the `AgentRef` the rest of the stage stores. An `agent` entry with a
+ * `submission_id` becomes a `submission` ref (its owner resolved server-side from the submission,
+ * never trusted from the header), an `agent` entry with a `builtin_name` becomes a named built-in
+ * ref, and `human` entries are skipped. A resolved set containing only the built-in baseline is
+ * intentionally returned as empty.
  */
 import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { agentRefKey } from '@game-sandbox/schema/board'
@@ -22,7 +26,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import type { AuthUser, RequestIdentity } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
-import type { RecordingsStore } from '../recordings/store.js'
+import { isSafeRecordingId, type RecordingsStore } from '../recordings/store.js'
 import type { AgentRef, Rating, Season, Session, Storage } from '../storage/index.js'
 import { agentKey } from '../storage/kysely/shared.js'
 import { optionalField } from '../util/optional-field.js'
@@ -30,7 +34,7 @@ import { optionalField } from '../util/optional-field.js'
 /** Everything the rating routes need beyond the Fastify instance. */
 export interface RatingDeps {
   storage: Storage
-  /** The recordings volume, read for the finished session's `players` attribution. */
+  /** The recordings volume, read for the finished game's `players` attribution. */
   recordings: RecordingsStore
   /** The identity seam: `requireUser` for reads, `requireActive` for writes; admins see identities. */
   identity: RequestIdentity
@@ -64,7 +68,7 @@ const AuthorPromptBodySchema = z.strictObject({
   prompt: z.string().max(RATING_PROMPT_MAX).nullable().optional(),
 })
 
-/** One rateable agent in the session, as returned to the UI. The wire `agent` carries no `user_id`. */
+/** One rateable agent in the game, as returned to the UI. The wire `agent` carries no `user_id`. */
 interface RateableAgentView {
   agent: AgentWire
   /** Viewer-appropriate label: anonymous during playable feedback, identified otherwise. */
@@ -81,7 +85,6 @@ interface RateableAgentView {
 
 /** The rating read/write payload: the season's prompt and a per-agent view, read-only when closed. */
 interface RatingView {
-  session_id: string
   season_id: string
   /** True when the season's play window is closed: existing ratings show, but no new write is taken. */
   read_only: boolean
@@ -98,15 +101,16 @@ interface RateableAgent {
   builtinLabel?: string
 }
 
-/** The session context the rating routes resolve before doing anything: the row, its season, agents. */
+/** What the rating routes resolve before doing anything: the season rated against and its agents. */
 interface RatingContext {
-  session: Session
   season: Season
   agents: RateableAgent[]
 }
 
 /** A typed refusal mapped onto an HTTP status and a stable machine code the client branches on. */
 type ContextFailure = { status: number; code: string; error: string }
+
+type ResolvedContext = { ok: true; context: RatingContext } | { ok: false; failure: ContextFailure }
 
 /** Strip a resolved {@link AgentRef} to its wire form (the owner `user_id` never leaves the server). */
 function toWire(ref: AgentRef): AgentWire {
@@ -115,26 +119,55 @@ function toWire(ref: AgentRef): AgentWire {
     : { kind: 'builtin', name: ref.name }
 }
 
-/**
- * Resolve the session, its season, and the set of rateable agents involved, or a typed refusal.
- * Ordering matters: a null-season session is not rateable at all; a session without a finalized
- * recording cannot have its involved agents read; only then is the play window considered (by the
- * caller, which differs for reads and writes).
- */
-async function resolveContext(
+/** Resolve a session's rating context, or a typed refusal. */
+async function resolveSessionContext(
   deps: RatingDeps,
   sessionId: string,
-): Promise<{ ok: true; context: RatingContext } | { ok: false; failure: ContextFailure }> {
+): Promise<ResolvedContext> {
   const session = await deps.storage.getSession(sessionId)
   if (session === undefined) {
     return fail(404, 'no_such_session', 'no such session')
   }
-  if (session.season_id === null) {
-    return fail(409, 'session_not_rateable', 'this session has no season to rate against')
+  return sessionContext(deps, session)
+}
+
+/**
+ * Resolve a recording's rating context, or a typed refusal. A recording a session produced follows
+ * that session's rules; a tournament game's recording rates once the game has finished, against its
+ * run's season.
+ */
+async function resolveRecordingContext(
+  deps: RatingDeps,
+  recordingId: string,
+): Promise<ResolvedContext> {
+  if (!isSafeRecordingId(recordingId) || !(await deps.recordings.exists(recordingId))) {
+    return fail(404, 'no_such_recording', 'no such recording')
   }
-  const season = await deps.storage.getSeason(session.season_id)
+  const origin = await deps.storage.findRecordingOrigin(recordingId)
+  if (origin?.kind === 'session') {
+    return sessionContext(deps, origin.session)
+  }
+  const season = origin === undefined ? undefined : await deps.storage.getSeason(origin.season_id)
+  if (origin === undefined || season === undefined) {
+    return fail(409, 'not_rateable', 'this game has no season to rate against')
+  }
+  if (origin.status === 'pending' || origin.status === 'running') {
+    return fail(409, 'not_finished', 'this game has not finished yet')
+  }
+  const agents = await resolveRateableAgents(deps, recordingId)
+  return { ok: true, context: { season, agents } }
+}
+
+/**
+ * A session's season and rateable agents. Ordering matters: a null-season session is not rateable at
+ * all; a session without a finalized recording cannot have its involved agents read; only then is the
+ * play window considered (by the caller, which differs for reads and writes).
+ */
+async function sessionContext(deps: RatingDeps, session: Session): Promise<ResolvedContext> {
+  const season =
+    session.season_id === null ? undefined : await deps.storage.getSeason(session.season_id)
   if (season === undefined) {
-    return fail(409, 'session_not_rateable', 'this session has no season to rate against')
+    return fail(409, 'not_rateable', 'this session has no season to rate against')
   }
   // A finalized recording means the session has ended and written its recording. A still-running
   // session has a header on the volume but is not finished, so the recording check alone is not enough.
@@ -143,10 +176,10 @@ async function resolveContext(
     session.recording_id === null ||
     !(await deps.recordings.exists(session.recording_id))
   ) {
-    return fail(409, 'session_not_finished', 'this session has no finalized recording yet')
+    return fail(409, 'not_finished', 'this session has no finalized recording yet')
   }
-  const agents = await resolveRateableAgents(deps, session)
-  return { ok: true, context: { session, season, agents } }
+  const agents = await resolveRateableAgents(deps, session.recording_id, session.id)
+  return { ok: true, context: { season, agents } }
 }
 
 function fail(status: number, code: string, error: string): { ok: false; failure: ContextFailure } {
@@ -154,17 +187,17 @@ function fail(status: number, code: string, error: string): { ok: false; failure
 }
 
 /**
- * The rateable agents a session involved. The recording header's `players` map is authoritative; when
- * it cannot be read, fall back to the session's submitted-seat links. Submitted-agent owners are
- * always resolved server-side from
- * the submission row, never trusted from the header. Human players are skipped because humans are not
- * rateable.
+ * The rateable agents a recording involved. The recording header's `players` map is authoritative;
+ * when it cannot be read, fall back to the producing session's submitted-seat links (when a session
+ * produced it). Submitted-agent owners are always resolved server-side from the submission row, never
+ * trusted from the header. Human players are skipped because humans are not rateable.
  */
-async function resolveRateableAgents(deps: RatingDeps, session: Session): Promise<RateableAgent[]> {
-  const header =
-    session.recording_id === null
-      ? undefined
-      : await deps.recordings.readHeader(session.recording_id)
+async function resolveRateableAgents(
+  deps: RatingDeps,
+  recordingId: string,
+  sessionId?: string,
+): Promise<RateableAgent[]> {
+  const header = await deps.recordings.readHeader(recordingId)
 
   const candidates: Array<
     { kind: 'submission'; id: string } | { kind: 'builtin'; name: string; label: string }
@@ -182,9 +215,9 @@ async function resolveRateableAgents(deps: RatingDeps, session: Session): Promis
         candidates.push({ kind: 'builtin', name: entry.builtin_name, label: entry.label })
       }
     }
-  } else {
-    // No readable header: recover submitted agents from the seat links.
-    const links = await deps.storage.listSessionSubmissions(session.id)
+  } else if (sessionId !== undefined) {
+    // No readable header: recover submitted agents from the session's seat links.
+    const links = await deps.storage.listSessionSubmissions(sessionId)
     for (const link of links) {
       candidates.push({ kind: 'submission', id: link.submission_id })
     }
@@ -247,7 +280,7 @@ async function buildRatingView(
   context: RatingContext,
   caller: AuthUser,
 ): Promise<RatingView> {
-  const { session, season, agents } = context
+  const { season, agents } = context
   // A guest never sees submission owners, on any surface, so a guest is always blind; otherwise an
   // admin retains submitted-agent identities while a public play window is open, and everyone else
   // sees the blind anonymized numbering.
@@ -293,7 +326,6 @@ async function buildRatingView(
     }
   })
   return {
-    session_id: session.id,
     season_id: season.id,
     read_only: season.play_status !== 'open',
     season_prompt: emptyToNull(season.rating_prompt),
@@ -336,66 +368,8 @@ function emptyToNull(value: string | null | undefined): string | null {
 
 /** Register participant rating and author-prompt routes outside the operator-only HTTP layer. */
 export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): void {
-  // Read the caller's existing ratings and the two applicable prompts per involved agent, so the
-  // post-session UI renders without a second request and pre-fills what the user already rated.
-  app.get<{ Params: { sessionId: string } }>(
-    '/api/sessions/:sessionId/ratings',
-    async (request, reply) => {
-      const user = await deps.identity.requireUser(request, reply)
-      if (user === undefined) {
-        return
-      }
-      const resolved = await resolveContext(deps, request.params.sessionId)
-      if (!resolved.ok) {
-        return sendFailure(reply, resolved.failure)
-      }
-      return reply.code(200).send(await buildRatingView(deps, resolved.context, user))
-    },
-  )
-
-  // Submit (or overwrite) ratings for the session's agents. The whole payload is validated before any
-  // write, so a mixed valid/invalid request saves nothing.
-  app.post<{ Params: { sessionId: string }; Body: unknown }>(
-    '/api/sessions/:sessionId/ratings',
-    async (request, reply) => {
-      const user = await deps.identity.requireActive(request, reply)
-      if (user === undefined) {
-        return
-      }
-      const parsed = RateBodySchema.safeParse(request.body)
-      if (!parsed.success) {
-        return reply.code(400).send({ error: 'invalid ratings payload', code: 'invalid_request' })
-      }
-      const callerId = user.id
-      const resolved = await resolveContext(deps, request.params.sessionId)
-      if (!resolved.ok) {
-        return sendFailure(reply, resolved.failure)
-      }
-      const { context } = resolved
-      if (context.season.play_status !== 'open') {
-        return reply
-          .code(409)
-          .send({ error: 'the play window for this season is closed', code: 'play_closed' })
-      }
-      const validated = validatePayload(parsed.data.ratings, context, callerId)
-      if (!validated.ok) {
-        return reply.code(400).send({ error: validated.error, code: validated.code })
-      }
-      // Validation passed for every rating; only now write, so nothing partially saves.
-      for (const accepted of validated.accepted) {
-        const key = agentRefKey(toWire(accepted))
-        await deps.storage.upsertRating({
-          season_id: context.season.id,
-          env_id: context.season.env_id,
-          rater_user_id: callerId,
-          agent: accepted,
-          score: validated.scores.get(key) ?? 0,
-          feedback: validated.feedback.get(key) ?? '',
-        })
-      }
-      return reply.code(200).send(await buildRatingView(deps, context, user))
-    },
-  )
+  registerRatingSource(app, deps, '/api/sessions/:id/ratings', resolveSessionContext)
+  registerRatingSource(app, deps, '/api/recordings/:id/ratings', resolveRecordingContext)
 
   // The agent author sets or clears their per-season rating prompt while the season's submission
   // window is open. The caller must have an agent (a submission) in the season; the prompt is keyed
@@ -520,6 +494,72 @@ export function registerRatingRoutes(app: FastifyInstance, deps: RatingDeps): vo
   )
 }
 
+/**
+ * Register the read and write rating routes for one source (a session or a recording), which differ
+ * only in how the season and agents are resolved.
+ */
+function registerRatingSource(
+  app: FastifyInstance,
+  deps: RatingDeps,
+  path: string,
+  resolve: (deps: RatingDeps, id: string) => Promise<ResolvedContext>,
+): void {
+  // Read the caller's existing ratings and the two applicable prompts per involved agent, so the
+  // rating panel renders without a second request and pre-fills what the user already rated.
+  app.get<{ Params: { id: string } }>(path, async (request, reply) => {
+    const user = await deps.identity.requireUser(request, reply)
+    if (user === undefined) {
+      return
+    }
+    const resolved = await resolve(deps, request.params.id)
+    if (!resolved.ok) {
+      return sendFailure(reply, resolved.failure)
+    }
+    return reply.code(200).send(await buildRatingView(deps, resolved.context, user))
+  })
+
+  // Submit (or overwrite) ratings for the game's agents. The whole payload is validated before any
+  // write, so a mixed valid/invalid request saves nothing.
+  app.post<{ Params: { id: string }; Body: unknown }>(path, async (request, reply) => {
+    const user = await deps.identity.requireActive(request, reply)
+    if (user === undefined) {
+      return
+    }
+    const parsed = RateBodySchema.safeParse(request.body)
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid ratings payload', code: 'invalid_request' })
+    }
+    const callerId = user.id
+    const resolved = await resolve(deps, request.params.id)
+    if (!resolved.ok) {
+      return sendFailure(reply, resolved.failure)
+    }
+    const { context } = resolved
+    if (context.season.play_status !== 'open') {
+      return reply
+        .code(409)
+        .send({ error: 'the play window for this season is closed', code: 'play_closed' })
+    }
+    const validated = validatePayload(parsed.data.ratings, context, callerId)
+    if (!validated.ok) {
+      return reply.code(400).send({ error: validated.error, code: validated.code })
+    }
+    // Validation passed for every rating; only now write, so nothing partially saves.
+    for (const accepted of validated.accepted) {
+      const key = agentRefKey(toWire(accepted))
+      await deps.storage.upsertRating({
+        season_id: context.season.id,
+        env_id: context.season.env_id,
+        rater_user_id: callerId,
+        agent: accepted,
+        score: validated.scores.get(key) ?? 0,
+        feedback: validated.feedback.get(key) ?? '',
+      })
+    }
+    return reply.code(200).send(await buildRatingView(deps, context, user))
+  })
+}
+
 /** The outcome of validating the whole rate payload: the resolved refs, scores, and comments, or
  * the first error. The comment is required for every rating (`empty_feedback` when blank after trim)
  * and capped at {@link RATING_FEEDBACK_MAX} code points (`feedback_too_long`). */
@@ -528,8 +568,8 @@ type PayloadValidation =
   | { ok: false; code: string; error: string }
 
 /**
- * Validate every submitted rating against the session's involved agents before any write. Rejects an
- * out-of-range score, an agent not in the session, the caller's own submitted agent (resolved
+ * Validate every submitted rating against the game's involved agents before any write. Rejects an
+ * out-of-range score, an agent not in the game, the caller's own submitted agent (resolved
  * server-side), and a blank or over-cap comment. Returns the resolved refs (carrying the server-
  * resolved owner), their scores, and their trimmed comments.
  */
@@ -552,7 +592,7 @@ function validatePayload(
       return {
         ok: false,
         code: 'agent_not_in_session',
-        error: 'that agent did not take part in this session',
+        error: 'that agent did not take part in this game',
       }
     }
     if (match.ref.kind === 'submission' && match.ref.user_id === callerId) {

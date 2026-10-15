@@ -15,6 +15,7 @@ import { enrichAgentRef } from '../auth/users.js'
 import {
   type AgentRef,
   AgentRefArraySchema,
+  type GameResult,
   type PublicSeason,
   type Season,
   type SeasonRun,
@@ -25,6 +26,9 @@ import { optionalField } from '../util/optional-field.js'
 
 /** No names resolved: the enrichment no-op the builders default to when a caller passes none. */
 const NO_NAMES: ReadonlyMap<string, string> = new Map()
+
+/** No game results read: every game view carries an empty result list. */
+const NO_RESULTS: ReadonlyMap<string, GameSeatResult[]> = new Map()
 
 // A run's roster and each game's seats are JSON columns the routes decode twice: once to collect owner
 // ids for the batched name lookup, then again to build the view. Memoize the parse per row object (the
@@ -126,19 +130,57 @@ export function publicSeasonView(season: PublicSeason): PublicSeasonView {
   }
 }
 
-/** A scheduled game with its `seats` JSON decoded into resolved {@link BoardAgentRef}s. */
-export type RunGameView = Omit<SeasonRunGame, 'seats'> & { seats: BoardAgentRef[] }
+/** How one seat of a finished game scored: normalized so higher is better, a forfeit when failed. */
+export interface GameSeatResult {
+  seat_index: number
+  episode_score: number
+  failed: boolean
+}
+
+/**
+ * A scheduled game with its `seats` JSON decoded into resolved {@link BoardAgentRef}s and its per-seat
+ * results in seat order (empty until the game records them).
+ */
+export type RunGameView = Omit<SeasonRunGame, 'seats'> & {
+  seats: BoardAgentRef[]
+  results: GameSeatResult[]
+}
+
+/** Group a run's result rows by game id, keeping their seat order, for {@link runGameView}. */
+export function resultsByGame(results: readonly GameResult[]): Map<string, GameSeatResult[]> {
+  const grouped = new Map<string, GameSeatResult[]>()
+  for (const result of results) {
+    const seats = grouped.get(result.game_id) ?? []
+    seats.push({
+      seat_index: result.seat_index,
+      episode_score: result.episode_score,
+      failed: result.failed === 1,
+    })
+    grouped.set(result.game_id, seats)
+  }
+  return grouped
+}
 
 /**
  * Decode a scheduled game's `seats` JSON for the wire, attaching owner display names when resolved
  * and, when the caller passes the game's environment metadata, each built-in seat's declared label.
+ * `results` (from {@link resultsByGame}) supplies the game's per-seat scores. The workflow records a
+ * game's seats one at a time, so a game read mid-write, or one whose later write failed, holds only
+ * some of them; such a game reports no results rather than a partial set that would crown a winner.
  */
 export function runGameView(
   game: SeasonRunGame,
   names: ReadonlyMap<string, string> = NO_NAMES,
   meta?: EnvironmentMeta,
+  results: ReadonlyMap<string, GameSeatResult[]> = NO_RESULTS,
 ): RunGameView {
-  return { ...game, seats: decodeSeats(game).map((seat) => enrichAgentRef(seat, names, meta)) }
+  const seats = decodeSeats(game)
+  const recorded = results.get(game.id) ?? []
+  return {
+    ...game,
+    seats: seats.map((seat) => enrichAgentRef(seat, names, meta)),
+    results: recorded.length === seats.length ? recorded : [],
+  }
 }
 
 /** A run with its frozen snapshots decoded and its scheduled games attached, for the admin status view. */
@@ -152,20 +194,22 @@ export type RunView = Omit<SeasonRun, 'config_snapshot' | 'submission_snapshot'>
 
 /**
  * Decode a run's snapshots and attach its (already-ordered) scheduled games. `meta`, when passed,
- * carries the run's environment's declared built-in labels through to every enriched agent ref.
+ * carries the run's environment's declared built-in labels through to every enriched agent ref, and
+ * `results` carries each game's per-seat scores.
  */
 export function runView(
   run: SeasonRun,
   games: SeasonRunGame[],
   names: ReadonlyMap<string, string> = NO_NAMES,
   meta?: EnvironmentMeta,
+  results: ReadonlyMap<string, GameSeatResult[]> = NO_RESULTS,
 ): RunView {
   return {
     ...run,
     ...optionalField('requested_by_name', names.get(run.requested_by)),
     config_snapshot: decodeSeasonConfig(run.config_snapshot),
     submission_snapshot: decodeSnapshot(run).map((ref) => enrichAgentRef(ref, names, meta)),
-    games: games.map((game) => runGameView(game, names, meta)),
+    games: games.map((game) => runGameView(game, names, meta, results)),
   }
 }
 

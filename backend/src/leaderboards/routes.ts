@@ -16,6 +16,7 @@ import {
   agentOwnerIds,
   gameOwnerIds,
   publicSeasonView,
+  resultsByGame,
   runGameView,
   seasonView,
 } from '../seasons/views.js'
@@ -38,7 +39,7 @@ export interface LeaderboardDeps {
  * Read both boards for a released season plus the matchup table: the automated aggregate, the
  * human-rating aggregate, and the per-game list of the latest completed run. The board shows one
  * representative (best-game) replay per agent; `games` is how a reader reaches every game of a
- * multi-seat matchup — each with its seats and its own replay link. Every submitted agent ref is
+ * multi-seat matchup, each with its seats, its per-seat scores, and its own replay link. Every submitted agent ref is
  * enriched with its owner's display name (one batched lookup per read) beside the stable id, except
  * for a masked (anonymous or guest) caller, who gets the opaque `user_id` only, so the frontend can
  * render its stable hash label in place of the name.
@@ -56,7 +57,14 @@ async function boardsFor(
   const run = await deps.storage.getLatestCompletedRun(seasonId)
   const automated = await deps.storage.getAutomatedBoard(seasonId, run)
   const human = await deps.storage.getHumanBoard(seasonId, automated)
-  const rawGames = run === undefined ? [] : await deps.storage.listRunGames(run.id)
+  const [rawGames, rawResults] =
+    run === undefined
+      ? [[], []]
+      : await Promise.all([
+          deps.storage.listRunGames(run.id),
+          deps.storage.listGameResultsByRun(run.id),
+        ])
+  const results = resultsByGame(rawResults)
   const visible = namesVisible(caller)
   const names = visible
     ? await deps.userDirectory.namesFor([
@@ -68,7 +76,7 @@ async function boardsFor(
   return {
     automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
     human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
-    games: rawGames.map((game) => runGameView(game, names, meta)),
+    games: rawGames.map((game) => runGameView(game, names, meta, results)),
   }
 }
 

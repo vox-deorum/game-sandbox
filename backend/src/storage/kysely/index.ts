@@ -26,6 +26,7 @@ import type {
   RatingAggregate,
   RecordGameResultInput,
   RecordingCleanupClaimResult,
+  RecordingOrigin,
   SeasonTemplateRepository,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
@@ -121,6 +122,12 @@ export class KyselyStorage implements Storage {
   }
   getRecording(id: string): Promise<Recording | undefined> {
     return recordings.getRecording(this.db, id)
+  }
+  findRecordingOrigin(recordingId: string): Promise<RecordingOrigin | undefined> {
+    return recordings.findRecordingOrigin(this.db, recordingId)
+  }
+  listRecordingSeasons(): Promise<Map<string, string | null>> {
+    return recordings.listRecordingSeasons(this.db)
   }
   setRecordingPinned(id: string, pinned: boolean): Promise<boolean> {
     return recordings.setRecordingPinned(this.db, id, pinned)

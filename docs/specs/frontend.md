@@ -34,9 +34,9 @@ The global sidebar and mobile bar show the deployment name with its brand icon. 
 | Seasons | Public seasons, active gates, environment, optional description, release time, submission count, session count |
 | My Agents | Signed-in user's current season submission state and recent submitted-season results across environments |
 | Replays | Sortable environment recording list |
-| Replay viewer | Renderer, transport, seat attribution, chat, episode settings, public LLM summaries, and full-screen presentation |
+| Replay viewer | Renderer, transport, seat attribution, chat, episode settings, public LLM summaries, ratings while play is open, and full-screen presentation |
 | Live session | Renderer, shared controls, decision log, result, pinning, ratings, and full-screen presentation |
-| Leaderboards | Automated and human-feedback boards for one environment and season |
+| Leaderboards | Automated and human-feedback boards for one environment and season, with the season's peer ratings, All Seasons, and Matchups; see [Leaderboard views](leaderboard.md#leaderboard-views) |
 | Manage | Operator-only season configuration, deletion of unused private seasons, workflow logs, preview, and release |
 | Documentation | Student guides, rendered in-app with a section navigation |
 | My Profile | Signed-in identity and capabilities |
@@ -81,7 +81,7 @@ Result labels, replay summaries, and final standings rank seats rather than play
 
 ### Rating visibility
 
-Each agent heading in the post-session rating panel starts with its recorded seat label, for example `S0: Eve's agent`. An agent occupying several seats has one rating row listing those seats in numeric order, such as `S0, S1: Eve's agent`. Wide seats appear once. The prefix uses the same compact seat labels as live and replay attribution; the agent name follows the visibility rules below.
+Each agent heading in the rating panel starts with its recorded seat label, for example `S0: Eve's agent`. An agent occupying several seats has one rating row listing those seats in numeric order, such as `S0, S1: Eve's agent`. Wide seats appear once. The prefix uses the same compact seat labels as live and replay attribution; the agent name follows the visibility rules below.
 
 Rating surfaces use blind labels while a season's play window is open. Non-operators see numbered submitted agents without owner or source details in the watch list, live sessions, rating panels, replay lists, and replay viewers. A viewer may rate an eligible unrated agent, while an agent they already rated or own is offered as a watch choice. Operators see identities.
 
@@ -173,7 +173,7 @@ Signed-in users with `guest`, `normal`, or `admin` status may run one session at
 
 Every session is recorded, and the owner may pin the replay.
 
-A session can be rated only while its season's play window remains open. A user has one effective rating from 1 to 5 for each agent in each season. A later rating replaces both the earlier score and the earlier comment.
+A finished session or a replay can be rated while its season's play window remains open. A user has one effective rating from 1 to 5 for each agent in each season, stored once per season, rater, and agent, so rating the same agent from a session or from a replay updates that one rating. A later rating replaces both the earlier score and the earlier comment.
 
 Every rating also carries a required written comment of up to 1,000 Unicode code points, counted as code points like the [messaging cap](communication.md#messages), so an emoji counts as one. The comment is trimmed, and a blank comment is refused along with one over the cap.
 
@@ -181,10 +181,10 @@ The interface prevents:
 
 - Rating the user's own agent.
 - Rating after play closes.
-- Rating a builtin-only session.
+- Rating a builtin-only game.
 
-A named builtin may be rated in a mixed session. Ratings affect only the human-feedback board, which shows only mean, population standard deviation, and count and never the written comments. See [Leaderboards](leaderboard.md#human-feedback-board).
+A named builtin may be rated in a mixed game, whether it is watched live as a session or revisited as a replay. Ratings affect only the human-feedback board, which shows only mean, population standard deviation, and count and never the written comments. See [Leaderboards](leaderboard.md#human-feedback-board).
 
-The rating panel appears after the session ends. It shows a comment box for each rateable agent with a live counter of that comment's length, and Save stays disabled until every scored agent has a non-blank comment. Reopening the panel after rating again prefills the prior score and comment. It may show the **season rating prompt** set by the operator and the agent rating prompt set by the agent's author. Both guide the same score; the comment is the rater's own words.
+On the session page the rating panel appears after the session ends. On the replay viewer it appears above the stage once the playhead first reaches the final frame and stays visible when the viewer scrubs back. The replay panel shows only to signed-in viewers, only for a replay that belongs to a season, and only while that season's play window is open. The panel shows a comment box for each rateable agent with a live counter of that comment's length, and Save stays disabled until every scored agent has a non-blank comment. Reopening the panel after rating again prefills the prior score and comment. It may show the **season rating prompt** set by the operator and the agent rating prompt set by the agent's author. Both guide the same score; the comment is the rater's own words.
 
 The author sets the agent rating prompt in the submission form. It is season metadata, not part of the pinned submission. The same prompt also appears beneath the agent on the human-feedback board and once for each season in the agent profile's submission history. Once a season is released, the agent's owner sees a **Peer Feedback** section on their own agent profile listing the comments their agent received, grouped by released season with the newest season first. The comments are anonymous to the author, who never sees a rater's name or id. See [Seasons](seasons.md#public-gates) for the release rule.

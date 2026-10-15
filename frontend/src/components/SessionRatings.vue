@@ -1,8 +1,9 @@
 <!--
-  The post-session rating panel (Stage 6.6), shown on the end-of-session card for both the watch and
-  play flows — ratings come from any finished session, so this is the same component in both; only the
-  set of involved agents differs. It reads the rateable agents (and the caller's prior ratings) for the
-  session, presents a 1-5 control per agent, and posts the batch.
+  The rating panel (Stage 6.6). The session page shows it once a watch or play session ends, and the
+  replay page shows it once the playhead reaches the final frame of a replay whose season is open for
+  play. `source` names the session or recording; either way the rating counts toward the game's
+  season. It reads the rateable agents (and the caller's prior ratings), presents a 1-5 control per
+  agent, and posts the batch.
 
   Three rules, all enforced by the backend and mirrored here so the UI never offers an illegal action:
   - The caller's own submitted agent is shown without a control or comment box, labeled as theirs (the exclusion).
@@ -14,8 +15,8 @@
 
   The response also carries viewer-appropriate names and both prompts, so no second request or local
   identity reconstruction is needed. Season instructions render once above the list; an author's
-  instructions render only beside that agent. The card enters after termination with a short
-  expanding downward reveal, making the new post-session action visible above the canvas.
+  instructions render only beside that agent. The card enters with a short expanding downward reveal,
+  making the new action visible above the canvas.
 -->
 <script setup lang="ts">
 import type { RecordingHeader } from '@game-sandbox/schema'
@@ -27,6 +28,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   type AgentRefWire,
   getSessionRatings,
+  type RatingSource,
   type SessionRatings,
   submitRatings,
 } from '../api/client.js'
@@ -38,7 +40,7 @@ import { hidesNames, useMe } from '../me.js'
 import { useToast } from '../toast.js'
 
 const props = defineProps<{
-  sessionId: string
+  source: RatingSource
   players?: RecordingHeader['players']
   seats?: RecordingHeader['seats']
 }>()
@@ -84,9 +86,9 @@ const rateable = computed<RateableView[]>(() => agents.value.filter((agent) => !
 onMounted(load)
 
 async function load(): Promise<void> {
-  const result = await getSessionRatings(props.sessionId)
+  const result = await getSessionRatings(props.source)
   if (!result.ok) {
-    // Not rateable (old null-season session, or no finalized recording): render nothing.
+    // Not rateable (no season, or no finalized recording): render nothing.
     return
   }
   ratings.value = result.ratings
@@ -186,7 +188,7 @@ async function submit(): Promise<void> {
   }
   saving.value = true
   error.value = null
-  const result = await submitRatings(props.sessionId, batch)
+  const result = await submitRatings(props.source, batch)
   saving.value = false
   if (result.ok) {
     ratings.value = result.ratings
@@ -213,7 +215,7 @@ function errorMessage(
       return 'Rating for this round has closed.'
     case 'not_rateable':
     case 'not_finished':
-      return 'This session can no longer be rated.'
+      return 'This game can no longer be rated.'
     case 'invalid':
       return 'That rating was not accepted.'
     case 'empty_feedback':

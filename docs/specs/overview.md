@@ -17,7 +17,7 @@ Each competition round is a **season** for one environment. See [Seasons](season
 Each season of an environment has two leaderboards:
 
 - The **automated board** ranks game performance and shows efficiency.
-- The **human-feedback board** aggregates ratings from watch and play sessions.
+- The **human-feedback board** aggregates ratings from watch and play sessions and from replays.
 
 The scores stay separate. See [Leaderboards](leaderboard.md).
 
