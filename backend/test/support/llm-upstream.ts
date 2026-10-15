@@ -2,7 +2,6 @@ import Fastify, { type FastifyInstance } from 'fastify'
 
 /** One request observed by the deterministic local OpenAI-compatible test upstream. */
 export interface StubUpstreamRequest {
-  readonly arrivedAt: number
   readonly authorization: string | undefined
   readonly body: Record<string, unknown>
   readonly logicalRequestId: string | undefined
@@ -45,7 +44,7 @@ const scenarios = new Set<StubScenario>([
 ])
 
 /**
- * A local upstream shared by Docker integration and browser harnesses. It deliberately selects
+ * A local upstream shared by the backend tests and the browser harness. It deliberately selects
  * behaviour from normal request content so the proxy sees the exact OpenAI-compatible payload it
  * would receive in production. The marker is not a side channel and is retained in recorded input.
  */
@@ -60,7 +59,6 @@ export function createLlmUpstreamStub(options: { delayMs?: number } = {}): LlmUp
     const selection = scenarioFor(body)
     const { scenario, logicalRequestId } = selection
     const entry: StubUpstreamRequest = {
-      arrivedAt: Date.now(),
       authorization: request.headers.authorization,
       body,
       logicalRequestId,
@@ -84,11 +82,13 @@ export function createLlmUpstreamStub(options: { delayMs?: number } = {}): LlmUp
     if (scenario === 'non-retryable') {
       return reply.code(400).send(errorBody(400))
     }
+    // A provider may name its retry delay. The SDK obeys it, so retries skip the default backoff.
     if (scenario === 'retry-exhausted') {
-      return reply.code(503).send(errorBody(503))
+      return reply.code(503).header('retry-after-ms', '1').send(errorBody(503))
     }
     if (scenario === 'retry-success' && attempts < RETRY_SUCCESS_ATTEMPTS) {
-      return reply.code(attempts === 1 ? 429 : 500).send(errorBody(attempts === 1 ? 429 : 500))
+      const status = attempts === 1 ? 429 : 500
+      return reply.code(status).header('retry-after-ms', '1').send(errorBody(status))
     }
     if (scenario === 'delayed-success') {
       await new Promise<void>((resolve) => setTimeout(resolve, delayMs))

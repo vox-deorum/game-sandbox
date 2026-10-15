@@ -30,8 +30,8 @@ import { createSubmissionSource } from '../../src/submission/source/index.js'
 import type { RunEvent, TerminalRunStatus, WorkflowRunner } from '../../src/workflow/runner.js'
 import { createWorkflowRunner } from '../../src/workflow/workflow-runner.js'
 import { createRunOrFail } from '../support/harness.js'
+import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from '../support/llm-upstream.js'
 import { DEPS_VERSION } from './support/base-image.js'
-import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from './support/llm-upstream.js'
 
 const ENV_ID = 'hearts'
 const SUCCESSFUL_CALLS_PER_GAME = 2

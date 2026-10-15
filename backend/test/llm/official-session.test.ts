@@ -18,11 +18,7 @@ import { TiktokenCounter } from '../../src/llm/tokenizer.js'
 import { UpstreamCaller } from '../../src/llm/upstream.js'
 import { createOfficialGrantIssuer } from '../../src/session/official-grants.js'
 import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemetry.js'
-import {
-  createLlmUpstreamStub,
-  type LlmUpstreamStub,
-  RETRY_SUCCESS_ATTEMPTS,
-} from './support/llm-upstream.js'
+import { createLlmUpstreamStub, type LlmUpstreamStub } from '../support/llm-upstream.js'
 
 const SCOPE_ID = 'official-session'
 const PLAYER = 'player_2'
@@ -142,7 +138,7 @@ describe('official LLM session grant lifecycle', () => {
 
   it.each([
     ['non-retryable upstream response', 'non-retryable', 400, 1],
-    ['exhausted retryable upstream response', 'retry-exhausted', 503, RETRY_SUCCESS_ATTEMPTS],
+    ['exhausted retryable upstream response', 'retry-exhausted', 503, 3],
   ])('does not charge or write a row after a %s', async (_name, scenario, expectedStatus, attempts) => {
     const scopeId = `${SCOPE_ID}-${scenario}`
     const key = await issue(scopeId, scopeId)

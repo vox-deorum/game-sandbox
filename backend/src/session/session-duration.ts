@@ -1,7 +1,7 @@
 /** Platform time reserved for container startup, transitions, recording, and teardown. */
-export const SESSION_OVERHEAD_ALLOWANCE_MS = 60_000
+const SESSION_OVERHEAD_ALLOWANCE_MS = 60_000
 /** Fixed fallback for unpaced games when no deployment-wide duration override is configured. */
-export const UNPACED_SESSION_MAX_DURATION_MS = 600_000
+const UNPACED_SESSION_MAX_DURATION_MS = 600_000
 
 /** Resolve the live-session wall-clock ceiling from deployment, environment, and resolved season rules. */
 export function resolveSessionMaxDurationMs({

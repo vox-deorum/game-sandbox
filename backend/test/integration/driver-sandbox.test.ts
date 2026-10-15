@@ -1,8 +1,8 @@
 /**
  * Driver-level sandbox guarantees, exercised against the real base image with an overridden
  * entrypoint so the production image carries no test hooks. These are the exit criteria that only
- * mean something against a real container: the memory quota kills a hog, `network: 'none'` has no
- * route out, and a fresh driver reaps a labeled orphan.
+ * mean something against a real container: resource limits hold, the root filesystem is read-only,
+ * `network: 'none'` has no route out, and a fresh driver reaps a labeled orphan.
  */
 
 import { createServer } from 'node:net'
@@ -10,7 +10,7 @@ import Docker, { type Container } from 'dockerode'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createDockerDriver } from '../../src/driver/docker/index.js'
-import type { SandboxProfile, SessionProcess } from '../../src/driver/index.js'
+import type { ExitInfo, SandboxProfile, SessionProcess } from '../../src/driver/index.js'
 import { BASE_IMAGE_REF, TAG_PREFIX } from './support/base-image.js'
 
 const SESSION_LABEL = 'game-sandbox.session'
@@ -52,13 +52,69 @@ describe('driver-level sandbox guarantees', () => {
     await Promise.all(cleanups.splice(0).map((fn) => fn().catch(() => undefined)))
   })
 
-  it('kills a container that exceeds its memory quota and reports oomKilled', async () => {
+  /** Run a Python script in the base image under `sandbox` and resolve how it exited. */
+  async function runPython(
+    script: string,
+    sandbox: SandboxProfile,
+    sessionId: string,
+  ): Promise<ExitInfo> {
     const driver = await createDockerDriver({
       imageTagPrefix: TAG_PREFIX,
       imagePolicy: 'reuse',
       overlayBuildTimeoutMs: 120_000,
       llmRelay: { mode: 'host-gateway' },
     })
+    const proc = await driver.launch({
+      image: BASE_IMAGE_REF,
+      entrypoint: ['python', '-c', script],
+      argv: [],
+      sandbox,
+      sessionId,
+    })
+    cleanups.push(() => proc.kill(0))
+    drain(proc)
+    return proc.exited
+  }
+
+  it('refuses writes to the root filesystem with a read-only filesystem error', async () => {
+    // /var/tmp permits unprivileged writes on a writable image. EROFS distinguishes a read-only
+    // mount from an ordinary permission denial, which would not prove this sandbox guarantee.
+    const script =
+      'import errno,sys\n' +
+      'try:\n' +
+      '  open("/var/tmp/sandbox-write", "wb").close()\n' +
+      'except OSError as error:\n' +
+      '  sys.exit(0 if error.errno == errno.EROFS else 2)\n' +
+      'sys.exit(1)\n'
+    await expect(runPython(script, profile(), 'it-read-only-root')).resolves.toMatchObject({
+      code: 0,
+      oomKilled: false,
+    })
+  })
+
+  it('allows scratch writes and refuses further writes when its space quota is exhausted', async () => {
+    const script =
+      'import errno,sys\n' +
+      'with open("/tmp/sandbox-write", "wb", buffering=0) as scratch:\n' +
+      '  scratch.write(b"scratch works")\n' +
+      '  try:\n' +
+      '    for _ in range(20):\n' +
+      '      scratch.write(b"x" * 1024 * 1024)\n' +
+      '  except OSError as error:\n' +
+      '    sys.exit(0 if error.errno == errno.ENOSPC else 2)\n' +
+      'sys.exit(1)\n'
+    await expect(
+      runPython(
+        script,
+        profile({ scratch: { containerPath: '/tmp', sizeMb: 8 } }),
+        'it-bounded-scratch',
+      ),
+    ).resolves.toMatchObject({ code: 0, oomKilled: false })
+  })
+
+  it('kills a container that exceeds its memory quota and reports oomKilled', async () => {
+    // Touch anonymous pages until the cgroup quota kills the process. If Python observes the
+    // allocation failure first on a particular runtime, terminate with the same SIGKILL shape.
     const script =
       'import mmap, os, signal\n' +
       'chunks=[]\n' +
@@ -70,27 +126,11 @@ describe('driver-level sandbox guarantees', () => {
       '    chunks.append(m)\n' +
       'except (MemoryError, OSError):\n' +
       '  os.kill(os.getpid(), signal.SIGKILL)\n'
-    const proc = await driver.launch({
-      image: BASE_IMAGE_REF,
-      // Touch anonymous pages until the cgroup quota kills the process. If Python observes the
-      // allocation failure first on a particular runtime, terminate with the same SIGKILL shape.
-      entrypoint: ['python', '-c', script],
-      argv: [],
-      sandbox: profile({ memoryMb: 64 }),
-      sessionId: 'it-mem-hog',
-    })
-    drain(proc)
-    const exit = await proc.exited
+    const exit = await runPython(script, profile({ memoryMb: 64 }), 'it-mem-hog')
     expect(exit.oomKilled).toBe(true)
   })
 
   it('has no network route under network: none', async () => {
-    const driver = await createDockerDriver({
-      imageTagPrefix: TAG_PREFIX,
-      imagePolicy: 'reuse',
-      overlayBuildTimeoutMs: 120_000,
-      llmRelay: { mode: 'host-gateway' },
-    })
     // Exit 0 only if an outbound TCP connect succeeds; exit 7 when the network is unreachable.
     const script =
       'import socket,sys\n' +
@@ -98,17 +138,10 @@ describe('driver-level sandbox guarantees', () => {
       '  s=socket.socket(); s.settimeout(3); s.connect(("1.1.1.1",53)); sys.exit(0)\n' +
       'except OSError:\n' +
       '  sys.exit(7)\n'
-    const proc = await driver.launch({
-      image: BASE_IMAGE_REF,
-      entrypoint: ['python', '-c', script],
-      argv: [],
-      sandbox: profile(),
-      sessionId: 'it-no-net',
+    await expect(runPython(script, profile(), 'it-no-net')).resolves.toMatchObject({
+      code: 7,
+      oomKilled: false,
     })
-    drain(proc)
-    const exit = await proc.exited
-    expect(exit.code).toBe(7)
-    expect(exit.oomKilled).toBe(false)
   })
 
   it('routes an LLM sandbox only through the fixed relay destination', async () => {

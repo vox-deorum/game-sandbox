@@ -23,14 +23,10 @@ if (dataDir !== undefined && dataDir !== '') {
 // suite. The suite intentionally treats it as part of the shared backend fixture: if it cannot boot,
 // the web server fails before any spec runs instead of leaving the backend partially configured.
 // Start it first so the backend receives its dynamic loopback URL before configuration loads.
-const stub = spawn(
-  'node',
-  ['--import', 'tsx', 'backend/test/integration/support/llm-upstream-server.ts'],
-  {
-    stdio: ['ignore', 'pipe', 'inherit'],
-    env: { ...process.env, LLM_STUB_PORT: '0' },
-  },
-)
+const stub = spawn('node', ['--import', 'tsx', 'backend/test/support/llm-upstream-server.ts'], {
+  stdio: ['ignore', 'pipe', 'inherit'],
+  env: { ...process.env, LLM_STUB_PORT: '0' },
+})
 
 const upstreamUrl = await new Promise((resolve, reject) => {
   let output = ''

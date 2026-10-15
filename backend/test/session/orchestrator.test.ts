@@ -234,6 +234,8 @@ describe('orchestrator', () => {
   let storage: Storage
   let driver: FakeDriver
   let recordingsDir: string
+  /** Every session id this test's orchestrators finalized, in order. */
+  let finalized: string[]
 
   function makeOrchestrator(
     idleMs = 60_000,
@@ -248,6 +250,8 @@ describe('orchestrator', () => {
       source === undefined
         ? undefined
         : new SubmissionSnapshotStore(join(recordingsDir, 'submissions'))
+    // Capture this test's list so a lingering orchestrator from an earlier test cannot append to it.
+    const record = finalized
     return new Orchestrator({
       driver,
       storage,
@@ -256,6 +260,7 @@ describe('orchestrator', () => {
       submissionSource: source,
       submissionSnapshots: snapshots,
       userDirectory,
+      onSessionFinalized: (id) => record.push(id),
     })
   }
 
@@ -311,6 +316,7 @@ describe('orchestrator', () => {
     storage = await openSqliteStorage(':memory:')
     driver = new FakeDriver()
     recordingsDir = mkdtempSync(join(tmpdir(), 'gs-orch-'))
+    finalized = []
     // A plain public session needs a play-open season to attach to (the seed season is both
     // submission- and play-open); seed it for the environments the plain-session tests exercise.
     PLAY_SEASONS.clear()
@@ -1469,9 +1475,7 @@ describe('orchestrator', () => {
       const orch = makeOrchestrator(30)
       const { id, process } = await start(orch)
       process.emit(HEADER)
-      await flush()
-      await delay(80)
-      await settle()
+      await vi.waitFor(() => expect(finalized).toEqual([id]))
       expect((await storage.getSession(id))?.termination_reason).toBe('idle_timeout')
       expect(process.killGraceMs.length).toBeGreaterThan(0)
       // The user is free to start again.
@@ -1538,10 +1542,10 @@ describe('orchestrator', () => {
       const { id, process } = await start(orch)
       process.emit(HEADER)
       await flush()
-      // Race the natural OOM exit against the idle window.
+      // Race the natural OOM exit against the idle window, then give the loser time to finalize too.
       process.oom()
       await delay(30)
-      await settle()
+      await vi.waitFor(() => expect(finalized).toEqual([id]))
       const row = await storage.getSession(id)
       expect(row?.status).toBe('ended')
       // Whichever claimed first won; the row ended once and the user is free.

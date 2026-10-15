@@ -47,7 +47,7 @@ describe('runLoadCheck', () => {
     expect(spec?.image).toEqual(IMAGE)
     expect(spec?.entrypoint).toEqual(['python', '-m', 'game_sandbox_harness.validate'])
     expect(spec?.argv).toEqual(['/opt/agents/submissions/seat_0'])
-    expect(spec?.sandbox).toBe(SANDBOX)
+    expect(spec?.sandbox).toEqual(SANDBOX)
     expect(spec?.sessionId).toBe('sub-1')
   })
 

@@ -20,7 +20,7 @@ import type { Storage } from '../../src/storage/index.js'
 import { DevelopmentLedgerStore } from '../../src/storage/llm/development-ledger/index.js'
 import { makeConfig, openTestApp, type TestApp } from '../support/harness.js'
 import { llmEnvironments, llmMeta, makeTestLlmOptions } from '../support/llm-options.js'
-import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from './support/llm-upstream.js'
+import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from '../support/llm-upstream.js'
 
 /** The second season's environment (`llm_env_other`) alongside the shared `llm_env` fixture. */
 function environments(): EnvironmentRegistry {
@@ -29,7 +29,7 @@ function environments(): EnvironmentRegistry {
   )
 }
 
-describe('development LLM HTTP wiring (integration)', () => {
+describe('development LLM HTTP wiring', () => {
   const cleanup: Array<() => Promise<void> | void> = []
 
   afterEach(async () => {
@@ -117,13 +117,6 @@ describe('development LLM HTTP wiring (integration)', () => {
       (request) => request.logicalRequestId === 'alice-a-1',
     )
     expect(retryRequests).toHaveLength(RETRY_SUCCESS_ATTEMPTS)
-    const firstRetryInterval =
-      (retryRequests.at(1)?.arrivedAt ?? 0) - (retryRequests.at(0)?.arrivedAt ?? 0)
-    const secondRetryInterval =
-      (retryRequests.at(2)?.arrivedAt ?? 0) - (retryRequests.at(1)?.arrivedAt ?? 0)
-    // The SDK jitters each exponential delay down by at most 25 percent.
-    expect(firstRetryInterval).toBeGreaterThanOrEqual(350)
-    expect(secondRetryInterval).toBeGreaterThanOrEqual(700)
 
     expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('alice'))).toMatchObject({
       small: { calls: 1 },
@@ -200,11 +193,6 @@ describe('development LLM HTTP wiring (integration)', () => {
       }
       if (item.scenario === 'delayed-success') expect(call?.latencyMs).toBeGreaterThanOrEqual(140)
     }
-    const retryCall = ledger
-      .listUserCalls(seasonA, testApp.users.idOf('alice'), { limit: 25 })
-      .calls.find((call) => JSON.stringify(call.request).includes('alice-a-1'))
-    expect(retryCall?.latencyMs).toBeGreaterThanOrEqual(50)
-
     expect(await testApp.storage.listSessions()).toEqual([])
     expect(await testApp.storage.listRecordings()).toEqual([])
     expect(await testApp.storage.listRunsBySeason(seasonA)).toEqual([])

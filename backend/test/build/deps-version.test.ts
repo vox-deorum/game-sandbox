@@ -9,45 +9,38 @@ import {
 } from '../../src/build/deps-version.js'
 import { imageTag } from '../../src/driver/docker/image.js'
 
+/** The build-context sources of every COPY or ADD instruction, skipping multi-stage `--from` copies. */
+function copySources(dockerfile: string): string[] {
+  return dockerfile.split('\n').flatMap((line) => {
+    const [instruction = '', ...args] = line.trim().split(/\s+/)
+    if (!/^(COPY|ADD)$/i.test(instruction) || args.some((arg) => arg.startsWith('--from='))) {
+      return []
+    }
+    return args.filter((arg) => !arg.startsWith('--')).slice(0, -1)
+  })
+}
+
 describe('dependency-set image registry', () => {
-  it('backs every known version with an explicit image definition, keeping v1 forever', () => {
+  it('builds every known version only from the trees its digest hashes, keeping v1 forever', () => {
     // A released version is never removed from the registry (old submissions still resolve to it),
     // so v1 is always present.
     expect(KNOWN_DEPS_VERSIONS.has(1)).toBe(true)
     for (const n of KNOWN_DEPS_VERSIONS) {
-      expect(sessionBaseImageDefinition(n)).toEqual({
-        dockerfile: `backend/images/session-base/deps-v${n}/Dockerfile`,
-      })
-    }
-  })
-
-  it('builds each version from its own frozen dependency and built-in-agent inputs', () => {
-    for (const n of KNOWN_DEPS_VERSIONS) {
+      const definition = sessionBaseImageDefinition(n)
       const dockerfile = readFileSync(
-        new URL(`../../images/session-base/deps-v${n}/Dockerfile`, import.meta.url),
+        new URL(`../../../${definition.dockerfile}`, import.meta.url),
         'utf8',
       )
-      // Each versioned Dockerfile COPYs only its own deps-v<n> inputs — never the mutable template
-      // requirements or a compose step, and never another version's directory.
-      expect(dockerfile).toContain(`backend/images/session-base/deps-v${n}/requirements.txt`)
-      expect(dockerfile).toContain(`backend/images/session-base/deps-v${n}/builtin`)
-      expect(dockerfile).not.toContain('COPY templates/base/requirements.txt')
-      expect(dockerfile).not.toContain('scripts/compose.py')
-      for (const other of KNOWN_DEPS_VERSIONS) {
-        if (other !== n) {
-          expect(dockerfile).not.toContain(`deps-v${other}/`)
-        }
-      }
-    }
-  })
-
-  it('digests each version from its Dockerfile directory plus the copied source trees', () => {
-    for (const n of KNOWN_DEPS_VERSIONS) {
-      expect(sessionBaseImageInputs(sessionBaseImageDefinition(n))).toEqual([
-        `backend/images/session-base/deps-v${n}`,
-        'harness',
-        'environments',
-      ])
+      // A source outside the digested trees could change without moving the digest, so a stale
+      // image would be reused. This also keeps another version's frozen inputs out of the build.
+      const inputs = sessionBaseImageInputs(definition)
+      const sources = copySources(dockerfile)
+      expect(sources).not.toEqual([])
+      expect(
+        sources.filter(
+          (source) => !inputs.some((input) => source === input || source.startsWith(`${input}/`)),
+        ),
+      ).toEqual([])
     }
   })
 

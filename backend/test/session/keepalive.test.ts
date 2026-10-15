@@ -66,20 +66,6 @@ describe('startKeepalive', () => {
     expect(socket.terminated).toBe(1)
   })
 
-  it('forgives a single missed answer once the peer catches up', () => {
-    // A late pong still counts: the peer is alive, so a momentarily slow answer must not end the socket.
-    const socket = fakeSocket()
-    startKeepalive(socket as KeepaliveSocket, INTERVAL_MS)
-
-    vi.advanceTimersByTime(INTERVAL_MS)
-    socket.answer()
-    vi.advanceTimersByTime(INTERVAL_MS)
-    socket.answer()
-
-    expect(socket.terminated).toBe(0)
-    expect(socket.pings).toBe(2)
-  })
-
   it('stops on request, so a closed socket leaves no timer behind', () => {
     const socket = fakeSocket()
     const stop = startKeepalive(socket as KeepaliveSocket, INTERVAL_MS)

@@ -12,7 +12,7 @@ lint + types → unit tests → integration → browser e2e → GitHub Actions
 | Layer | Runs Docker? | Covers |
 | --- | --- | --- |
 | Python and TypeScript checks | No | Formatting, lint, types |
-| Unit tests | No | Pure logic, routes with fakes, storage in memory, Vue in jsdom |
+| Unit tests | No | Pure logic, routes with fakes, storage in memory, the LLM proxy against a local stub upstream, Vue in jsdom |
 | Backend integration | Yes | Real images, containers, sandbox limits, submission overlays, load checks |
 | Frontend e2e | Yes | Chromium against the real backend and session containers |
 | Compose deployment smoke | Yes | The app image and compose topology booting against a real Linux daemon |
@@ -79,12 +79,14 @@ This suite builds the session image and verifies behavior that unit tests cannot
 
 - A scripted client completes a Flappy Bird session.
 - A memory quota kills a container that exceeds it, and network restrictions isolate the container.
+- The root filesystem refuses writes, while writable scratch space enforces its size limit.
 - Idle teardown and orphan reaping work.
 - Submission overlays build and cache.
 - Load checks report success and known failures.
+- Agents in workflow games reach the LLM proxy, and only successful calls count against the per-game allowance.
 - Overlay eviction protects active ready submissions.
 
-CPU limits and a read-only root filesystem are part of the sandbox profile configuration, but no test in this suite asserts them behaviorally.
+CPU limits are part of the sandbox profile configuration, but no test in this suite asserts them behaviorally.
 
 Git reachability and commit pinning against a real repository are covered by a separate, opt-in test (`backend/test/integration/submission-source-network.test.ts`). It runs only when `SUBMISSION_NETWORK_TESTS=1` is set, so it is skipped by default and is not part of this job.
 
@@ -101,8 +103,6 @@ uv run python scripts/ci.py compose-smoke
 ```
 
 This manually dispatched job boots a temporary Compose project on a Linux Docker daemon, checks that the proxy's published ports reached the host, and verifies the TLS boundary, proxy and Compose `app` container connectivity, mounted data, and session cleanup. It does not cover the Cloudflare source-IP allowlist, and it refuses to run while a repository-root `.env` or `.tls` exists. See [Run the app in Docker](../setup/docker.md) and [Execution boundary](../runtime/execution.md); on Windows, run it under WSL.
-
-Backend integration covers the LLM network boundary.
 
 ## Examples and template checks
 

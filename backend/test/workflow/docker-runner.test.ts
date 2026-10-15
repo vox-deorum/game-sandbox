@@ -2078,7 +2078,6 @@ describe('Docker-backed workflow runner', () => {
     expect(results).toHaveLength(2)
     const crashed = results.find((r) => r.failed === 1)
     // The forfeited seat takes Flappy Bird's floor (0), discarding its 17-point partial.
-    expect(crashed?.episode_score).toBe(forfeitScore(ENV_ID))
     expect(crashed?.episode_score).toBe(0)
     expect(crashed?.failure_reason).toMatch(/exited with code 1/)
     // The clean later game keeps its honestly-earned recorded score.
@@ -2129,7 +2128,7 @@ describe('Docker-backed workflow runner', () => {
     const [result] = await storage.listGameResultsByRun(run.id)
     expect(result?.failed).toBe(1)
     // A budget overrun is a forfeit: the seat takes the floor (0), not its 3-point partial.
-    expect(result?.episode_score).toBe(forfeitScore(ENV_ID))
+    expect(result?.episode_score).toBe(0)
     expect(result?.failure_reason).toMatch(/episode/)
   })
 

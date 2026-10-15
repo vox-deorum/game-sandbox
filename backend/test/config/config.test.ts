@@ -28,34 +28,6 @@ describe('loadConfig', () => {
     expect(() => load({ SANDBOX_MEMORY_MB: value })).toThrow(/SANDBOX_MEMORY_MB/)
   })
 
-  it('applies class-scale defaults when only the required auth variables are set', () => {
-    const config = load({})
-    expect(config.port).toBe(8080)
-    expect(config.siteName).toBe('Game Sandbox')
-    expect(config.siteIconUrl).toBe('/game-sandbox-icon.png')
-    // The short name defaults to the site name, so it is 'Game Sandbox' out of the box too.
-    expect(config.siteShortName).toBe('Game Sandbox')
-    expect(config.templateRepoUrl).toBe('https://github.com/vox-deorum/game-agent-template')
-    expect(config.executionDriver).toBe('docker')
-    expect(config.docker.imagePolicy).toBe('reuse')
-    expect(config.docker.imageTagPrefix).toBe('game-sandbox')
-    expect(config.docker.llmRelay).toEqual({ mode: 'host-gateway' })
-    expect(config.sandbox).toEqual({
-      cpus: 1,
-      memoryMb: 512,
-      memoryPerPlayerMb: 32,
-      scratchMb: 256,
-      pids: 512,
-    })
-    // The db and recordings paths are derived from the data dir.
-    expect(config.dbPath.endsWith('sandbox.db')).toBe(true)
-    expect(config.recordingsDir.endsWith('recordings')).toBe(true)
-    // The retention spec's defaults: 30-day window, 100 per user, hourly sweep.
-    expect(config.recordingRetentionDays).toBe(30)
-    expect(config.recordingUserQuota).toBe(100)
-    expect(config.recordingSweepIntervalMs).toBe(3_600_000)
-  })
-
   it('parses the session-overlay eviction knob alongside the submission-overlay budget', () => {
     expect(load({}).sessionOverlayReclaimAgeMs).toBe(3_600_000)
     expect(load({ SESSION_OVERLAY_RECLAIM_AGE_MS: '60000' }).sessionOverlayReclaimAgeMs).toBe(

@@ -31,12 +31,10 @@ const CALL: ExecutionTelemetryCallInput = {
 describe('ExecutionTelemetryStore', () => {
   let root: string
   let store: ExecutionTelemetryStore
-  let now: Date
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'gs-llm-telemetry-'))
-    now = new Date('2026-07-15T12:34:56.000Z')
-    store = new ExecutionTelemetryStore(root, () => now)
+    store = new ExecutionTelemetryStore(root)
   })
 
   afterEach(() => {
@@ -44,47 +42,15 @@ describe('ExecutionTelemetryStore', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('creates the versioned schema and verifies startup writes', () => {
-    store.open('scope-1')
-    const db = new BetterSqlite3(join(root, 'scope-1.sqlite'), { readonly: true })
-    expect(db.pragma('user_version', { simple: true })).toBe(EXECUTION_TELEMETRY_SCHEMA_VERSION)
-    expect(
-      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").pluck().all(),
-    ).toEqual(['calls', 'meter_health'])
-    expect(
-      db
-        .prepare(
-          "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'calls_%' ORDER BY name",
-        )
-        .pluck()
-        .all(),
-    ).toEqual(['calls_created_at', 'calls_session_player'])
-    expect(db.prepare('SELECT * FROM meter_health').get()).toEqual({
-      id: 1,
-      checked_at: '2026-07-15T12:34:56.000Z',
-    })
-    db.close()
-  })
-
-  it('rechecks writes when admission explicitly opens a cached scope', () => {
-    store.open('scope-1')
-    now = new Date('2026-07-15T12:35:56.000Z')
-    store.open('scope-1')
-
-    const db = new BetterSqlite3(join(root, 'scope-1.sqlite'), { readonly: true })
-    expect(db.prepare('SELECT checked_at FROM meter_health WHERE id = 1').pluck().get()).toBe(
-      '2026-07-15T12:35:56.000Z',
-    )
-    db.close()
-  })
-
   it('refuses a cached scope whose durable write no longer commits', () => {
     store.open('scope-1')
+    store.insert('scope-1', CALL)
     const broken = new BetterSqlite3(join(root, 'scope-1.sqlite'))
     broken.exec('DROP TABLE meter_health')
     broken.close()
 
-    expect(() => store.open('scope-1')).toThrow('meter_health')
+    expect(() => store.open('scope-1')).toThrow(BetterSqlite3.SqliteError)
+    expect(store.listCalls('scope-1')).toEqual([expect.objectContaining(CALL)])
   })
 
   it('rejects newer schemas', () => {

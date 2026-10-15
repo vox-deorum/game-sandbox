@@ -411,6 +411,17 @@ describe('public leaderboard API', () => {
     const owned = board.automated.find((row) => row.agent.user_id === aliceId)
     expect(owned).toBeDefined()
     expect(owned?.agent.user_name).toBeUndefined()
+    expect(board.games).toHaveLength(2)
+    expect(board.games.map((game) => game.seats)).toEqual([
+      [
+        expect.objectContaining({
+          kind: 'submission',
+          submission_id: submission.id,
+          user_id: aliceId,
+        }),
+      ],
+      [expect.objectContaining({ kind: 'builtin', name: 'naive' })],
+    ])
     expect(
       board.games.flatMap((game) => game.seats).every((seat) => seat.user_name === undefined),
     ).toBe(true)

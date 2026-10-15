@@ -158,6 +158,30 @@ describe('rating API', () => {
     return id
   }
 
+  /** A fresh play-open season with a recording that seats alice's agent as `player_0`, plus extras. */
+  async function aliceRecording(
+    recordingId: string,
+    extraPlayers: Record<string, PlayerEntry> = {},
+    ratingPrompt?: string,
+  ): Promise<{ season: Season; subId: string; recId: string }> {
+    const season = await playOpenSeason(ratingPrompt)
+    const subId = await submissionFor(season.id, aliceId)
+    const recId = await writeRecording(recordingId, {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      ...extraPlayers,
+    })
+    return { season, subId, recId }
+  }
+
+  /** {@link aliceRecording} plus a finished session in that season that recorded it. */
+  async function seedAliceSession(
+    ...args: Parameters<typeof aliceRecording>
+  ): Promise<{ season: Season; subId: string; recId: string; sessionId: string }> {
+    const seeded = await aliceRecording(...args)
+    const sessionId = await seedSession({ seasonId: seeded.season.id, recordingId: seeded.recId })
+    return { ...seeded, sessionId }
+  }
+
   /** Schedule a one-game run in the season whose game recorded `recordingId`, at the given status. */
   async function tournamentGame(
     seasonId: string,
@@ -195,13 +219,9 @@ describe('rating API', () => {
   }
 
   it('stores a rating of a submitted agent and a named builtin under the caller identity', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-a', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-a', {
       player_1: { kind: 'agent', builtin_name: 'cautious', label: 'Cautious bidder' },
     })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
     const res = await app.inject({
       method: 'POST',
@@ -243,12 +263,7 @@ describe('rating API', () => {
   })
 
   it('overwrites a prior rating rather than duplicating while play is open', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-b', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-b')
     const agent = { kind: 'submission' as const, submission_id: subId }
 
     await app.inject({
@@ -273,37 +288,65 @@ describe('rating API', () => {
     expect(stored?.feedback).toBe('revised take')
   })
 
-  it('rejects a rating write from a pending (not-yet-active) user with not_active', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-not-allowed', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+  it('shares one effective rating across session and recording routes', async () => {
+    const { season, subId, recId, sessionId } = await seedAliceSession('flappy_bird-cross-route')
+    const agent = { kind: 'submission' as const, submission_id: subId }
 
-    const res = await app.inject({
+    const sessionWrite = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
-      headers: await users.headersFor('mallory', { status: 'pending' }),
-      payload: {
-        ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'eager' },
-        ],
-      },
+      headers: BOB,
+      payload: { ratings: [{ agent, score: 2, feedback: 'first impression' }] },
     })
+    expect(sessionWrite.statusCode).toBe(200)
 
-    expect(res.statusCode).toBe(403)
-    expect((res.json() as { code: string }).code).toBe('not_active')
+    const recordingWrite = await app.inject({
+      method: 'POST',
+      url: `/api/recordings/${recId}/ratings`,
+      headers: BOB,
+      payload: { ratings: [{ agent, score: 5, feedback: 'final impression' }] },
+    })
+    expect(recordingWrite.statusCode).toBe(200)
+
+    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(1)
+    const stored = await storage.getRating(season.id, bobId, {
+      kind: 'submission',
+      submission_id: subId,
+      user_id: aliceId,
+    })
+    expect(stored).toMatchObject({ score: 5, feedback: 'final impression' })
+
+    for (const url of [`/api/sessions/${sessionId}/ratings`, `/api/recordings/${recId}/ratings`]) {
+      const read = await app.inject({ method: 'GET', url, headers: BOB })
+      expect(read.statusCode).toBe(200)
+      expect(read.json()).toMatchObject({
+        agents: [{ agent, your_rating: 5, your_feedback: 'final impression' }],
+      })
+    }
+  })
+
+  it.each([
+    'pending',
+    'guest',
+  ] as const)('rejects %s rating writes through session and recording routes with not_active', async (status) => {
+    const { season, subId, recId, sessionId } = await seedAliceSession('flappy_bird-not-active')
+    const headers = await users.headersFor('mallory', { status })
+    const payload = {
+      ratings: [
+        { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'eager' },
+      ],
+    }
+
+    for (const url of [`/api/sessions/${sessionId}/ratings`, `/api/recordings/${recId}/ratings`]) {
+      const res = await app.inject({ method: 'POST', url, headers, payload })
+      expect(res.statusCode).toBe(403)
+      expect((res.json() as { code: string }).code).toBe('not_active')
+    }
     expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
   })
 
   it('rejects a rating write and both rating reads for an anonymous caller', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-anon', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-anon')
 
     const write = await app.inject({
       method: 'POST',
@@ -323,13 +366,9 @@ describe('rating API', () => {
   })
 
   it('rejects an out-of-range score and a mixed valid/invalid payload writes nothing', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-c', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-c', {
       player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
     const res = await app.inject({
       method: 'POST',
@@ -349,13 +388,9 @@ describe('rating API', () => {
   })
 
   it('requires a written comment within the code-point cap for every rating', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-comment', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-comment', {
       player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
     // Whitespace-only feedback is blank after trim, so the whole payload is rejected before any write.
     const blank = await app.inject({
@@ -536,12 +571,7 @@ describe('rating API', () => {
   })
 
   it('rejects rating the caller own submitted agent, resolving the owner server-side', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-e', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-e')
 
     // Alice (the owner) rates her own agent; the wire form carries no owner, so the route must resolve
     // it from the submission and reject regardless of the body.
@@ -611,12 +641,7 @@ describe('rating API', () => {
 
   it('rejects writes against a closed play window and marks reads read-only', async () => {
     // A submitted-agent watch session attaches to its submission's season; close play afterward.
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-g', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-g')
     await storage.setPlayStatus(season.id, 'closed')
 
     const write = await app.inject({
@@ -642,16 +667,16 @@ describe('rating API', () => {
   })
 
   it('reads effective ratings and both prompts per agent, Naive showing only the season prompt', async () => {
-    const season = await playOpenSeason('Rate the overall fun')
-    const subId = await submissionFor(season.id, aliceId)
+    const { season, subId, sessionId } = await seedAliceSession(
+      'flappy_bird-h',
+      {
+        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+        player_2: { kind: 'human', label: 'bob', user: 'bob' },
+      },
+      'Rate the overall fun',
+    )
     await storage.updateSubmissionStatus(subId, 'ready')
     await storage.upsertAgentRatingPrompt(season.id, aliceId, 'Judge my dodging')
-    const recId = await writeRecording('flappy_bird-h', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-      player_2: { kind: 'human', label: 'bob', user: 'bob' },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
     // Pre-rate the submitted agent so the read pre-fills the prior value and its written comment.
     await app.inject({
@@ -704,12 +729,7 @@ describe('rating API', () => {
   })
 
   it('shows the user own submitted agent without offering a rating control', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
-    const recId = await writeRecording('flappy_bird-i', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
+    const { sessionId } = await seedAliceSession('flappy_bird-i')
 
     const res = await app.inject({
       method: 'GET',
@@ -725,13 +745,8 @@ describe('rating API', () => {
   })
 
   it('reveals submitted-agent names to admins and after public play closes', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-names')
     await storage.updateSubmissionStatus(subId, 'ready')
-    const recId = await writeRecording('flappy_bird-names', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
     // The non-blind label resolves the owner's display name (never the opaque id), which an admin
     // sees even while play is open.
@@ -758,13 +773,8 @@ describe('rating API', () => {
   })
 
   it('shows a guest the stable hash label on every rating view, play window or not', async () => {
-    const season = await playOpenSeason()
-    const subId = await submissionFor(season.id, aliceId)
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-guest')
     await storage.updateSubmissionStatus(subId, 'ready')
-    const recId = await writeRecording('flappy_bird-guest', {
-      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-    })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
     const guestHeaders = await users.headersFor('guest-user', { status: 'guest' })
 
     // The hash label, not "Agent N", for a guest while play is open...
@@ -810,21 +820,30 @@ describe('rating API', () => {
     })
   })
 
-  it('returns no rateable agents for a pure Naive watch recording', async () => {
+  it('offers no ratings and refuses writes for a pure Naive watch recording', async () => {
     const season = await playOpenSeason()
     const recId = await writeRecording('flappy_bird-naive-only', {
       player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
 
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-    })
+    for (const url of [`/api/sessions/${sessionId}/ratings`, `/api/recordings/${recId}/ratings`]) {
+      const read = await app.inject({ method: 'GET', url, headers: BOB })
+      expect(read.statusCode).toBe(200)
+      expect((read.json() as { agents: unknown[] }).agents).toEqual([])
 
-    expect(res.statusCode).toBe(200)
-    expect((res.json() as { agents: unknown[] }).agents).toEqual([])
+      const write = await app.inject({
+        method: 'POST',
+        url,
+        headers: BOB,
+        payload: {
+          ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 5, feedback: 'steady' }],
+        },
+      })
+      expect(write.statusCode).toBe(400)
+      expect(write.json()).toMatchObject({ code: 'agent_not_in_session' })
+    }
+    expect(await storage.listRatingsBySeason(season.id)).toEqual([])
   })
 
   it('sets the author prompt under the caller identity and rejects a caller with no agent', async () => {
@@ -901,11 +920,7 @@ describe('rating API', () => {
   })
   describe('rating a replay', () => {
     it('rates a finished tournament game against its run season', async () => {
-      const season = await playOpenSeason()
-      const subId = await submissionFor(season.id, aliceId)
-      const recId = await writeRecording('flappy_bird-t1', {
-        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      })
+      const { season, subId, recId } = await aliceRecording('flappy_bird-t1')
       await tournamentGame(season.id, recId)
 
       const read = await app.inject({
@@ -935,28 +950,41 @@ describe('rating API', () => {
       expect(stored).toMatchObject({ score: 2, feedback: 'slow' })
     })
 
-    it('refuses a tournament game that is still running', async () => {
-      const season = await playOpenSeason()
-      const subId = await submissionFor(season.id, aliceId)
-      const recId = await writeRecording('flappy_bird-t2', {
-        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      })
-      await tournamentGame(season.id, recId, 'running')
+    it.each([
+      { method: 'GET' as const, status: 'pending' as const },
+      { method: 'GET' as const, status: 'running' as const },
+      { method: 'POST' as const, status: 'pending' as const },
+      { method: 'POST' as const, status: 'running' as const },
+    ])('refuses a $method rating for a tournament game in $status state', async ({
+      method,
+      status,
+    }) => {
+      const { season, subId, recId } = await aliceRecording('flappy_bird-t2')
+      await tournamentGame(season.id, recId, status)
       const res = await app.inject({
-        method: 'GET',
+        method,
         url: `/api/recordings/${recId}/ratings`,
         headers: BOB,
+        payload:
+          method === 'POST'
+            ? {
+                ratings: [
+                  {
+                    agent: { kind: 'submission', submission_id: subId },
+                    score: 5,
+                    feedback: 'good game',
+                  },
+                ],
+              }
+            : undefined,
       })
       expect(res.statusCode).toBe(409)
       expect((res.json() as { code: string }).code).toBe('not_finished')
+      expect(await storage.listRatingsBySeason(season.id)).toEqual([])
     })
 
     it('refuses a closed season and the caller own agent', async () => {
-      const season = await playOpenSeason()
-      const subId = await submissionFor(season.id, aliceId)
-      const recId = await writeRecording('flappy_bird-t3', {
-        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      })
+      const { season, subId, recId } = await aliceRecording('flappy_bird-t3')
       await tournamentGame(season.id, recId)
       const payload = {
         ratings: [
@@ -986,12 +1014,7 @@ describe('rating API', () => {
     })
 
     it('rates a session recording through its session season', async () => {
-      const season = await playOpenSeason()
-      const subId = await submissionFor(season.id, aliceId)
-      const recId = await writeRecording('flappy_bird-t4', {
-        player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
-      })
-      await seedSession({ seasonId: season.id, recordingId: recId })
+      const { season, recId } = await seedAliceSession('flappy_bird-t4')
       const res = await app.inject({
         method: 'GET',
         url: `/api/recordings/${recId}/ratings`,
