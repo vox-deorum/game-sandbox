@@ -270,13 +270,31 @@ export interface PlankTreatment {
   }
 }
 
-/** A restrained affine colour treatment applied to a world composite. */
-export interface ColorGradeTreatment {
-  brightness: number
+/**
+ * The look of one rules phase, held at that phase's midpoint tick. The renderer blends adjacent
+ * keyframes by presentation tick, so every value here is a target the day passes through.
+ */
+export interface DayCycleKeyframe {
+  /** Overall light level applied after saturation and contrast. */
+  exposure: number
+  /** Contrast around mid grey. */
   contrast: number
+  /** Saturation around luminance. */
   saturation: number
-  tint: HearthsidePaletteKey
-  tintMix: number
+  /** Coloured light: a per-channel gain toward the tint, normalized to its brightest channel. */
+  light: { tint: HearthsidePaletteKey; strength: number }
+  /** A small atmospheric lift toward the tint. */
+  haze: { tint: HearthsidePaletteKey; mix: number }
+  /** Strength of the lantern and hearth light pools. */
+  glow: number
+  /** Character drop shadow: screen direction it points, offset in cells, and opacity. */
+  shadow: { angleDegrees: number; length: number; alpha: number }
+  /** Strength of the screen-edge darkening. */
+  vignette: number
+  /** Opacity of the drifting cloud shadows. */
+  clouds: number
+  /** Opacity of the white cranes. */
+  cranes: number
 }
 
 /** A centered edge treatment that blends detailed world art into its surroundings. */
@@ -366,7 +384,7 @@ export interface HearthsideStyle {
     frames: Readonly<Record<string, string>>
   }
   postEffects: {
-    nightGrade: ColorGradeTreatment
+    dayCycle: Readonly<Record<string, DayCycleKeyframe>>
     textureOutline: TextureOutlineTreatment
   }
   characters: {
@@ -388,7 +406,9 @@ export interface HearthsideStyle {
     frames: readonly string[]
     tint: HearthsidePaletteKey
     count: readonly [number, number]
-    frameMs: number
+    spanMetres: number
+    flightTicks: number
+    ticksPerFrame: number
   }
   expressions: {
     frames: Readonly<Record<string, string>>
@@ -690,14 +710,20 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 
   const postEffectsSource = exactRecord(source.postEffects, 'presentation.postEffects', [
-    'nightGrade',
+    'dayCycle',
     'textureOutline',
   ])
+  const dayCycleSource = exactRecord(
+    postEffectsSource.dayCycle,
+    'presentation.postEffects.dayCycle',
+    RULES.phases.map((phase) => phase.name),
+  )
   const postEffects = {
-    nightGrade: colorGradeTreatment(
-      postEffectsSource.nightGrade,
-      'presentation.postEffects.nightGrade',
-      paletteNames,
+    dayCycle: Object.fromEntries(
+      Object.entries(dayCycleSource).map(([phase, keyframe]) => [
+        phase,
+        dayCycleKeyframe(keyframe, `presentation.postEffects.dayCycle.${phase}`, paletteNames),
+      ]),
     ),
     textureOutline: textureOutlineTreatment(
       postEffectsSource.textureOutline,
@@ -850,7 +876,9 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
     'frames',
     'tint',
     'count',
-    'frameMs',
+    'spanMetres',
+    'flightTicks',
+    'ticksPerFrame',
   ])
   const count = array(cranesSource.count, 'presentation.cranes.count')
   if (count.length !== 2) throw new Error('presentation.cranes.count must contain two values.')
@@ -861,7 +889,9 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
       nonnegativeInteger(count[0], 'presentation.cranes.count[0]'),
       nonnegativeInteger(count[1], 'presentation.cranes.count[1]'),
     ] as const,
-    frameMs: positiveNumber(cranesSource.frameMs, 'presentation.cranes.frameMs'),
+    spanMetres: positiveNumber(cranesSource.spanMetres, 'presentation.cranes.spanMetres'),
+    flightTicks: positiveNumber(cranesSource.flightTicks, 'presentation.cranes.flightTicks'),
+    ticksPerFrame: positiveNumber(cranesSource.ticksPerFrame, 'presentation.cranes.ticksPerFrame'),
   }
   if (cranes.count[0] > cranes.count[1]) {
     throw new Error('presentation.cranes.count must be ordered from minimum to maximum.')
@@ -1034,24 +1064,47 @@ export function readHearthsideStyle(value: unknown): HearthsideStyle {
   }
 }
 
-function colorGradeTreatment(
+function dayCycleKeyframe(
   value: unknown,
   name: string,
   palette: ReadonlySet<string>,
-): ColorGradeTreatment {
+): DayCycleKeyframe {
   const source = exactRecord(value, name, [
-    'brightness',
+    'exposure',
     'contrast',
     'saturation',
-    'tint',
-    'tintMix',
+    'light',
+    'haze',
+    'glow',
+    'shadow',
+    'vignette',
+    'clouds',
+    'cranes',
   ])
+  const light = exactRecord(source.light, `${name}.light`, ['tint', 'strength'])
+  const haze = exactRecord(source.haze, `${name}.haze`, ['tint', 'mix'])
+  const shadow = exactRecord(source.shadow, `${name}.shadow`, ['angleDegrees', 'length', 'alpha'])
   return {
-    brightness: boundedNumber(source.brightness, `${name}.brightness`, 0, 2),
+    exposure: boundedNumber(source.exposure, `${name}.exposure`, 0, 2),
     contrast: boundedNumber(source.contrast, `${name}.contrast`, 0, 2),
     saturation: boundedNumber(source.saturation, `${name}.saturation`, 0, 2, true),
-    tint: paletteKey(source.tint, palette, `${name}.tint`),
-    tintMix: unitNumber(source.tintMix, `${name}.tintMix`),
+    light: {
+      tint: paletteKey(light.tint, palette, `${name}.light.tint`),
+      strength: unitNumber(light.strength, `${name}.light.strength`),
+    },
+    haze: {
+      tint: paletteKey(haze.tint, palette, `${name}.haze.tint`),
+      mix: unitNumber(haze.mix, `${name}.haze.mix`),
+    },
+    glow: unitNumber(source.glow, `${name}.glow`),
+    shadow: {
+      angleDegrees: finiteNumber(shadow.angleDegrees, `${name}.shadow.angleDegrees`),
+      length: nonnegativeNumber(shadow.length, `${name}.shadow.length`),
+      alpha: unitNumber(shadow.alpha, `${name}.shadow.alpha`),
+    },
+    vignette: unitNumber(source.vignette, `${name}.vignette`),
+    clouds: unitNumber(source.clouds, `${name}.clouds`),
+    cranes: unitNumber(source.cranes, `${name}.cranes`),
   }
 }
 

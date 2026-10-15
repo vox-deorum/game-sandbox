@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording } from '../core/test-helpers.js'
 import type { FrameScene } from '../core/types.js'
+import { dayLightAt } from '../effects/post-effects.js'
 import { buildStaticScene, computeScene } from '../map/scene.js'
 import { expectedCharacterIds, readStatic } from '../ui/overlay.js'
 import { type CharacterArt, createCharacterLayer } from './characters.js'
+
+const NOON = dayLightAt(null, 0).shadow
 
 function characterArt(): CharacterArt {
   const sets = [
@@ -53,12 +56,12 @@ describe('Three Branches retained characters', () => {
     const fittedZoom = 2
     const closeZoom = fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
 
-    characters.reconcile(scene, closeZoom, fittedZoom)
+    characters.reconcile(scene, closeZoom, fittedZoom, NOON)
     const visitorBefore = descendant(view, 'character:player_0')
     expect(descendant(visitorBefore, 'character-fallback').visible).toBe(true)
 
     characters.install(characterArt())
-    characters.reconcile(scene, closeZoom, fittedZoom)
+    characters.reconcile(scene, closeZoom, fittedZoom, NOON)
     expect(view.children).toHaveLength(scene.characters.length)
     expect(descendant(view, 'character:player_0')).toBe(visitorBefore)
     for (const label of [
@@ -75,7 +78,7 @@ describe('Three Branches retained characters', () => {
     expect(descendant(visitorBefore, 'character-fallback').visible).toBe(false)
 
     const trimmed = { ...scene, characters: scene.characters.slice(1) }
-    characters.reconcile(trimmed, closeZoom, fittedZoom)
+    characters.reconcile(trimmed, closeZoom, fittedZoom, NOON)
     expect(view.children).toHaveLength(trimmed.characters.length)
     expect(view.children.some((child) => child.label === 'character:player_0')).toBe(false)
   })
@@ -88,12 +91,12 @@ describe('Three Branches retained characters', () => {
     const threshold = fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
     characters.install(characterArt())
 
-    characters.reconcile(scene, threshold - 0.01, fittedZoom)
+    characters.reconcile(scene, threshold - 0.01, fittedZoom, NOON)
     const visitor = descendant(view, 'character:player_0')
     expect(descendant(visitor, 'character-far-mark').visible).toBe(true)
     expect(descendant(visitor, 'character-rotor').visible).toBe(false)
 
-    characters.reconcile(scene, threshold, fittedZoom)
+    characters.reconcile(scene, threshold, fittedZoom, NOON)
     expect(descendant(visitor, 'character-far-mark').visible).toBe(false)
     expect(descendant(visitor, 'character-rotor').visible).toBe(true)
   })
@@ -110,7 +113,7 @@ describe('Three Branches retained characters', () => {
       ),
     }
 
-    characters.reconcile(walking, 8, 2)
+    characters.reconcile(walking, 8, 2, NOON)
     const visitor = descendant(view, 'character:player_0')
     const base = descendant(visitor, 'character-base') as unknown as { texture: Texture }
     const left = descendant(visitor, 'character-left-arm') as unknown as {
@@ -126,5 +129,29 @@ describe('Three Branches retained characters', () => {
     expect(right.rotation).not.toBe(0)
     expect(left.position.y).not.toBe(right.position.y)
     expect(descendant(visitor, 'character-shadow').visible).toBe(true)
+  })
+
+  it('lays the drop shadow along the sun, longer and fainter when the sun is low', () => {
+    const view = new Container()
+    const characters = createCharacterLayer(view)
+    const scene = fixtureScene()
+    characters.install(characterArt())
+    const shadowOf = (): Container =>
+      descendant(descendant(view, 'character:player_0'), 'character-shadow')
+
+    characters.reconcile(scene, 8, 2, NOON)
+    const noon = shadowOf()
+    const noonReach = Math.hypot(noon.position.x, noon.position.y)
+    const noonAlpha = noon.alpha
+
+    const dawn = dayLightAt('dawn', 1).shadow
+    characters.reconcile(scene, 8, 2, dawn)
+    const low = shadowOf()
+    expect(Math.hypot(low.position.x, low.position.y)).toBeGreaterThan(noonReach)
+    expect(Math.atan2(low.position.y, low.position.x)).toBeCloseTo(
+      (dawn.angleDegrees * Math.PI) / 180 - Math.PI * 2,
+    )
+    expect(low.alpha).toBe(dawn.alpha)
+    expect(low.alpha).toBeLessThan(noonAlpha)
   })
 })

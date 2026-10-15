@@ -2,11 +2,7 @@ import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import {
-  HEARTHSIDE_STYLE,
-  propVisualScale,
-  sceneryVisualScale,
-} from '../core/presentation.js'
+import { HEARTHSIDE_STYLE, propVisualScale, sceneryVisualScale } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import { propEffectSpec } from '../effects/effects.js'
 import type { FrameGrid } from '../ui/tint.js'
@@ -510,10 +506,14 @@ describe('Three Branches prop layers', () => {
       frameRectangle(frameGrid('effects'), glowSpec.nextFrame ?? ''),
     )
     expect(glow.alpha + glowBlend.alpha).toBeCloseTo(glowSpec.alpha)
-    expect(targets.emissives.getChildByLabel('prop-emissive:lantern_0')?.position).toMatchObject({
-      x: 8,
-      y: 8,
-    })
+    const pool = targets.emissives.getChildByLabel('prop-emissive:lantern_0') as Sprite
+    expect(pool.position).toMatchObject({ x: 8, y: 8 })
+    expect(pool.blendMode).toBe('add')
+    const nightAlpha = pool.alpha
+    const nightScale = pool.scale.x
+    layer.advance(1, 0.25)
+    expect(pool.alpha).toBeCloseTo(nightAlpha * 0.25)
+    expect(pool.scale.x).toBeLessThan(nightScale)
     const litLower = lower.texture
 
     layer.reconcile(frame(scene, [], { lantern_0: 'unlit' }))

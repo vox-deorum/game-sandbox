@@ -1,9 +1,13 @@
 import { Container } from 'pixi.js'
-import { HEARTHSIDE_STYLE } from '../core/presentation.js'
-import { createGradeFilter } from '../effects/post-effects.js'
+import {
+  createGradeFilter,
+  type DayLight,
+  gradeMatrix,
+  isIdentityMatrix,
+} from '../effects/post-effects.js'
 import type { MapLayerView } from './map-layer.js'
 
-/** The world containers and retained night grade that decide which layers the filter covers. */
+/** The world containers and retained day grade that decide which layers the filter covers. */
 export interface WorldArtStack {
   /** The camera-transformed root the renderer masks and adds to the Pixi stage. */
   readonly root: Container
@@ -17,21 +21,29 @@ export interface WorldArtStack {
   /** Retained semantic roof containers, inside the authored composite between upper walls and effects. */
   readonly roofs: Container
   readonly effects: Container
+  /** White cranes flying above the authored village, inside the grade. */
+  readonly cranes: Container
+  /** Drifting cloud shadows over everything else in the world art, inside the grade. */
+  readonly clouds: Container
   readonly emissives: Container
   readonly highlight: Container
   readonly annotations: Container
   readonly collision: Container
-  /** Attach or release the one retained night filter over terrain and authored art together. */
-  setNightGrade(active: boolean): void
-  /** Release the retained night filter. Safe to call more than once. */
+  /**
+   * Grade terrain and authored art together with the day light. The one retained filter is
+   * detached while the grade is the identity, so midday and the off phase cost no pass.
+   */
+  setDayLight(light: DayLight): void
+  /** Release the retained grade filter. Safe to call more than once. */
   destroy(): void
 }
 
 /**
- * Build the world scene graph in its drawn order. Natural terrain and the authored composite stay
- * separate roots so the night grade can cover both at once from their shared parent. Emissives, the
- * prop highlight, annotations, and collision remain outside the night grade. This makes the filter
- * boundary structural rather than a rule someone has to remember.
+ * Build the world scene graph in its drawn order. Natural terrain, the authored composite, the
+ * cranes, and the cloud shadows share one parent so the day grade covers them all at once.
+ * Emissives, the prop highlight, annotations, and collision remain outside the grade, so light
+ * pools stay warm at night and overlays never shift colour. This makes the filter boundary
+ * structural rather than a rule someone has to remember.
  */
 export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const natural = new Container({ label: 'world-natural' })
@@ -43,6 +55,8 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const upper = new Container({ label: 'upper' })
   const roofs = new Container({ label: 'roofs' })
   const effects = new Container({ label: 'effects' })
+  const cranes = new Container({ label: 'cranes' })
+  const clouds = new Container({ label: 'clouds' })
   const emissives = new Container({ label: 'emissives' })
   const highlight = new Container({ label: 'prop-highlight-layer' })
   const annotations = new Container({ label: 'annotations' })
@@ -50,11 +64,8 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const worldArt = new Container({ label: 'world-art' })
   const root = new Container({ label: 'world-root' })
 
-  const nightFilter = createGradeFilter(
-    HEARTHSIDE_STYLE.postEffects.nightGrade,
-    HEARTHSIDE_STYLE.palette,
-  )
-  let night = false
+  const gradeFilter = createGradeFilter()
+  let graded = false
   let destroyed = false
 
   natural.addChild(mapView.naturalView)
@@ -68,7 +79,7 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
     roofs,
     effects,
   )
-  worldArt.addChild(natural, authored)
+  worldArt.addChild(natural, authored, cranes, clouds)
   root.addChild(worldArt, emissives, highlight, annotations, collision)
 
   return {
@@ -80,22 +91,27 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
     upper,
     roofs,
     effects,
+    cranes,
+    clouds,
     emissives,
     highlight,
     annotations,
     collision,
-    setNightGrade(active) {
-      if (active === night) return
-      night = active
-      // The instance is retained across the switch, so entering and leaving night costs an
+    setDayLight(light) {
+      const matrix = gradeMatrix(light)
+      const active = !isIdentityMatrix(matrix)
+      if (active) gradeFilter.matrix = matrix
+      if (active === graded) return
+      graded = active
+      // The instance is retained across the switch, so leaving and re-entering midday costs an
       // attachment rather than a filter rebuild.
-      worldArt.filters = active ? [nightFilter] : []
+      worldArt.filters = active ? [gradeFilter] : []
     },
     destroy() {
       if (destroyed) return
       destroyed = true
       worldArt.filters = []
-      nightFilter.destroy()
+      gradeFilter.destroy()
     },
   }
 }

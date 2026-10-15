@@ -1,13 +1,20 @@
+import { degreesToRadians } from '@renderers/base/math.js'
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
 import type { CharacterCastSet } from '../core/presentation.js'
 import { HEARTHSIDE_STYLE, PALETTE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import type { CharacterDrawable, FrameScene } from '../core/types.js'
+import type { DayShadow } from '../effects/post-effects.js'
 import { type FrameGrid, frameRectangle } from '../ui/tint.js'
 import { characterGait, characterRotation, characterStyle } from './characters-art.js'
 
 const CHARACTER_SCALE = (THREE_BRANCHES_PRESENTATION.unitsPerMetre / 128) * 0.85
 const CHARACTER_FRAME_SIZE = 192
+/** The soft ellipse inside the shadow frame: its centre and full extent in pixels. */
+const SHADOW_ELLIPSE = { x: 95.5, y: 73, width: 69, height: 36 }
+const SHADOW_FRAME = { width: 192, height: 128 }
+/** Shadow width across the sun direction, as a share of the body diameter. */
+const SHADOW_BREADTH = 0.85
 
 /** Loaded pages needed to assemble the retained character art. */
 export interface CharacterAtlasTextures {
@@ -30,8 +37,8 @@ export interface CharacterArt {
 
 /** Operations exposed by the retained character display layer. */
 export interface CharacterLayer {
-  /** Reconcile retained nodes toward one pure frame and camera readability state. */
-  reconcile(scene: FrameScene, zoom: number, fittedZoom: number): void
+  /** Reconcile retained nodes toward one pure frame, its day shadow, and camera readability. */
+  reconcile(scene: FrameScene, zoom: number, fittedZoom: number, shadow: DayShadow): void
   /** Replace provisional marks with the loaded Hearthside sprite assembly. */
   install(art: CharacterArt): void
 }
@@ -97,7 +104,7 @@ export function createCharacterLayer(layer: Container): CharacterLayer {
   }
 
   return {
-    reconcile(scene, zoom, fittedZoom) {
+    reconcile(scene, zoom, fittedZoom, shadow) {
       const active = new Set(scene.characters.map((character) => character.id))
       for (const [id, node] of nodes) {
         if (!active.has(id)) {
@@ -105,8 +112,12 @@ export function createCharacterLayer(layer: Container): CharacterLayer {
           nodes.delete(id)
         }
       }
+      const cellUnits =
+        THREE_BRANCHES_PRESENTATION.unitsPerMetre * scene.static.village.size.cellSize
       for (const character of scene.characters) {
-        drawCharacter(nodeFor(character.id), character, art, zoom, fittedZoom)
+        const node = nodeFor(character.id)
+        drawCharacter(node, character, art, zoom, fittedZoom)
+        if (node.shadow !== null) castShadow(node.shadow, character.radius, shadow, cellUnits)
       }
     },
     install(nextArt) {
@@ -139,7 +150,7 @@ function installNodeArt(node: CharacterNode, art: CharacterArt): void {
   if (node.rotor !== null || node.shadow !== null) return
   const shadow = characterSprite('character-shadow', art.shadow)
   shadow.tint = HEARTHSIDE_STYLE.palette.backdrop
-  shadow.alpha = 0.45
+  shadow.anchor.set(SHADOW_ELLIPSE.x / SHADOW_FRAME.width, SHADOW_ELLIPSE.y / SHADOW_FRAME.height)
   const rotor = new Container({ label: 'character-rotor' })
   const gait = new Container({ label: 'character-gait' })
   const directionMark = characterSprite('character-direction-mark', art.directionMark)
@@ -211,6 +222,22 @@ function drawCharacter(
   rightArm.rotation = gait.rightArm.rotation
   gaitContainer.rotation = gait.body.rotation
   gaitContainer.position.set(0, gait.body.bob * CHARACTER_SCALE)
+}
+
+/**
+ * Lay the drop shadow along the sun: it starts under the body and reaches `length` cells further
+ * in the shadow direction, so a low sun draws a long, faint shadow and midday a tight contact one.
+ */
+function castShadow(sprite: Sprite, radius: number, shadow: DayShadow, cellUnits: number): void {
+  const angle = degreesToRadians(shadow.angleDegrees)
+  const reach = shadow.length * cellUnits
+  sprite.rotation = angle
+  sprite.position.set((Math.cos(angle) * reach) / 2, (Math.sin(angle) * reach) / 2)
+  sprite.scale.set(
+    (radius * 2 + reach) / SHADOW_ELLIPSE.width,
+    (radius * 2 * SHADOW_BREADTH) / SHADOW_ELLIPSE.height,
+  )
+  sprite.alpha = shadow.alpha
 }
 
 function registerArm(sprite: Sprite, arm: CharacterCastSet['leftArm'], travelPixels: number): void {

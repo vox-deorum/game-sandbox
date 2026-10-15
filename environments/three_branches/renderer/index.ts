@@ -18,7 +18,7 @@ import type {
   RendererDefinition,
   RenderOptions,
 } from '@renderers/types.js'
-import { Assets, Container, Graphics, Texture } from 'pixi.js'
+import { Assets, Container, Graphics, Sprite, Texture, TilingSprite } from 'pixi.js'
 
 // Atlas manifest and art live beside the barrel; the build and the atlas CLI resolve them from the
 // renderer root.
@@ -51,7 +51,14 @@ import {
   transitionDurationMs,
 } from './core/presentation.js'
 import type { CollisionShape, FrameScene, StaticScene, WorldPoint } from './core/types.js'
-
+import { type CraneLayer, createCraneLayer } from './effects/cranes.js'
+import {
+  cloudTexture,
+  type DayLight,
+  dayLightAt,
+  hasAmbientTransition,
+  vignetteTexture,
+} from './effects/post-effects.js'
 // map/
 import {
   advanceVisitorReturn,
@@ -108,6 +115,11 @@ import { plateProbe, within } from './ui/palette.js'
 import { propUseShapes, selectUseTarget } from './ui/use-preview.js'
 import { createVisitorInput, type VisitorInputController } from './ui/visitor-input.js'
 
+/** World units one cloud-pattern texel covers, which sets how broad the cloud patches read. */
+const CLOUD_TILE_SCALE = 5.5
+/** Cloud-shadow drift in world units per tick, heading east and a little north. */
+const CLOUD_DRIFT = { x: 3.2, y: -1.2 }
+
 const CONTENT_SIZE = {
   width: THREE_BRANCHES_PRESENTATION.internalSize.width,
   height:
@@ -139,6 +151,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private roofs!: RoofLayer
   private lastRoofTick: number | null = null
   private characters!: CharacterLayer
+  private cranes!: CraneLayer
+  private clouds!: TilingSprite
+  private vignette!: Sprite
+  /** The day light of the presented scene, recomputed whenever a scene is presented. */
+  private dayLight: DayLight = dayLightAt(null, 0)
   private annotations!: AnnotationLayer
   /** The player the host points at, whose nameplate every annotation redraw outlines. */
   private highlightedPlayerId: string | null = null
@@ -201,7 +218,22 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.upperLayer = this.world.upper
     this.worldRoot = this.world.root
     this.worldRoot.mask = contentMask
-    root.addChild(backdrop, contentMask, this.worldRoot, inputLayer, chromeLayer)
+    this.clouds = new TilingSprite({
+      label: 'cloud-shadows',
+      texture: cloudTexture(),
+      width: this.staticScene.world.width,
+      height: this.staticScene.world.height,
+    })
+    this.clouds.tint = HEARTHSIDE_STYLE.palette.backdrop
+    this.clouds.tileScale.set(CLOUD_TILE_SCALE)
+    this.world.clouds.addChild(this.clouds)
+    this.cranes = createCraneLayer(this.world.cranes, this.staticScene)
+    // The vignette is screen space: it frames the content area and never moves with the camera.
+    this.vignette = new Sprite({ label: 'vignette', texture: vignetteTexture() })
+    this.vignette.position.set(0, THREE_BRANCHES_PRESENTATION.chromeHeight)
+    this.vignette.setSize(CONTENT_SIZE.width, CONTENT_SIZE.height)
+    root.addChild(backdrop, contentMask, this.worldRoot, this.vignette, inputLayer, chromeLayer)
+    this.presentDayLight(0)
 
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)
     this.roofs = createRoofLayer(this.world.roofs, this.staticScene)
@@ -350,7 +382,8 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       durationMs > 0 &&
       this.presentedScene !== null &&
       (sceneCharactersMoved(this.landedScene ?? this.presentedScene, scene) ||
-        hasSustainedPropEffectTransition(this.presentedScene, scene))
+        hasSustainedPropEffectTransition(this.presentedScene, scene) ||
+        hasAmbientTransition(this.presentedScene, scene))
     const action = movementAction({
       reDelivery,
       shouldAnimate,
@@ -368,7 +401,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.movement = step.glide
     if (step.present !== null) this.presentScene(step.present)
     // Prop effects follow the scene on screen, which mid-glide is still between two ticks.
-    this.props.advance(this.presentedScene ?? scene)
+    this.props.advance(this.presentedScene ?? scene, this.dayLight.glow)
     this.updateProbes(state, scene)
     if (!snapLike) this.landedScene = scene
   }
@@ -386,7 +419,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
       const progress = Math.min(1, movement.elapsedMs / movement.durationMs)
       this.presentScene(interpolateScene(movement.from, movement.to, progress))
       this.advanceCameraReturn(dtMs, sceneVisitorMoved(movement.from, movement.to))
-      this.props.advance(this.presentedScene ?? movement.to)
+      this.props.advance(this.presentedScene ?? movement.to, this.dayLight.glow)
       if (progress >= 1) {
         this.movement = null
         this.settleRemainingMs = HEARTHSIDE_STYLE.transition.settleGraceMs
@@ -438,7 +471,9 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.upperGround?.destroy()
     this.upperGround = null
     this.world.destroy()
+    const generated = [this.clouds.texture, this.vignette.texture]
     super.destroy()
+    for (const texture of generated) texture.destroy(true)
   }
 
   /** Map a browser point into the renderer's own logical coordinates. */
@@ -624,7 +659,12 @@ export class ThreeBranchesRenderer extends PixiRenderer {
   private redrawCharacters(): void {
     const scene = this.presentedScene
     if (scene === null) return
-    this.characters.reconcile(scene, this.visitorCamera.camera.zoom, this.cameraLimits.minZoom)
+    this.characters.reconcile(
+      scene,
+      this.visitorCamera.camera.zoom,
+      this.cameraLimits.minZoom,
+      this.dayLight.shadow,
+    )
   }
 
   private readonly toggleCollision = (): void => {
@@ -644,9 +684,10 @@ export class ThreeBranchesRenderer extends PixiRenderer {
 
   private presentScene(scene: FrameScene): void {
     this.presentedScene = scene
-    // Only the exact night phase darkens the world. Opening, day, the other named phases, and any
-    // unknown value stay ungraded, and the switch never fades.
-    this.world.setNightGrade(scene.dynamic?.phase === 'night')
+    // The light follows the presented tick, which is fractional mid-glide, so the day turns
+    // smoothly and a seek lands on the same light continuous play would show.
+    this.dayLight = dayLightAt(scene.dynamic?.phase, scene.presentationTick)
+    this.presentDayLight(scene.presentationTick)
     const visitor = scene.characters.find((character) => character.id === VISITOR_PLAYER)
     if (visitor !== undefined) {
       // The first recorded position corrects static spawn. Later camera motion follows the same
@@ -662,6 +703,19 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     }
     this.applyCamera()
     this.collision.drawDynamic(frameCollision(scene), this.worldTextResolution())
+  }
+
+  /** Apply the current day light to the grade, clouds, vignette, and cranes. */
+  private presentDayLight(tick: number): void {
+    const light = this.dayLight
+    this.world.setDayLight(light)
+    this.clouds.visible = light.clouds > 0
+    this.clouds.alpha = light.clouds
+    const period = this.clouds.texture.width * CLOUD_TILE_SCALE
+    this.clouds.tilePosition.set((CLOUD_DRIFT.x * tick) % period, (CLOUD_DRIFT.y * tick) % period)
+    this.vignette.visible = light.vignette > 0
+    this.vignette.alpha = light.vignette
+    this.cranes.present(light, tick)
   }
 
   private redrawAllCollision(): void {
@@ -728,11 +782,16 @@ export class ThreeBranchesRenderer extends PixiRenderer {
               this.presentedScene,
               this.visitorCamera.camera.zoom,
               this.cameraLimits.minZoom,
+              this.dayLight.shadow,
             )
           }
 
           this.props.install(propArt)
-          if (this.presentedScene !== null) this.props.advance(this.presentedScene)
+          if (this.presentedScene !== null) {
+            this.props.advance(this.presentedScene, this.dayLight.glow)
+          }
+          this.cranes.install(propArt.effects)
+          this.cranes.present(this.dayLight, this.presentedScene?.presentationTick ?? 0)
           this.roofs.install(createRoofArt(assets.buildings))
           if (this.presentedScene !== null) this.roofs.setTargets(this.presentedScene, true)
           const expressionArt = createExpressionArt(assets.effects)

@@ -69,6 +69,24 @@ describe('Hearthside Ink presentation', () => {
     expect(() => readHearthsideStyle(excessiveSpread)).toThrow('textureOutline.spread')
   })
 
+  it('requires exactly one day-cycle keyframe per rules phase', () => {
+    const missingPhase = structuredClone(HEARTHSIDE_STYLE) as any
+    delete missingPhase.postEffects.dayCycle.dawn
+    expect(() => readHearthsideStyle(missingPhase)).toThrow('dayCycle keys do not match')
+
+    const unknownPhase = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownPhase.postEffects.dayCycle.dusk = unknownPhase.postEffects.dayCycle.evening
+    expect(() => readHearthsideStyle(unknownPhase)).toThrow('dayCycle keys do not match')
+
+    const unknownTint = structuredClone(HEARTHSIDE_STYLE) as any
+    unknownTint.postEffects.dayCycle.night.light.tint = 'moonlight'
+    expect(() => readHearthsideStyle(unknownTint)).toThrow('dayCycle.night.light.tint')
+
+    const brightGlow = structuredClone(HEARTHSIDE_STYLE) as any
+    brightGlow.postEffects.dayCycle.night.glow = 1.5
+    expect(() => readHearthsideStyle(brightGlow)).toThrow('dayCycle.night.glow')
+  })
+
   it('keeps the bell striker hinge and restrained swing in presentation calibration', () => {
     expect(bellStrikerTreatment()).toEqual({
       pivot: { x: 192, y: 39 },

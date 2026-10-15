@@ -1,6 +1,7 @@
 import { Container } from 'pixi.js'
 import { describe, expect, it } from 'vitest'
 
+import { dayLightAt } from '../effects/post-effects.js'
 import type { MapLayerView } from './map-layer.js'
 import { createWorldArtStack } from './world-stack.js'
 
@@ -32,13 +33,15 @@ describe('Three Branches world art stack', () => {
     stack.destroy()
   })
 
-  it('toggles one retained night filter over world art without grading overlays', () => {
+  it('grades world art with one retained filter that detaches at midday', () => {
     const stack = createWorldArtStack(mapView())
     const worldArt = stack.root.getChildByLabel('world-art') as Container
 
     expect(worldArt.children.map((child) => child.label)).toEqual([
       'world-natural',
       'world-authored',
+      'cranes',
+      'clouds',
     ])
     expect(stack.root.children).toEqual([
       worldArt,
@@ -49,13 +52,15 @@ describe('Three Branches world art stack', () => {
     ])
     expect(worldArt.filters ?? []).toEqual([])
 
-    stack.setNightGrade(true)
+    stack.setDayLight(dayLightAt('night', 1080))
     expect(worldArt.filters).toHaveLength(1)
     const retainedFilter = worldArt.filters[0]
-    stack.setNightGrade(true)
+    stack.setDayLight(dayLightAt('evening', 900))
     expect(worldArt.filters[0]).toBe(retainedFilter)
 
-    stack.setNightGrade(false)
+    stack.setDayLight(dayLightAt('midday', 600.5))
+    expect(worldArt.filters).toEqual([])
+    stack.setDayLight(dayLightAt('day', 1080))
     expect(worldArt.filters).toEqual([])
     stack.destroy()
   })

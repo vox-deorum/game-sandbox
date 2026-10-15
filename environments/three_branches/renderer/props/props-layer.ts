@@ -1,3 +1,4 @@
+import { lerp } from '@renderers/base/math.js'
 import { Container, Graphics, Sprite, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
@@ -51,7 +52,11 @@ export interface PropArt {
 export interface PropLayer {
   install(art: PropArt): void
   reconcile(scene: FrameScene): void
-  advance(value: number | FrameScene): boolean
+  /**
+   * Present effects at a tick. `glow` is the day light's light-pool strength, which scales how far
+   * and how brightly lit lanterns and hearths warm the ground around them.
+   */
+  advance(value: number | FrameScene, glow?: number): boolean
   highlight(propId: string | null): void
 }
 
@@ -137,11 +142,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
     node.fallback.visible = !shipped
     const treatment = shipped ? propTreatment(node.item.type, state, node.item.id) : null
     syncOutlineRole(node.outline, treatment?.lower ?? null, art)
-    syncPropRole(
-      node.lower,
-      treatment?.lower ?? null,
-      art,
-    )
+    syncPropRole(node.lower, treatment?.lower ?? null, art)
     const movingTreatment = treatment?.moving ?? null
     syncPropRole(node.moving, movingTreatment, art)
     node.movingRoot.visible = movingTreatment !== null
@@ -168,7 +169,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         applyState(node, frame.dynamic?.props[node.item.id] ?? start(starts, node.item.id))
       }
     },
-    advance(value) {
+    advance(value, glow = 1) {
       if (art === null) return false
       const tick = typeof value === 'number' ? value : value.presentationTick
       let active = false
@@ -209,8 +210,8 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
         if (emissive !== null) {
           node.emissive.texture = texture(art.effects, emissive.frame)
           node.emissive.tint = HEARTHSIDE_STYLE.palette[emissive.tint]
-          node.emissive.alpha = emissive.alpha
-          node.emissive.scale.set(EFFECT_SCALE * emissive.scale)
+          node.emissive.alpha = emissive.alpha * glow
+          node.emissive.scale.set(EFFECT_SCALE * emissive.scale * lerp(0.8, 1.3, glow))
           node.emissive.position.set(
             centerX(node.item) + anchor.x * propScale,
             centerY(node.item) + anchor.y * propScale,
@@ -286,6 +287,8 @@ function createPropNode(item: StaticDrawable): PropNode {
       ? sprite(`prop-effect-blend:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
       : null
   const emissive = sprite(`prop-emissive:${item.id}`, Texture.EMPTY, EFFECT_SCALE)
+  // Emissives add light rather than paint over the ground, so a pool warms the graded night.
+  emissive.blendMode = 'add'
   effect.rotation = visualFacing(item)
   emissive.rotation = visualFacing(item)
   effect.visible = false
@@ -345,10 +348,7 @@ function fallback(item: StaticDrawable, interactive: boolean): Graphics {
 }
 
 /** Outline the market crate without adding an outline to the pine scenery family. */
-function marketCrateOutline(
-  item: StaticDrawable,
-  cellSize: number,
-): Container {
+function marketCrateOutline(item: StaticDrawable, cellSize: number): Container {
   const outline = textureOutline(
     `market-crate-texture-outline:${item.id}`,
     sceneryArtScale(item, cellSize),

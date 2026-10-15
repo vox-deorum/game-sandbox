@@ -1432,12 +1432,67 @@
     }
   },
   "postEffects": {
-    "nightGrade": {
-      "brightness": 0.7,
-      "contrast": 1.08,
-      "saturation": 0.7,
-      "tint": "indigo",
-      "tintMix": 0.18
+    "dayCycle": {
+      "dawn": {
+        "exposure": 0.86,
+        "contrast": 0.94,
+        "saturation": 0.82,
+        "light": {"tint": "cinnabar", "strength": 0.16},
+        "haze": {"tint": "violet", "mix": 0.12},
+        "glow": 0.7,
+        "shadow": {"angleDegrees": 200, "length": 0.7, "alpha": 0.4},
+        "vignette": 0.15,
+        "clouds": 0.1,
+        "cranes": 1
+      },
+      "morning": {
+        "exposure": 0.98,
+        "contrast": 1.0,
+        "saturation": 0.95,
+        "light": {"tint": "water", "strength": 0.08},
+        "haze": {"tint": "parchment", "mix": 0.04},
+        "glow": 0.3,
+        "shadow": {"angleDegrees": 225, "length": 0.3, "alpha": 0.5},
+        "vignette": 0,
+        "clouds": 0.16,
+        "cranes": 1
+      },
+      "midday": {
+        "exposure": 1,
+        "contrast": 1,
+        "saturation": 1,
+        "light": {"tint": "bone", "strength": 0},
+        "haze": {"tint": "bone", "mix": 0},
+        "glow": 0.25,
+        "shadow": {"angleDegrees": 270, "length": 0.08, "alpha": 0.55},
+        "vignette": 0,
+        "clouds": 0.18,
+        "cranes": 1
+      },
+      "evening": {
+        "exposure": 0.92,
+        "contrast": 1.06,
+        "saturation": 1.08,
+        "light": {"tint": "gilt", "strength": 0.32},
+        "haze": {"tint": "cinnabar", "mix": 0.06},
+        "glow": 0.8,
+        "shadow": {"angleDegrees": 340, "length": 0.8, "alpha": 0.4},
+        "vignette": 0.2,
+        "clouds": 0.08,
+        "cranes": 0.6
+      },
+      "night": {
+        "exposure": 0.58,
+        "contrast": 1.1,
+        "saturation": 0.5,
+        "light": {"tint": "water", "strength": 0.6},
+        "haze": {"tint": "indigo", "mix": 0.2},
+        "glow": 1,
+        "shadow": {"angleDegrees": 270, "length": 0.05, "alpha": 0.15},
+        "vignette": 0.45,
+        "clouds": 0,
+        "cranes": 0
+      }
     },
     "textureOutline": {
       "tint": "backdrop",
@@ -1554,7 +1609,9 @@
     "frames": ["craneA", "craneB"],
     "tint": "bone",
     "count": [1, 3],
-    "frameMs": 260
+    "spanMetres": 3,
+    "flightTicks": 240,
+    "ticksPerFrame": 1
   },
   "expressions": {
     "frames": {
