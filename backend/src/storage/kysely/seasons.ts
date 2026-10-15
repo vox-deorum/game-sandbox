@@ -89,9 +89,11 @@ export async function ensureOpenSeason(
   const release = defaults?.release ?? 'unreleased'
   const now = new Date().toISOString()
   try {
-    // The seed row: submission-`open` and play-`open` for local continuity, with a default config
-    // carrying the pinned version and an empty match design. The default-season `defaults` let the
-    // seed name and release it (the "Playground" default); a fresh row otherwise stays unlabeled and
+    // The seed row: submission-`open` with a default config carrying the pinned version and an empty
+    // match design. It is play-`open` for local continuity unless another season already holds the
+    // environment's one play-open slot (an operator closed submissions but kept play running). The
+    // check runs inside the insert so it cannot race. The default-season `defaults` let the seed
+    // name and release it (the "Playground" default); a fresh row otherwise stays unlabeled and
     // unreleased.
     return await db
       .insertInto('seasons')
@@ -99,7 +101,9 @@ export async function ensureOpenSeason(
         id: randomUUID(),
         env_id: envId,
         submission_status: 'open',
-        play_status: 'open',
+        play_status: sql<WindowStatus>`CASE WHEN EXISTS (
+          SELECT 1 FROM seasons WHERE env_id = ${envId} AND play_status = 'open'
+        ) THEN 'closed' ELSE 'open' END`,
         release_status: release,
         label: defaults?.label ?? null,
         description_markdown: null,

@@ -486,7 +486,8 @@ export interface Storage {
    * The seed primitive: ensure a submission-`open` season exists for the environment at
    * `depsVersion` and return it, writing a default config that carries the version and an empty match
    * design. Idempotent; an environment already carrying a submission-open season is left untouched.
-   * The seed row is play-`open` for local continuity. `defaults` apply only when a row is created:
+   * The seed row is play-`open` for local continuity, unless another season of the environment is
+   * already play-open, in which case it stays play-closed. `defaults` apply only when a row is created:
    * the seed passes a `label` and `release` to stand up the default "Playground" season; without them
    * a fresh row is unlabeled and unreleased.
    */

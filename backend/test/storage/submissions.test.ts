@@ -73,6 +73,16 @@ describe('submission storage on :memory:', () => {
     expect((await storage.getOpenSubmissionSeason('flappy_bird'))?.id).toBe(first.id)
   })
 
+  it('ensureOpenSeason leaves play closed while another season holds play-open', async () => {
+    const first = await storage.ensureOpenSeason('flappy_bird', 1)
+    await storage.setSubmissionStatus(first.id, 'closed')
+    const second = await storage.ensureOpenSeason('flappy_bird', 1)
+    expect(second.id).not.toBe(first.id)
+    expect(second.submission_status).toBe('open')
+    expect(second.play_status).toBe('closed')
+    expect((await storage.getSeason(first.id))?.play_status).toBe('open')
+  })
+
   it('createSubmission inserts a pending row and supersedes a same-user resubmit', async () => {
     const iter = await seasonId()
     const first = await storage.createSubmission(
