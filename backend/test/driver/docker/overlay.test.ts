@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import type Docker from 'dockerode'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
+import { imageTag } from '../../../src/driver/docker/image.js'
 import { DockerDriver } from '../../../src/driver/docker/index.js'
 import {
   ensureSessionOverlayImage,
@@ -355,6 +356,10 @@ describe('ensureSessionOverlayImage chaining', () => {
 
 describe('DockerDriver composed image ownership', () => {
   const DEPS = 1
+  const BASE_TAG = imageTag(DRIVER_OPTIONS.imageTagPrefix, {
+    kind: 'session-base',
+    depsVersion: DEPS,
+  })
   let tree = ''
 
   beforeAll(() => {
@@ -363,6 +368,12 @@ describe('DockerDriver composed image ownership', () => {
   afterAll(() => {
     rmSync(tree, { recursive: true, force: true })
   })
+
+  /** A driver over a daemon that already holds the base image, so only overlay builds are recorded. */
+  function driverWithBase(docker: Docker, log: FakeBuildLog): DockerDriver {
+    log.existing.add(BASE_TAG)
+    return new DockerDriver(docker, DRIVER_OPTIONS)
+  }
 
   function imageSpec(seatCount = 1) {
     return {
@@ -378,7 +389,7 @@ describe('DockerDriver composed image ownership', () => {
 
   it('shares one concurrent build and deletes the image only after the last release', async () => {
     const { docker, log } = fakeBuildDocker()
-    const driver = new DockerDriver(docker, DRIVER_OPTIONS)
+    const driver = driverWithBase(docker, log)
     const spec = imageSpec()
 
     const [first, second] = await Promise.all([driver.ensureImage(spec), driver.ensureImage(spec)])
@@ -402,7 +413,7 @@ describe('DockerDriver composed image ownership', () => {
       failFirst = false
       return true
     })
-    const driver = new DockerDriver(docker, DRIVER_OPTIONS)
+    const driver = driverWithBase(docker, log)
     const spec = imageSpec()
 
     const failed = await Promise.allSettled([driver.ensureImage(spec), driver.ensureImage(spec)])
@@ -429,7 +440,7 @@ describe('DockerDriver composed image ownership', () => {
       removalStarted.resolve()
       return allowRemoval.promise
     })
-    const driver = new DockerDriver(docker, DRIVER_OPTIONS)
+    const driver = driverWithBase(docker, log)
     const first = await driver.ensureImage(spec)
 
     const releasing = driver.releaseSessionOverlay(first.ref)
@@ -461,7 +472,7 @@ describe('DockerDriver composed image ownership', () => {
       finalBuildStarted.resolve()
       return allowFinalBuild.promise
     })
-    const driver = new DockerDriver(docker, DRIVER_OPTIONS)
+    const driver = driverWithBase(docker, log)
     const acquiring = driver.ensureImage(spec)
 
     await finalBuildStarted.promise
@@ -479,5 +490,30 @@ describe('DockerDriver composed image ownership', () => {
 
     await driver.releaseSessionOverlay(image.ref)
     expect(log.removed).toEqual([scratch, scratch, tag])
+  })
+
+  it('builds a missing base image once before concurrent overlay builds', async () => {
+    const { docker, log } = fakeBuildDocker()
+    const driver = new DockerDriver(docker, DRIVER_OPTIONS)
+
+    const [single, pair] = await Promise.all([
+      driver.ensureImage(imageSpec(1)),
+      driver.ensureImage(imageSpec(2)),
+    ])
+
+    expect(log.built[0]).toBe(BASE_TAG)
+    expect(log.built.filter((tag) => tag === BASE_TAG)).toHaveLength(1)
+    expect(log.existing.has(single.ref)).toBe(true)
+    expect(log.existing.has(pair.ref)).toBe(true)
+  })
+
+  it('keeps an existing base image under the rebuild policy when building an overlay', async () => {
+    const { docker, log } = fakeBuildDocker()
+    log.existing.add(BASE_TAG)
+    const driver = new DockerDriver(docker, { ...DRIVER_OPTIONS, imagePolicy: 'rebuild' })
+
+    const image = await driver.ensureImage(imageSpec())
+
+    expect(log.built).toEqual([image.ref])
   })
 })

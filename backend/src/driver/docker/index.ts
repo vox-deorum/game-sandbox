@@ -26,7 +26,7 @@ import type {
   SessionBaseImageSpec,
   SessionProcess,
 } from '../index.js'
-import { type EnsureImagePolicy, ensureImage, imageTag } from './image.js'
+import { type EnsureImagePolicy, ensureImage } from './image.js'
 import {
   ensureOverlayImage,
   ensureSessionOverlayImage,
@@ -145,6 +145,7 @@ export function resolveLlmListenHost(
 
 export class DockerDriver implements ExecutionDriver {
   private relayImageReady: Promise<void> | undefined
+  private readonly baseImageBuilds = new Map<number, Promise<ImageRef>>()
   private readonly sessionOverlayStates = new Map<string, SessionOverlayState>()
   private readonly sessionOverlayLocks = new Map<string, Promise<void>>()
 
@@ -159,17 +160,15 @@ export class DockerDriver implements ExecutionDriver {
     return { cpuCount: info.NCPU, memoryBytes: info.MemTotal }
   }
 
-  ensureImage(spec: ImageSpec): Promise<ImageRef> {
+  async ensureImage(spec: ImageSpec): Promise<ImageRef> {
     const { imageTagPrefix, imagePolicy } = this.options
     if (spec.kind === 'session-base') {
       return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec)
     }
     // Both overlay kinds layer onto the base image for their deps version, referenced by tag in the
-    // Dockerfile `FROM`; the caller ensures that base exists before requesting an overlay.
-    const baseTag = imageTag(imageTagPrefix, {
-      kind: 'session-base',
-      depsVersion: spec.depsVersion,
-    })
+    // Dockerfile `FROM`. A missing base would make the daemon treat that tag as a registry image and
+    // fail the pull, so the base is built here first when it is absent.
+    const { ref: baseTag } = await this.ensureBaseImage(spec.depsVersion)
     const { overlayBuildTimeoutMs } = this.options
     if (spec.kind === 'submission-overlay') {
       return ensureOverlayImage(
@@ -184,6 +183,23 @@ export class DockerDriver implements ExecutionDriver {
     // A composed multi-agent session image: one COPY chained per submitted seat, each
     // into its own per-seat directory (see ensureSessionOverlayImage).
     return this.acquireSessionOverlay(baseTag, spec)
+  }
+
+  /**
+   * Make sure an overlay's base image exists, building it only when it is absent. Always `reuse`, so
+   * the `rebuild` policy rebuilds the base on base-image requests rather than on every overlay build.
+   * Concurrent overlay requests share one base build instead of each starting their own.
+   */
+  private ensureBaseImage(depsVersion: number): Promise<ImageRef> {
+    let pending = this.baseImageBuilds.get(depsVersion)
+    if (pending === undefined) {
+      pending = ensureImage(this.docker, this.options.imageTagPrefix, 'reuse', {
+        kind: 'session-base',
+        depsVersion,
+      }).finally(() => this.baseImageBuilds.delete(depsVersion))
+      this.baseImageBuilds.set(depsVersion, pending)
+    }
+    return pending
   }
 
   /** Enumerate the overlay images this driver manages, for the Stage 5.4 eviction sweep. */

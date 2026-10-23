@@ -90,7 +90,7 @@ A validated submission becomes an overlay image: the submission's built image la
 `submission/submission-image.ts`:
 
 - Copies source to `/opt/agents/submissions/<seatId>`.
-- Selects the matching `deps-v<N>` base.
+- Selects the matching `deps-v<N>` base. The driver builds that base first when it is missing, so a pruned base never fails a submission build.
 - Tags the overlay image from dependency version and submission ID.
 - Applies `SUBMISSION_BUILD_TIMEOUT_MS`.
 

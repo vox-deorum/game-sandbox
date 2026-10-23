@@ -235,8 +235,8 @@ function runBuild(
 /**
  * Resolve a {@link SubmissionOverlayImageSpec} to a launch-ready overlay {@link ImageRef}, building
  * on the base image's tag. Under `reuse` an existing overlay tag is returned untouched; under
- * `rebuild` it is always rebuilt. The base image for the spec's deps version must already exist —
- * the worker ensures it before building overlays — and is referenced by tag in the Dockerfile `FROM`.
+ * `rebuild` it is always rebuilt. The base image for the spec's deps version must already exist (the
+ * driver builds a missing one first) and is referenced by tag in the Dockerfile `FROM`.
  */
 export async function ensureOverlayImage(
   docker: Docker,
