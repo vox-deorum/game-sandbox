@@ -48,7 +48,10 @@ class StaticMigrationProvider implements MigrationProvider {
  * failed migration with its underlying error.
  */
 export async function migrateToLatest(db: Kysely<Database>): Promise<void> {
-  const migrator = new Migrator({ db, provider: new StaticMigrationProvider() })
+  const migrator = new Migrator({
+    db,
+    provider: new StaticMigrationProvider(),
+  })
   const { error, results } = await migrator.migrateToLatest()
 
   const failed = results?.find((it) => it.status === 'Error')

@@ -2,7 +2,11 @@ import type { ModelAlias } from '@game-sandbox/schema/llm'
 import type OpenAI from 'openai'
 
 /** The stable model names agent code is allowed to observe, shared with the frontend. */
-export { MAX_LLM_COST_WEIGHT, MODEL_ALIASES, type ModelAlias } from '@game-sandbox/schema/llm'
+export {
+  MAX_LLM_COST_WEIGHT,
+  MODEL_ALIASES,
+  type ModelAlias,
+} from '@game-sandbox/schema/llm'
 
 /** Deployment-private metadata for one stable public model alias. */
 export interface LlmModelConfig {
@@ -74,7 +78,9 @@ export interface LlmGrant {
 }
 
 /** Official grant fields shared by every request before its admission tick binds a record sink. */
-export type OfficialGrantTemplate = Omit<LlmGrant, 'kind' | 'recordSink'> & { kind: 'official' }
+export type OfficialGrantTemplate = Omit<LlmGrant, 'kind' | 'recordSink'> & {
+  kind: 'official'
+}
 
 /** Mutable hook phase captured by an official telemetry sink and key-registry entry. */
 export interface OfficialTickMarkerRef {

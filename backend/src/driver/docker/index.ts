@@ -493,7 +493,10 @@ export class DockerDriver implements ExecutionDriver {
       Cmd: spec.argv,
       // The orchestrator never overrides the entrypoint; the driver-level sandbox tests do.
       ...(spec.entrypoint ? { Entrypoint: spec.entrypoint } : {}),
-      Labels: { [SESSION_LABEL]: spec.sessionId, [OWNER_PID_LABEL]: String(process.pid) },
+      Labels: {
+        [SESSION_LABEL]: spec.sessionId,
+        [OWNER_PID_LABEL]: String(process.pid),
+      },
       Tty: false,
       OpenStdin: true,
       StdinOnce: false,
@@ -539,8 +542,14 @@ export class DockerDriver implements ExecutionDriver {
    */
   async reapOrphans(): Promise<void> {
     const [sessionContainers, relayContainers] = await Promise.all([
-      this.docker.listContainers({ all: true, filters: { label: [SESSION_LABEL] } }),
-      this.docker.listContainers({ all: true, filters: { label: [LLM_RELAY_LABEL] } }),
+      this.docker.listContainers({
+        all: true,
+        filters: { label: [SESSION_LABEL] },
+      }),
+      this.docker.listContainers({
+        all: true,
+        filters: { label: [LLM_RELAY_LABEL] },
+      }),
     ])
     const containers = [
       ...new Map(
@@ -567,7 +576,9 @@ export class DockerDriver implements ExecutionDriver {
     )
 
     // Relay and session containers must be gone before Docker will remove their shared network.
-    const networks = await this.docker.listNetworks({ filters: { label: [LLM_NETWORK_LABEL] } })
+    const networks = await this.docker.listNetworks({
+      filters: { label: [LLM_NETWORK_LABEL] },
+    })
     await Promise.all(
       networks.map(async (info) => {
         const ownerPid = info.Labels?.[OWNER_PID_LABEL]

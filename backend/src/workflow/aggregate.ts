@@ -112,7 +112,11 @@ export function reducePlayersToSeats(
 
 /** Mark each already-reduced seat failed for a game-level fault that names no player. */
 export function failAllSeats(seats: readonly SeatResult[], reason: string): SeatResult[] {
-  return seats.map((seat) => ({ ...seat, failed: true, failureReason: reason }))
+  return seats.map((seat) => ({
+    ...seat,
+    failed: true,
+    failureReason: reason,
+  }))
 }
 
 function sumNullable(values: readonly (number | null)[]): number | null {

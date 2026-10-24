@@ -491,26 +491,29 @@ def test_result_envelope_carries_episode_result_fields():
     result = EpisodeResult(
         ticks=12,
         scores={"player_0": 3.0, "player_1": -1.0},
-        reason="terminated",
+        reason="error",
         step_timeouts={"player_0": 0},
         recording_id="rec-1",
         failed_player="player_1",
+        error="KeyError: 'evening' (agent.py:88 in assign)",
     )
     envelope = result_envelope(result)
     assert envelope == {
         "kind": "result",
         "ticks": 12,
         "scores": {"player_0": 3.0, "player_1": -1.0},
-        "reason": "terminated",
+        "reason": "error",
         "step_timeouts": {"player_0": 0},
         "recording_id": "rec-1",
         "failed_player": "player_1",
+        "error": "KeyError: 'evening' (agent.py:88 in assign)",
     }
 
 
-def test_result_envelope_failed_player_is_none_for_a_clean_episode():
+def test_result_envelope_failure_fields_are_none_for_a_clean_episode():
     result = EpisodeResult(ticks=3, scores={"player_0": 1.0}, reason="terminated", step_timeouts={})
     assert result_envelope(result)["failed_player"] is None
+    assert result_envelope(result)["error"] is None
 
 
 # --- The line-classification rule, asserted against the packaged schema ------------------

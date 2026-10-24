@@ -35,7 +35,10 @@ function decodePlacement(
     llm_usage_by_model: string | null
   },
 ): AutomatedPlacement {
-  return { ...row, llm_usage_by_model: decodeLlmUsageByModel(row.llm_usage_by_model) }
+  return {
+    ...row,
+    llm_usage_by_model: decodeLlmUsageByModel(row.llm_usage_by_model),
+  }
 }
 
 function addLlmUsage(

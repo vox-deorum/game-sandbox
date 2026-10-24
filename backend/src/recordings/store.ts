@@ -70,7 +70,11 @@ export class RecordingsStore {
       const header = await this.readHeader(entry.name)
       if (header !== undefined) {
         const finalState = await this.lastState(entry.name)
-        summaries.push({ id: entry.name, header, winner_id: winnerId(finalState, header) })
+        summaries.push({
+          id: entry.name,
+          header,
+          winner_id: winnerId(finalState, header),
+        })
       }
     }
     summaries.sort((a, b) => a.id.localeCompare(b.id))

@@ -4,7 +4,7 @@
  */
 
 import type { Kysely } from 'kysely'
-import type { NewSessionInput } from '../index.js'
+import type { NewSessionInput, SessionFailure } from '../index.js'
 import { encodeParameterMap, parseParameterMap } from '../parameters.js'
 import type { Database, Session, TerminationReason } from '../schema.js'
 
@@ -31,6 +31,8 @@ export async function createSession(
       parameters: encodeParameterMap(input.parameters),
       status: 'starting',
       termination_reason: null,
+      failed_player: null,
+      termination_detail: null,
       ended_at: null,
     })
     .returningAll()
@@ -47,10 +49,17 @@ export async function markEnded(
   id: string,
   reason: TerminationReason,
   endedAt: string,
+  failure: SessionFailure | null = null,
 ): Promise<void> {
   await db
     .updateTable('sessions')
-    .set({ status: 'ended', termination_reason: reason, ended_at: endedAt })
+    .set({
+      status: 'ended',
+      termination_reason: reason,
+      failed_player: failure?.failed_player ?? null,
+      termination_detail: failure?.termination_detail ?? null,
+      ended_at: endedAt,
+    })
     .where('id', '=', id)
     .execute()
 }

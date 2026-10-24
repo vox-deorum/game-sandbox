@@ -53,7 +53,10 @@ export function registerEnvironmentRoutes(app: FastifyInstance, deps: Environmen
       }
       const season = await deps.storage.getPublicPlaySeason(meta.env_id)
       if (season === undefined) {
-        return { season_id: null, values: resolveSeasonParameters(meta, {}).values }
+        return {
+          season_id: null,
+          values: resolveSeasonParameters(meta, {}).values,
+        }
       }
       const resolved = resolveSeasonParameters(
         meta,

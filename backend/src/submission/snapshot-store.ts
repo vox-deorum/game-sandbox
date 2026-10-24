@@ -46,7 +46,10 @@ export class SubmissionSnapshotStore {
     const tmpPath = `${finalPath}.tmp`
     try {
       await pipeline(
-        tar.pack(sourceTreePath, { ignore: submissionTarIgnore(sourceTreePath), sort: true }),
+        tar.pack(sourceTreePath, {
+          ignore: submissionTarIgnore(sourceTreePath),
+          sort: true,
+        }),
         createGzip(),
         createWriteStream(tmpPath),
       )

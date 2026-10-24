@@ -79,6 +79,7 @@ __all__ = [
     "NoopSource",
     "Player",
     "REASON_EPISODE_LIMIT",
+    "REASON_ERROR",
     "REASON_STOPPED",
     "REASON_TERMINATED",
     "REASON_TRUNCATED",
@@ -94,6 +95,10 @@ REASON_EPISODE_LIMIT = "episode_limit"
 #: episode reaching its own end. Only the live loop sets it (via :meth:`Episode.stop`); the
 #: headless ``run_episode`` never stops early this way.
 REASON_STOPPED = "stopped"
+#: Reported when the episode is cut short by an exception (an agent crash, an illegal action, or an
+#: environment fault). Only the live runner sets it (via :meth:`Episode.fail`), so a crash can never
+#: read as a natural ending.
+REASON_ERROR = "error"
 
 
 @dataclass(frozen=True)
@@ -109,6 +114,8 @@ class EpisodeResult:
     #: budget overran. ``None`` for a clean episode, or a container-level fault no single player owns.
     #: The orchestrator maps it to that player's seat instead of charging every competitor.
     failed_player: str | None = None
+    #: A one-line description of the exception that ended the episode, or ``None`` when nothing raised.
+    error: str | None = None
 
 
 def _iso_utc(ms: int) -> str:
@@ -216,6 +223,7 @@ class Episode:
         self._tick = 0
         self._stopped = False
         self._failed_player: str | None = None
+        self._error: str | None = None
         self._opening_chat_options: ChatOptions | None = None
         self._parallel_observations: Mapping[str, object] | None = None
         self._parallel_infos: Mapping[str, object] | None = None
@@ -403,6 +411,12 @@ class Episode:
         result. Headless ``run_episode`` never calls this; only the live loop does.
         """
         self._reason = reason
+        self._stopped = True
+
+    def fail(self, description: str) -> None:
+        """Mark the episode as ended by an exception, keeping any player already charged for it."""
+        self._reason = REASON_ERROR
+        self._error = description
         self._stopped = True
 
     def advance(self) -> None:
@@ -659,6 +673,7 @@ class Episode:
             step_timeouts={player_id: self._state[player_id].step_timeouts for player_id in self._players},
             recording_id=self._recording_id if self._store is not None else None,
             failed_player=self._failed_player,
+            error=self._error,
         )
 
     def __enter__(self) -> Episode:

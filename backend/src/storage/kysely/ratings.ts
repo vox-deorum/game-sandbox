@@ -126,7 +126,12 @@ export async function aggregateRatingsByAgent(
   >()
   for (const rating of ratings) {
     const key = agentKey(rating)
-    const acc = groups.get(key) ?? { agent: rating, sum: 0, sumSq: 0, count: 0 }
+    const acc = groups.get(key) ?? {
+      agent: rating,
+      sum: 0,
+      sumSq: 0,
+      count: 0,
+    }
     acc.sum += rating.score
     acc.sumSq += rating.score * rating.score
     acc.count += 1

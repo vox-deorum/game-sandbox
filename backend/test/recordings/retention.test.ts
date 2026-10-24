@@ -541,7 +541,48 @@ describe('retention', () => {
       // No session claims it, so season stays null, but the row's own reason is surfaced.
       expect(byId.get('automated')).toMatchObject({
         termination_reason: 'terminated',
+        failed_player: null,
+        termination_detail: null,
         season_id: null,
+      })
+    })
+
+    it('carries the crash attribution from whichever row supplied the reason', async () => {
+      await writeRecording({ id: 'live', user_id: 'a', env_id: 'flappy_bird', created_at: ago(1) })
+      await storage.createSession({
+        id: 'sess-crashed',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        parameters: { players: 1 },
+        mode: 'scripted',
+        recording_id: 'live',
+        created_at: ago(1),
+      })
+      await storage.markEnded('sess-crashed', 'error', ago(1), {
+        failed_player: 'player_0',
+        termination_detail: 'RuntimeError: boom (agent.py:4 in act)',
+      })
+      await writeRecording({
+        id: 'automated-crash',
+        user_id: 'a',
+        env_id: 'flappy_bird',
+        created_at: ago(2),
+        termination_reason: 'error',
+        failed_player: null,
+        termination_detail: 'ValueError: bad layout (env.py:12 in step)',
+      })
+
+      const byId = new Map((await makeRetention().list()).map((r) => [r.id, r]))
+      expect(byId.get('live')).toMatchObject({
+        termination_reason: 'error',
+        failed_player: 'player_0',
+        termination_detail: 'RuntimeError: boom (agent.py:4 in act)',
+        winner_id: null,
+      })
+      expect(byId.get('automated-crash')).toMatchObject({
+        termination_reason: 'error',
+        failed_player: null,
+        termination_detail: 'ValueError: bad layout (env.py:12 in step)',
       })
     })
 

@@ -19,6 +19,8 @@ export async function createRecording(
       ...input,
       pinned: 0,
       termination_reason: input.termination_reason ?? null,
+      failed_player: input.failed_player ?? null,
+      termination_detail: input.termination_detail ?? null,
       llm_scope_id: input.llm_scope_id ?? null,
       llm_session_id: input.llm_session_id ?? null,
     })

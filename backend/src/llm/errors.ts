@@ -19,7 +19,9 @@ export class LlmError extends Error {
   }
 
   body(): LlmErrorBody {
-    return { error: { message: this.message, type: this.type, code: this.code } }
+    return {
+      error: { message: this.message, type: this.type, code: this.code },
+    }
   }
 }
 

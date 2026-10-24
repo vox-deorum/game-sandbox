@@ -22,6 +22,38 @@ function allFailedReason(attribution: FailureAttribution): string {
 }
 
 describe('workflow fault attribution', () => {
+  it('reads the harness error description, treating an absent or empty one as null', () => {
+    expect(envelope({}).error).toBeNull()
+    expect(envelope({ error: '' }).error).toBeNull()
+    expect(envelope({ error: 7 }).error).toBeNull()
+    expect(envelope({ error: 'RuntimeError: boom' }).error).toBe('RuntimeError: boom')
+  })
+
+  it('names a crash by the harness description, falling back to the exit code', () => {
+    const described = resolveFailureAttribution(
+      CRASH_EXIT,
+      envelope({ reason: 'error', failed_player: 'player_1', error: 'RuntimeError: boom' }),
+      false,
+      players,
+    )
+    expect(described).toMatchObject({
+      scope: 'attributed',
+      status: 'failed',
+      culprit: { playerId: 'player_1', reason: 'RuntimeError: boom' },
+    })
+
+    const unowned = resolveFailureAttribution(
+      CRASH_EXIT,
+      envelope({ reason: 'error', error: 'ValueError: bad layout (env.py:12 in step)' }),
+      false,
+      players,
+    )
+    expect(allFailedReason(unowned)).toBe('ValueError: bad layout (env.py:12 in step)')
+
+    const bare = resolveFailureAttribution(CRASH_EXIT, envelope({}), false, players)
+    expect(allFailedReason(bare)).toBe('agent container exited with code 1')
+  })
+
   it('fails all seats for OOM and watchdog faults despite a stale named player', () => {
     const stale = () => envelope({ failed_player: 'player_0' })
     const oom = resolveFailureAttribution({ code: 137, oomKilled: true }, stale(), false, players)

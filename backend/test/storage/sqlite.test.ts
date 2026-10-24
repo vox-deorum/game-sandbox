@@ -65,6 +65,8 @@ describe('SQLite schema version', () => {
         template_repo_url TEXT
       );
       INSERT INTO seasons VALUES ('season-1', 'flappy_bird', NULL);
+      CREATE TABLE sessions (id TEXT PRIMARY KEY, termination_reason TEXT);
+      CREATE TABLE recordings (id TEXT PRIMARY KEY, termination_reason TEXT);
       CREATE TABLE kysely_migration (
         name VARCHAR(255) NOT NULL PRIMARY KEY,
         timestamp VARCHAR(255) NOT NULL
@@ -134,9 +136,11 @@ describe('SQLite schema version', () => {
     writeVersion2Seasons(path)
     const interrupted = new BetterSqlite3(path)
     if (branch) {
+      // An earlier attempt that stopped partway also left one of the crash columns behind.
       interrupted.exec(`
         ALTER TABLE seasons ADD COLUMN template_repo_branch TEXT;
         UPDATE seasons SET template_repo_branch = 'class/spring';
+        ALTER TABLE sessions ADD COLUMN failed_player TEXT;
       `)
     }
     if (ownership) {
@@ -169,6 +173,13 @@ describe('SQLite schema version', () => {
           released_at: null,
           template_source: null,
         })
+        for (const table of ['sessions', 'recordings']) {
+          const columns = handle.sqlite
+            .prepare(`PRAGMA table_info(${table})`)
+            .all()
+            .map((column) => (column as { name: string }).name)
+          expect(columns).toEqual(expect.arrayContaining(['failed_player', 'termination_detail']))
+        }
       } finally {
         await handle.storage.close()
       }
@@ -177,8 +188,9 @@ describe('SQLite schema version', () => {
 })
 
 /**
- * The deployed version 2 season shape, independent of the fresh-database migration. It holds only
- * the tables 0003 touches today, so a new 0003 step on another table must add that table here too.
+ * The deployed version 2 shape, independent of the fresh-database migration. It holds only the
+ * tables 0003 touches today (sessions and recordings trimmed to the columns that matter), so a new
+ * 0003 step on another table must add that table here too.
  */
 function writeVersion2Seasons(path: string): void {
   const previous = new BetterSqlite3(path)
@@ -204,6 +216,8 @@ function writeVersion2Seasons(path: string): void {
       '{"deps_version":1,"matches":[],"overrides":{}}', 'How did it fly?',
       '2026-06-01T00:00:00.000Z', NULL, NULL
     );
+    CREATE TABLE sessions (id TEXT PRIMARY KEY, termination_reason TEXT);
+    CREATE TABLE recordings (id TEXT PRIMARY KEY, termination_reason TEXT);
     CREATE TABLE kysely_migration (
       name VARCHAR(255) NOT NULL PRIMARY KEY,
       timestamp VARCHAR(255) NOT NULL

@@ -63,7 +63,10 @@ export function registerRecordingRoutes(app: FastifyInstance, deps: RecordingRou
         const maskedHeader =
           header.players === undefined
             ? header
-            : { ...header, players: maskPlayers(header.players, caller?.id, !visible) }
+            : {
+                ...header,
+                players: maskPlayers(header.players, caller?.id, !visible),
+              }
         return {
           ...listing,
           header: maskedHeader,
@@ -144,6 +147,9 @@ async function replyPin(reply: FastifyReply, result: Promise<PinResult>): Promis
     case 'forbidden':
       return reply.code(403).send({ error: 'not your recording' })
     case 'pinned_quota':
-      return reply.code(409).send({ error: 'pinned recording quota reached', code: 'pinned_quota' })
+      return reply.code(409).send({
+        error: 'pinned recording quota reached',
+        code: 'pinned_quota',
+      })
   }
 }

@@ -98,7 +98,10 @@ export class KeyRegistry {
     const entry = this.lookup(bearer)
     const state = this.sessions.get(entry.sessionId)
     if (state === undefined || state.closed) throw invalidKey()
-    const requestGrant = { ...entry.grant, recordSink: entry.recordSinkForTick(entry.tick.current) }
+    const requestGrant = {
+      ...entry.grant,
+      recordSink: entry.recordSinkForTick(entry.tick.current),
+    }
     const requestState: OfficialRequestState = {
       controller: new AbortController(),
       cancellable: true,

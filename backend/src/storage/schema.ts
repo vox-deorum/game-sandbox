@@ -50,6 +50,12 @@ export interface SessionsTable {
   status: SessionStatus
   /** Null until the session ends. */
   termination_reason: TerminationReason | null
+  /**
+   * For a session that ended with `error`: the player whose agent raised, when one is to blame, and a
+   * one-line description of the exception, both from the harness result. Null otherwise.
+   */
+  failed_player: string | null
+  termination_detail: string | null
   recording_id: string | null
   /**
    * The season this session competes in, the key ratings later attach to. Set for every rateable
@@ -107,6 +113,9 @@ export interface RecordingsTable {
    * session's reason for those — and for a non-completed automated game (it shows no final standings).
    */
   termination_reason: TerminationReason | null
+  /** The failure fields of {@link SessionsTable}, carried the same way for an automated run's crash. */
+  failed_player: string | null
+  termination_detail: string | null
   llm_scope_id: string | null
   llm_session_id: string | null
 }

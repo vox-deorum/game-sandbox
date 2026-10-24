@@ -12,7 +12,8 @@ import type { Database } from '../schema.js'
 
 /**
  * Add the optional template repository branch to every season, plus the flag that records an
- * operator's saved template repository so the season seed never overwrites it.
+ * operator's saved template repository so the season seed never overwrites it. Add the crash
+ * attribution columns (`failed_player`, `termination_detail`) to sessions and recordings.
  */
 export const seasonTemplateBranch: Migration = {
   async up(db: Kysely<Database>): Promise<void> {
@@ -41,6 +42,19 @@ export const seasonTemplateBranch: Migration = {
       .set({ template_repo_operator_owned: 1 })
       .where('template_repo_url', 'is not', null)
       .execute()
+
+    for (const table of ['sessions', 'recordings'] as const) {
+      const existing = new Set(
+        (await sql<{ name: string }>`PRAGMA table_info(${sql.raw(table)})`.execute(db)).rows.map(
+          (column) => column.name,
+        ),
+      )
+      for (const column of ['failed_player', 'termination_detail']) {
+        if (!existing.has(column)) {
+          await db.schema.alterTable(table).addColumn(column, 'text').execute()
+        }
+      }
+    }
 
     // A version 2 database, including one 0002 just upgraded, reads 2 here. A fresh database is
     // already stamped by 0001 and returns at the guard above. Stamp only after every step succeeds.

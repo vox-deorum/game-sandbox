@@ -74,8 +74,14 @@ async function boardsFor(
     : new Map<string, string>()
   const meta = deps.environments.get(envId)
   return {
-    automated: automated.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
-    human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
+    automated: automated.map((row) => ({
+      ...row,
+      agent: enrichAgentRef(row.agent, names, meta),
+    })),
+    human: human.map((row) => ({
+      ...row,
+      agent: enrichAgentRef(row.agent, names, meta),
+    })),
     games: rawGames.map((game) => runGameView(game, names, meta, results)),
   }
 }
@@ -195,7 +201,11 @@ export function registerLeaderboardRoutes(app: FastifyInstance, deps: Leaderboar
         await Promise.all(
           submissions.map((submission) =>
             deps.storage.listPlacementsByAgent(
-              { kind: 'submission', submission_id: submission.id, user_id: ownerId },
+              {
+                kind: 'submission',
+                submission_id: submission.id,
+                user_id: ownerId,
+              },
               envId,
             ),
           ),

@@ -256,7 +256,12 @@ async function buildSeasonSubmissionArchive(
     await writeFile(
       join(staging, 'season.json'),
       JSON.stringify(
-        { season_id: season.id, env_id: season.env_id, submissions: included, skipped },
+        {
+          season_id: season.id,
+          env_id: season.env_id,
+          submissions: included,
+          skipped,
+        },
         null,
         2,
       ),
@@ -381,9 +386,10 @@ function registerOperatorSubmissionRoutes(admin: FastifyInstance, deps: AdminDep
         return reply.code(404).send({ error: 'no such submission' })
       }
       if (!snapshotCanBeExposed(submission) || !(await deps.snapshots.exists(submission.id))) {
-        return reply
-          .code(404)
-          .send({ error: 'no snapshot for this submission', code: 'no_snapshot' })
+        return reply.code(404).send({
+          error: 'no snapshot for this submission',
+          code: 'no_snapshot',
+        })
       }
       const names = await deps.userDirectory.namesFor([submission.user_id])
       return reply
@@ -546,82 +552,83 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       // Replace the whole SeasonConfig through the typed codec, validating player counts against the
       // environment metadata. A config edit once runs exist (or a deps_version change once submissions
       // exist) is destructive, so it needs an explicit `?force=true` after the console's confirmation.
-      admin.put<{ Params: { id: string }; Querystring: { force?: string }; Body: unknown }>(
-        '/seasons/:id/config',
-        async (request, reply) => {
-          const season = await deps.storage.getSeason(request.params.id)
-          if (season === undefined) {
-            return reply.code(404).send({ error: 'no such season' })
-          }
-          const parsed = SeasonConfigSchema.safeParse(request.body)
-          if (!parsed.success) {
-            const issue = parsed.error.issues[0]
-            const path = issue && issue.path.length > 0 ? issue.path.join('.') : '(root)'
-            return reply.code(400).send({
-              error: 'invalid season config',
-              code: 'invalid_config',
-              reason: issue ? `${path}: ${issue.message}` : 'invalid season config',
-            })
-          }
-          if (!deps.knownDepsVersions.has(parsed.data.deps_version)) {
-            return unsupportedDepsVersion(reply, parsed.data.deps_version, 'invalid_config')
-          }
-          const unavailableAliases = unavailableLlmAliases(parsed.data, deps.llm.models)
-          if (unavailableAliases.length > 0) {
-            return reply.code(400).send({
-              error: 'invalid season config',
-              code: 'invalid_config',
-              reason: `overrides.llm.models: aliases unavailable on this deployment: ${unavailableAliases.join(', ')}`,
-            })
-          }
-          const meta = deps.environments.get(season.env_id)
-          if (meta !== undefined) {
-            const resolved = resolveSeasonParameters(meta, parsed.data.overrides?.parameters)
-            if (resolved.issue !== undefined) {
-              return reply.code(400).send({
-                error: 'invalid season config',
-                code: 'invalid_config',
-                reason: `overrides.parameters.${resolved.issue.name}: ${resolved.issue.message}`,
-              })
-            }
-            const matchIssue = validateSeasonMatches(
-              meta,
-              parsed.data.matches,
-              resolveLayout(meta, resolved.values),
-            )
-            if (matchIssue !== null) {
-              return reply.code(400).send({
-                error: 'invalid season config',
-                code: 'invalid_config',
-                reason: matchIssue,
-              })
-            }
-          }
-          const force = parseForce(request.query.force)
-          // A forced `deps_version` change wipes the season's submissions; capture them first so their
-          // now-orphaned snapshots can be reclaimed once the edit lands.
-          let priorSubmissionIds: string[] = []
-          if (force) {
-            await cancelActiveRunsForForcedEdit(deps, season.id)
-            priorSubmissionIds = (await deps.storage.listActiveSubmissionsBySeason(season.id)).map(
-              (submission) => submission.id,
-            )
-          }
-          const result = await deps.storage.updateSeasonConfig(request.params.id, parsed.data, {
-            force,
+      admin.put<{
+        Params: { id: string }
+        Querystring: { force?: string }
+        Body: unknown
+      }>('/seasons/:id/config', async (request, reply) => {
+        const season = await deps.storage.getSeason(request.params.id)
+        if (season === undefined) {
+          return reply.code(404).send({ error: 'no such season' })
+        }
+        const parsed = SeasonConfigSchema.safeParse(request.body)
+        if (!parsed.success) {
+          const issue = parsed.error.issues[0]
+          const path = issue && issue.path.length > 0 ? issue.path.join('.') : '(root)'
+          return reply.code(400).send({
+            error: 'invalid season config',
+            code: 'invalid_config',
+            reason: issue ? `${path}: ${issue.message}` : 'invalid season config',
           })
-          if (!result.ok) {
-            return reply.code(409).send({ error: result.conflict, code: result.conflict })
+        }
+        if (!deps.knownDepsVersions.has(parsed.data.deps_version)) {
+          return unsupportedDepsVersion(reply, parsed.data.deps_version, 'invalid_config')
+        }
+        const unavailableAliases = unavailableLlmAliases(parsed.data, deps.llm.models)
+        if (unavailableAliases.length > 0) {
+          return reply.code(400).send({
+            error: 'invalid season config',
+            code: 'invalid_config',
+            reason: `overrides.llm.models: aliases unavailable on this deployment: ${unavailableAliases.join(', ')}`,
+          })
+        }
+        const meta = deps.environments.get(season.env_id)
+        if (meta !== undefined) {
+          const resolved = resolveSeasonParameters(meta, parsed.data.overrides?.parameters)
+          if (resolved.issue !== undefined) {
+            return reply.code(400).send({
+              error: 'invalid season config',
+              code: 'invalid_config',
+              reason: `overrides.parameters.${resolved.issue.name}: ${resolved.issue.message}`,
+            })
           }
-          // Best-effort snapshot cleanup: only the rows the forced edit actually deleted (gone now).
-          for (const id of priorSubmissionIds) {
-            if ((await deps.storage.getSubmission(id)) === undefined) {
-              await deps.snapshots.delete(id).catch(() => undefined)
-            }
+          const matchIssue = validateSeasonMatches(
+            meta,
+            parsed.data.matches,
+            resolveLayout(meta, resolved.values),
+          )
+          if (matchIssue !== null) {
+            return reply.code(400).send({
+              error: 'invalid season config',
+              code: 'invalid_config',
+              reason: matchIssue,
+            })
           }
-          return reply.code(200).send(seasonView(result.season))
-        },
-      )
+        }
+        const force = parseForce(request.query.force)
+        // A forced `deps_version` change wipes the season's submissions; capture them first so their
+        // now-orphaned snapshots can be reclaimed once the edit lands.
+        let priorSubmissionIds: string[] = []
+        if (force) {
+          await cancelActiveRunsForForcedEdit(deps, season.id)
+          priorSubmissionIds = (await deps.storage.listActiveSubmissionsBySeason(season.id)).map(
+            (submission) => submission.id,
+          )
+        }
+        const result = await deps.storage.updateSeasonConfig(request.params.id, parsed.data, {
+          force,
+        })
+        if (!result.ok) {
+          return reply.code(409).send({ error: result.conflict, code: result.conflict })
+        }
+        // Best-effort snapshot cleanup: only the rows the forced edit actually deleted (gone now).
+        for (const id of priorSubmissionIds) {
+          if ((await deps.storage.getSubmission(id)) === undefined) {
+            await deps.snapshots.delete(id).catch(() => undefined)
+          }
+        }
+        return reply.code(200).send(seasonView(result.season))
+      })
 
       // --- Season description ---------------------------------------------------------------
       // Public, display-only Season guidance. It stays outside config and remains editable after
@@ -822,7 +829,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         // query. The null branch is unreachable but keeps the attribution id honestly typed.
         const requestedBy = await deps.identity.resolveUser(request)
         if (requestedBy === null) {
-          return reply.code(401).send({ error: 'authentication required', code: 'auth_required' })
+          return reply.code(401).send({
+            error: 'authentication required',
+            code: 'auth_required',
+          })
         }
         const outcome = await deps.storage.createRunWithSchedule(
           season.id,
@@ -839,7 +849,11 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             const layout = resolveLayout(meta, parameters.values)
             const matchIssue = validateSeasonMatches(meta, frozen.matches, layout)
             if (matchIssue !== null) {
-              return { ok: false, code: 'invalid_config', reason: matchIssue }
+              return {
+                ok: false,
+                code: 'invalid_config',
+                reason: matchIssue,
+              }
             }
             const schedule = buildSchedule({
               matches: frozen.matches,
@@ -887,9 +901,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
             return reply.code(404).send({ error: 'no such run' })
           }
           if (!IN_PROGRESS_RUN.has(run.status)) {
-            return reply
-              .code(409)
-              .send({ error: 'run is not in progress', code: 'run_not_in_progress' })
+            return reply.code(409).send({
+              error: 'run is not in progress',
+              code: 'run_not_in_progress',
+            })
           }
           deps.workflowRunner.cancel(run.id)
           return reply.code(202).send({ id: run.id })
@@ -962,7 +977,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
               ...row,
               agent: enrichAgentRef(row.agent, names, meta),
             })),
-            human: human.map((row) => ({ ...row, agent: enrichAgentRef(row.agent, names, meta) })),
+            human: human.map((row) => ({
+              ...row,
+              agent: enrichAgentRef(row.agent, names, meta),
+            })),
             games: completedGames.map((game) => runGameView(game, names, meta, completedResults)),
           },
         })
@@ -1067,7 +1085,10 @@ async function attachLogStream(
   // later tick so a just-connected client has attached its message listener first.
   if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
     setImmediate(() => {
-      send({ type: 'terminal', status: run.status as 'completed' | 'failed' | 'cancelled' })
+      send({
+        type: 'terminal',
+        status: run.status as 'completed' | 'failed' | 'cancelled',
+      })
       socket.close()
     })
     return

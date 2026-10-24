@@ -27,7 +27,7 @@ import { type AuthUser, namesVisible } from '../auth/identity.js'
 import type { SessionProcess } from '../driver/index.js'
 import { appLog } from '../logging/log-buffer.js'
 import { isBlindRecording, maskPlayers } from '../recordings/view.js'
-import type { Storage } from '../storage/index.js'
+import type { SessionFailure, Storage } from '../storage/index.js'
 import type { SessionMode, TerminationReason } from '../storage/schema.js'
 import { type ChargeableTimer, createChargeableTimer } from './chargeable-timer.js'
 import { coerceResultReason } from './result-reason.js'
@@ -139,6 +139,8 @@ export class LiveSession {
   private awaitingStart = false
   /** The container's reported episode outcome, stashed from the `result` envelope. */
   private resultReason: TerminationReason | null = null
+  /** The crash attribution from the same envelope: the player at fault and the exception description. */
+  private resultFailure: SessionFailure = { failed_player: null, termination_detail: null }
   private finalReason: TerminationReason | null = null
 
   private finalizePromise: Promise<void> | null = null
@@ -233,6 +235,11 @@ export class LiveSession {
       const coerced = coerceResultReason(line.value.reason)
       if (coerced !== null) {
         this.resultReason = coerced
+      }
+      const { failed_player: failedPlayer, error } = line.value
+      this.resultFailure = {
+        failed_player: typeof failedPlayer === 'string' ? failedPlayer : null,
+        termination_detail: typeof error === 'string' && error !== '' ? error : null,
       }
     }
     this.broadcast(raw)
@@ -632,7 +639,12 @@ export class LiveSession {
 
     this.status = 'ended'
     try {
-      await this.deps.storage.markEnded(this.id, reason, new Date().toISOString())
+      await this.deps.storage.markEnded(
+        this.id,
+        reason,
+        new Date().toISOString(),
+        reason === 'error' ? this.resultFailure : null,
+      )
     } catch (error) {
       appLog('session', `session ${this.id}: markEnded failed: ${String(error)}`, 'error')
     }
@@ -695,15 +707,19 @@ export class LiveSession {
     this.deps.onFinalized?.(this.id)
   }
 
-  /** Map an exit with no orchestrator-chosen reason onto a termination reason. */
+  /**
+   * Map an exit with no orchestrator-chosen reason onto a termination reason. A non-zero exit is always
+   * an error, whatever the result envelope said: a harness that crashed after (or while) reporting can
+   * never pass for a natural ending.
+   */
   private deriveReason(oomKilled: boolean, code: number): TerminationReason {
     if (oomKilled) {
       return 'oom_killed'
     }
-    if (this.resultReason !== null) {
-      return this.resultReason
+    if (code !== 0) {
+      return 'error'
     }
-    return code === 0 ? 'stopped' : 'error'
+    return this.resultReason ?? 'stopped'
   }
 
   private trySend(socket: ClientSocket, data: string): void {

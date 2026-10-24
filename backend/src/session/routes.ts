@@ -116,7 +116,9 @@ const StartSessionBodySchema = z.strictObject({
   parameters: z.record(z.string(), z.unknown()),
   seats: z
     .record(z.string().regex(/^seat_[0-9]+$/), SeatAssignmentSchema)
-    .refine((seats) => Object.keys(seats).length > 0, { message: 'at least one seat is required' }),
+    .refine((seats) => Object.keys(seats).length > 0, {
+      message: 'at least one seat is required',
+    }),
 })
 type StartBody = z.infer<typeof StartSessionBodySchema>
 
@@ -195,7 +197,10 @@ export function registerSessionRoutes(app: FastifyInstance, deps: SessionRouteDe
     const names = namesVisible(caller)
       ? await deps.userDirectory.namesFor([session.user_id])
       : new Map<string, string>()
-    return { ...session, ...optionalField('user_name', names.get(session.user_id)) }
+    return {
+      ...session,
+      ...optionalField('user_name', names.get(session.user_id)),
+    }
   })
 
   app.delete<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {

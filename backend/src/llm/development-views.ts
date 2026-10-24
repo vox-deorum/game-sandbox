@@ -67,7 +67,12 @@ export function summarizeDevelopmentUsage(
       output_tokens: usage.outputTokens,
     }
   }
-  return { successfulCalls, budgetCostUnitsUsed, usageEstimated, usageByModel: encoded }
+  return {
+    successfulCalls,
+    budgetCostUnitsUsed,
+    usageEstimated,
+    usageByModel: encoded,
+  }
 }
 
 export function developmentCallView(

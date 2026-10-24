@@ -132,7 +132,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const identity = createRequestIdentity(deps.auth)
 
   if (deps.llmDevelopment !== undefined) {
-    registerDevelopmentLlmRoutes(app, { identity, storage: deps.storage, ...deps.llmDevelopment })
+    registerDevelopmentLlmRoutes(app, {
+      identity,
+      storage: deps.storage,
+      ...deps.llmDevelopment,
+    })
   }
   registerRecordingLlmRoutes(app, {
     identity,

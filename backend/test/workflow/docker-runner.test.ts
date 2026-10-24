@@ -356,6 +356,8 @@ function emitRecording(
     players?: number
     /** The player the harness pins a crash or budget overage to in the result envelope. */
     failedPlayer?: unknown
+    /** The harness's description of the exception that ended the episode. */
+    error?: string
     /** Keep the process open after emitting the result so the runner's watchdog kills it. */
     finish?: boolean
   } = {},
@@ -421,6 +423,7 @@ function emitRecording(
           reason,
           step_timeouts: {},
           ...(options.failedPlayer !== undefined ? { failed_player: options.failedPlayer } : {}),
+          ...(options.error !== undefined ? { error: options.error } : {}),
         }),
       )
     }
@@ -2113,6 +2116,34 @@ describe('Docker-backed workflow runner', () => {
     const results = await storage.listGameResultsByRun(run.id)
     expect(results[0]?.failed).toBe(1)
     expect(results[0]?.failure_reason).toMatch(/exited with code 1/)
+  })
+
+  it('records the harness description of a crash on the result and the replay', async () => {
+    const handle = makeRunner(storage)
+    const run = await makeRun(storage, [naiveGame(0)])
+    handle.driver.onLaunch = (launch): void => {
+      const config = JSON.parse(launch.spec.argv[0] ?? '{}') as { seed: number }
+      emitRecording(launch.process, config, {
+        ticks: 2,
+        scores: { player_0: 9 },
+        reason: 'error',
+        failedPlayer: 'player_0',
+        error: "KeyError: 'evening' (agent.py:88 in assign)",
+        exit: { code: 1, oomKilled: false },
+      })
+    }
+
+    await runToTerminal(handle, run.id)
+    const games = await storage.listRunGames(run.id)
+    expect(games[0]?.status).toBe('failed')
+    const results = await storage.listGameResultsByRun(run.id)
+    expect(results[0]?.failure_reason).toContain("KeyError: 'evening' (agent.py:88 in assign)")
+    // The replay explains the crash but still shows no final standings (the reason is not completed).
+    expect(await storage.getRecording(`${ENV_ID}-${games[0]?.id}`)).toMatchObject({
+      termination_reason: 'error',
+      failed_player: 'player_0',
+      termination_detail: "KeyError: 'evening' (agent.py:88 in assign)",
+    })
   })
 
   it('marks a timed-out agent timed_out with a failed result row', async () => {

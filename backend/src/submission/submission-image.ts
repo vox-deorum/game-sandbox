@@ -53,7 +53,11 @@ function sourceInput(submission: Submission): SourceInput {
   if (submission.commit_sha === null || submission.commit_sha === '') {
     throw new Error('git submission is missing its pinned commit')
   }
-  return { kind: 'git', repoUrl: submission.repo_url, ref: submission.commit_sha }
+  return {
+    kind: 'git',
+    repoUrl: submission.repo_url,
+    ref: submission.commit_sha,
+  }
 }
 
 /** Everything the helper needs, injected so a test assembles it against the FakeDriver and a source stub. */

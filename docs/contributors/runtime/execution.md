@@ -154,7 +154,14 @@ Messaging adds a `chat` event. Unknown or malformed commands are logged and igno
 
 A `clock` event reports whether a human holds a player's controls, so the container spends that player's move budget only while they can act. The browser sends `running:true` when the renderer opens the move clock and `running:false` when it closes or playback pauses. Like `input`, the event is accepted only from the owner, in human mode, for a human-capable player. When the last owner socket detaches, the backend sends `running:false` for every external player so a disconnected browser cannot keep a budget running.
 
-The final `result` event contains ticks, scores, termination reason, timeout counts, and recording ID.
+The final `result` event contains ticks, scores, termination reason, timeout counts, recording ID, `failed_player`, and `error`.
+
+When the episode raises (an agent crash, an illegal action, or an environment fault), the runner still emits the partial result with reason `error`, then exits 1:
+
+- `failed_player` names the player whose agent was at fault, or is `null` when no single player is to blame.
+- `error` is a one-line description such as `KeyError: 'evening' (agent.py:88 in assign)`. It holds the exception type, the message (capped at 300 characters), and the innermost line outside the harness package. Only the file's base name is kept, so no server path appears.
+
+The full traceback goes to stderr, which the backend logs as `session <id> [container]: ...`.
 
 ## Browser WebSocket
 
@@ -195,14 +202,16 @@ The session configuration includes a `players` map for recording attribution. Hu
 
 Every exit path enters the same idempotent finalizer. The first termination reason wins.
 
-| Trigger                       | Reason                                     |
-| ----------------------------- | ------------------------------------------ |
-| Environment or harness result | `terminated`, `truncated`, `episode_limit` |
-| Owner stop                    | `stopped`                                  |
-| No socket or human command    | `idle_timeout`                             |
-| Wall-clock backstop           | `time_limit`                               |
-| Memory kill                   | `oom_killed`                               |
-| Other crash                   | `error`                                    |
+| Trigger | Reason |
+| --- | --- |
+| Clean exit with an environment result | `terminated`, `truncated`, `episode_limit` |
+| Owner stop | `stopped` |
+| No socket or human command | `idle_timeout` |
+| Wall-clock backstop | `time_limit` |
+| Memory kill | `oom_killed` |
+| Any other non-zero exit | `error` |
+
+A non-zero exit is always `error`, whatever reason the result envelope carried, so a crash can never read as a natural ending. For an `error` ending, the session row also stores the envelope's `failed_player` and its `error` description (as `termination_detail`). The recordings listing API includes these fields. The live page and replay viewer show the cause under the "Ended unexpectedly" badge. An automated season game uses the same description as its failure reason, and its recording row carries the same three fields.
 
 The finalizer stores the result, notifies clients, kills the container if needed, and clears the active registry. For LLM-enabled sessions, it blocks and settles proxy requests before cleaning up telemetry and networks.
 

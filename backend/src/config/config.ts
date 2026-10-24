@@ -558,7 +558,10 @@ function loadDockerLlmRelay(env: NodeJS.ProcessEnv): DockerLlmRelay {
  * development defaults are accepted only when `AUTH_ALLOW_INSECURE_DEFAULTS=true` **and**
  * `PUBLIC_ORIGIN` is loopback; that mode binds the matching loopback interface instead.
  */
-function loadAuthOptions(env: NodeJS.ProcessEnv): { auth: AuthOptions; listenHost: string } {
+function loadAuthOptions(env: NodeJS.ProcessEnv): {
+  auth: AuthOptions
+  listenHost: string
+} {
   const insecure = boolVar(env, 'AUTH_ALLOW_INSECURE_DEFAULTS')
 
   // GitHub OAuth is both-or-neither: one half without the other is a misconfiguration, not a partial

@@ -33,6 +33,7 @@ import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
 import SeatAttribution from '../components/SeatAttribution.vue'
+import RunEndCause from '../components/RunEndCause.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
 import SessionStartOverlay from '../components/SessionStartOverlay.vue'
@@ -54,6 +55,7 @@ import { liveIntervalMs, playbackIntervalMs } from '../lib/playback.js'
 import { decisionEntries } from '../lib/state.js'
 import { hidesNames, isAdmin, useMe, userId } from '../me.js'
 import { parseRecording } from '../replay/parse.js'
+import { runFailure } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -148,6 +150,7 @@ const {
   buffering,
   health,
   endReason,
+  endFailure,
   finalResult,
   accumulatedScores,
   latestState,
@@ -190,6 +193,7 @@ const {
   chatLog,
   completedOutcome,
   decisions,
+  endCause,
   healthLabel,
   healthTone,
   statusLabel,
@@ -198,6 +202,7 @@ const {
   status,
   paused,
   endReason,
+  endFailure,
   connection,
   health,
 })
@@ -250,6 +255,7 @@ onMounted(async () => {
   status.value = fetched.status
   if (fetched.status === 'ended') {
     endReason.value = fetched.termination_reason
+    endFailure.value = runFailure(fetched.failed_player, fetched.termination_detail)
   }
   const [environment, seasons] = await Promise.all([
     environmentMeta(fetched.env_id).catch(() => null),
@@ -383,6 +389,7 @@ async function hydrateRecording(session: SessionRow): Promise<void> {
         </template>
       </div>
     </header>
+    <RunEndCause v-if="endCause !== null" :text="endCause" />
 
     <UiEmptyState v-if="status === 'ended' && pinError !== null" tone="danger">
       {{ pinError }}

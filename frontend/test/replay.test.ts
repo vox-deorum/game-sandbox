@@ -680,6 +680,39 @@ describe('ReplayPage', () => {
     expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
   })
 
+  it.each([
+    ['error', 'Ended unexpectedly', "P0's agent raised RuntimeError: boom (agent.py:4 in act)"],
+    ['stopped', 'Stopped', null],
+  ])('names the cause only for a run that ended in error (%s)', async (reason, badge, cause) => {
+    vi.mocked(getRecording).mockResolvedValue(replayRecording())
+    vi.mocked(listRecordings).mockResolvedValue([
+      {
+        id: 'rec-1',
+        header: {
+          schema_version: 1,
+          environment: 'flappy_bird',
+          parameters: { players: 1, pipe_gap: 100 },
+          players: {
+            player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+          },
+          seats: { seat_0: ['player_0'] },
+          seat_plan: 'solo',
+        },
+        user_id: 'dev-user',
+        created_at: '2026-06-11T00:00:00.000Z',
+        pinned: false,
+        termination_reason: reason,
+        failed_player: 'player_0',
+        termination_detail: 'RuntimeError: boom (agent.py:4 in act)',
+        season_id: null,
+      },
+    ])
+    const view = await renderReplay()
+    expect(await screen.findByText(badge)).toBeInTheDocument()
+    const line = view.container.querySelector('.run-end-cause')
+    expect(line?.textContent ?? null).toBe(cause)
+  })
+
   it('shows the needs-newer-viewer message for an unknown schema version', async () => {
     vi.mocked(getRecording).mockResolvedValue(replayRecording(2))
     await renderReplay()

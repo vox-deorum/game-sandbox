@@ -44,7 +44,11 @@ export const ResolvedOfficialLlmPolicySchema = z
       })
     }
     if (!policy.enabled && modelCount !== 0) {
-      context.addIssue({ code: 'custom', path: ['models'], message: 'disabled policy has models' })
+      context.addIssue({
+        code: 'custom',
+        path: ['models'],
+        message: 'disabled policy has models',
+      })
     }
   })
 export type ResolvedOfficialLlmPolicy = z.infer<typeof ResolvedOfficialLlmPolicySchema>

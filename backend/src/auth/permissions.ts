@@ -32,7 +32,9 @@ export type Role = (typeof VALID_ROLES)[number]
 // forcing `roles` to declare exactly the names in VALID_ROLES: drop or add a role in one place and
 // the compiler flags the other, so the two can never drift.
 export const roles = {
-  admin: ac.newRole({ user: ['list', 'create', 'set-role', 'ban', 'set-password'] }),
+  admin: ac.newRole({
+    user: ['list', 'create', 'set-role', 'ban', 'set-password'],
+  }),
   user: ac.newRole({}),
   guest: ac.newRole({}),
   pending: ac.newRole({}),

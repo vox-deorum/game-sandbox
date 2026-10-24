@@ -29,7 +29,10 @@ export interface HostResolver {
 export const defaultHostResolver: HostResolver = {
   async lookup(hostname) {
     const records = await dnsLookup(hostname, { all: true, verbatim: true })
-    return records.map((record) => ({ address: record.address, family: record.family }))
+    return records.map((record) => ({
+      address: record.address,
+      family: record.family,
+    }))
   },
 }
 

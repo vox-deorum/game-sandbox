@@ -33,7 +33,10 @@ function decodeGameResult(
     llm_usage_by_model: string | null
   },
 ): GameResult {
-  return { ...row, llm_usage_by_model: decodeLlmUsageByModel(row.llm_usage_by_model) }
+  return {
+    ...row,
+    llm_usage_by_model: decodeLlmUsageByModel(row.llm_usage_by_model),
+  }
 }
 
 /** Run-status values that close a run (stamping `ended_at`). */

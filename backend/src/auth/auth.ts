@@ -224,7 +224,9 @@ export function createAuth(
         id: 'game-sandbox-github-identity',
         version: '1.0.0',
         init: () => ({
-          options: { databaseHooks: githubIdentityHooks(sqlite, githubProfiles) },
+          options: {
+            databaseHooks: githubIdentityHooks(sqlite, githubProfiles),
+          },
         }),
       },
     ],

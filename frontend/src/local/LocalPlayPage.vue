@@ -7,6 +7,7 @@ import { computed, onMounted, ref, shallowRef } from 'vue'
 import ChatPanel from '../components/ChatPanel.vue'
 import DecisionLog from '../components/DecisionLog.vue'
 import GameOverCard from '../components/GameOverCard.vue'
+import RunEndCause from '../components/RunEndCause.vue'
 import SessionStartOverlay from '../components/SessionStartOverlay.vue'
 import StageFrame from '../components/StageFrame.vue'
 import UiButton from '../components/ui/UiButton.vue'
@@ -45,6 +46,7 @@ const {
   buffering,
   health,
   endReason,
+  endFailure,
   finalResult,
   accumulatedScores,
   latestState,
@@ -83,6 +85,7 @@ const {
   chatLog,
   completedOutcome,
   decisions,
+  endCause,
   healthLabel,
   healthTone,
   statusLabel,
@@ -91,6 +94,7 @@ const {
   status,
   paused,
   endReason,
+  endFailure,
   connection,
   health,
 })
@@ -154,6 +158,7 @@ onMounted(async () => {
         <UiButton variant="danger" @click="stop">Stop</UiButton>
       </div>
     </header>
+    <RunEndCause v-if="endCause !== null" :text="endCause" />
 
     <UiEmptyState v-if="loadError" tone="danger">
       Local play could not load its environment.

@@ -96,7 +96,9 @@ async function build(
   inputs: readonly string[],
 ): Promise<void> {
   console.error(`building ${tag} from ${dockerfile}`)
-  const context = tar.pack(REPO_ROOT, { ignore: buildContextIgnore(REPO_ROOT, inputs) })
+  const context = tar.pack(REPO_ROOT, {
+    ignore: buildContextIgnore(REPO_ROOT, inputs),
+  })
   const buildStream = await docker.buildImage(context, {
     t: tag,
     dockerfile,

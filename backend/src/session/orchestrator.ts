@@ -605,7 +605,12 @@ export class Orchestrator {
           humanPlayers,
           ...(restrictedBuiltin === null || seat.players.length === 1
             ? {}
-            : { derivedCompanion: { kind: 'builtin-agent' as const, name: restrictedBuiltin } }),
+            : {
+                derivedCompanion: {
+                  kind: 'builtin-agent' as const,
+                  name: restrictedBuiltin,
+                },
+              }),
         }
       }
       return { seatId: seat.seatId, assignment }
@@ -650,7 +655,10 @@ export class Orchestrator {
         })
         continue
       }
-      resolved.push({ seatId, ...(await this.resolveAgentBinding(assignment, meta, playSeason)) })
+      resolved.push({
+        seatId,
+        ...(await this.resolveAgentBinding(assignment, meta, playSeason)),
+      })
     }
     return resolved
   }
@@ -873,7 +881,11 @@ export class Orchestrator {
           ...optionalField('ownerName', names.get(seat.submission.user_id)),
         })
       } else {
-        seats.set(seat.seatId, { driver: 'builtin', name: seat.name, label: seat.label })
+        seats.set(seat.seatId, {
+          driver: 'builtin',
+          name: seat.name,
+          label: seat.label,
+        })
       }
     }
     const { playerBindings, players } = assembleLaunch(seats, layout)

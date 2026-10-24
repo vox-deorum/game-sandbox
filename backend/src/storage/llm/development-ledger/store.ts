@@ -238,13 +238,15 @@ export class DevelopmentLedgerStore {
   /** Successful usage for every participant with at least one row in the season ledger. */
   listParticipantUsage(seasonId: string): DevelopmentParticipantUsage[] {
     const rows = this.handle(seasonId)
-      .db.prepare(`SELECT user_id, model,
+      .db.prepare(
+        `SELECT user_id, model,
         COUNT(*) AS calls,
         SUM(usage_estimated) AS estimated_calls,
         COALESCE(SUM(input_tokens), 0) AS input_tokens,
         COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
         COALESCE(SUM(output_tokens), 0) AS output_tokens
-        FROM calls GROUP BY user_id, model ORDER BY user_id, model`)
+        FROM calls GROUP BY user_id, model ORDER BY user_id, model`,
+      )
       .all() as ParticipantUsageRow[]
     const participants = new Map<string, DevelopmentParticipantUsage>()
     for (const row of rows) {

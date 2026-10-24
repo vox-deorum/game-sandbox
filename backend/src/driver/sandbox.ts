@@ -27,7 +27,10 @@ export function buildSandboxProfile(
     cpus: resources.cpus,
     memoryMb: resources.memoryMb,
     readOnlyRoot: true,
-    scratch: { containerPath: SCRATCH_CONTAINER_PATH, sizeMb: resources.scratchMb },
+    scratch: {
+      containerPath: SCRATCH_CONTAINER_PATH,
+      sizeMb: resources.scratchMb,
+    },
     network,
     mounts: [...mounts],
     pids: resources.pids,

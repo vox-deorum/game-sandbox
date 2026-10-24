@@ -73,6 +73,20 @@ describe('storage on :memory:', () => {
     expect(ended?.status).toBe('ended')
     expect(ended?.termination_reason).toBe('terminated')
     expect(ended?.ended_at).toBe('2026-06-11T00:01:00.000Z')
+    expect(ended).toMatchObject({ failed_player: null, termination_detail: null })
+  })
+
+  it('stores the crash attribution of a session that ended in error', async () => {
+    await storage.createSession(input())
+    await storage.markEnded('sess-1', 'error', '2026-06-11T00:01:00.000Z', {
+      failed_player: 'player_3',
+      termination_detail: "KeyError: 'evening' (agent.py:88 in assign)",
+    })
+    expect(await storage.getSession('sess-1')).toMatchObject({
+      termination_reason: 'error',
+      failed_player: 'player_3',
+      termination_detail: "KeyError: 'evening' (agent.py:88 in assign)",
+    })
   })
 
   it('finds a user active session while starting or running, but not once ended', async () => {

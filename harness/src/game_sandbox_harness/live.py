@@ -27,9 +27,11 @@ import math
 import os
 import re
 import sys
+import traceback
 import urllib.request
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import IO, Any, cast
 
 from .clock import SystemClock
@@ -68,6 +70,10 @@ _SLICE_MS = 5
 #: Tick markers are local control-plane requests and must never hold the participant loop open for
 #: an unbounded period when the proxy is unavailable.
 _MARKER_TIMEOUT_SECONDS = 2.0
+#: The longest exception message kept in a failure description, so one runaway message cannot bloat
+#: the result envelope or the rows that store it.
+_FAILURE_MESSAGE_LIMIT = 300
+_HARNESS_PACKAGE_DIR = Path(__file__).resolve().parent
 
 
 class LiveConfigError(ValueError):
@@ -767,18 +773,44 @@ def run(
         protocol.emit_envelope(result_envelope(episode.result()))
     except Exception as error:  # noqa: BLE001 - surfaced to diagnostics; the orchestrator records it
         print(f"live: session failed: {error!r}", file=sys.stderr, flush=True)
-        # Emit the partial result so the orchestrator can charge a crashing agent to its own seat
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
+        # Emit the partial result, marked as an error with a short description of the exception, so the
+        # orchestrator stores why the game ended and can charge a crashing agent to its own seat
         # (episode.failed_player) instead of to every competitor sharing the container. Best-effort: this
         # advisory note must never mask the original error or change the exit code. The close is
-        # idempotent belt-and-suspenders — Episode.start and the `with` already flush the recording on
-        # their own failures — and guarantees the writer is closed before result() reads it back.
+        # idempotent belt-and-suspenders (Episode.start and the `with` already flush the recording on
+        # their own failures) and guarantees the writer is closed before result() reads it back.
         if episode is not None:
+            with contextlib.suppress(Exception):
+                episode.fail(describe_failure(error))
             with contextlib.suppress(Exception):
                 episode.close()
             with contextlib.suppress(Exception):
                 protocol.emit_envelope(result_envelope(episode.result()))
         return 1
     return 0
+
+
+def describe_failure(error: BaseException) -> str:
+    """Describe an exception in one line: ``"<Type>: <message> (<file>:<line> in <function>)"``.
+
+    The location is the innermost traceback frame outside the harness package, which for an agent crash
+    is the line in the agent's own code. Only the file's base name is kept, so no server path leaks into
+    a public replay. The location is omitted when every frame belongs to the harness (an illegal action,
+    whose message already names the player and the problem).
+    """
+    message = " ".join(str(error).split())
+    if len(message) > _FAILURE_MESSAGE_LIMIT:
+        message = message[: _FAILURE_MESSAGE_LIMIT - 3] + "..."
+    description = f"{type(error).__name__}: {message}" if message else type(error).__name__
+    location = None
+    for frame in traceback.extract_tb(error.__traceback__):
+        if not Path(frame.filename).resolve().is_relative_to(_HARNESS_PACKAGE_DIR):
+            location = frame
+    if location is not None:
+        description += f" ({Path(location.filename).name}:{location.lineno} in {location.name})"
+    return description
 
 
 def main(argv: list[str] | None = None) -> int:

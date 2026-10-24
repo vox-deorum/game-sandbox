@@ -75,7 +75,9 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
   const cache = new WeakMap<FastifyRequest, Promise<AuthUser | null>>()
 
   async function lookup(request: FastifyRequest): Promise<AuthUser | null> {
-    const session = await auth.api.getSession({ headers: cookieHeaders(request) })
+    const session = await auth.api.getSession({
+      headers: cookieHeaders(request),
+    })
     if (session === null) {
       return null
     }
@@ -126,7 +128,10 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
       return undefined
     }
     if (user.status === 'pending') {
-      await reply.code(403).send({ error: 'your account is awaiting approval', code: 'not_active' })
+      await reply.code(403).send({
+        error: 'your account is awaiting approval',
+        code: 'not_active',
+      })
       return undefined
     }
     return user
@@ -141,7 +146,10 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
       return undefined
     }
     if (user.status !== 'normal' && user.status !== 'admin') {
-      await reply.code(403).send({ error: 'your account is awaiting approval', code: 'not_active' })
+      await reply.code(403).send({
+        error: 'your account is awaiting approval',
+        code: 'not_active',
+      })
       return undefined
     }
     return user
@@ -162,5 +170,11 @@ export function createRequestIdentity(auth: Auth): RequestIdentity {
     return user
   }
 
-  return { resolveUser, requireUser, requirePlayer, requireActive, requireAdmin }
+  return {
+    resolveUser,
+    requireUser,
+    requirePlayer,
+    requireActive,
+    requireAdmin,
+  }
 }

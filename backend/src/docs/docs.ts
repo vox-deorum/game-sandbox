@@ -113,7 +113,10 @@ function titleForMarkdown(markdown: string, stem: string): string {
 /** A leaf page entry for a `.md` file in `dir`. */
 function pageEntry(docsDir: string, dir: string, name: string): DocsNavEntry {
   const abs = join(dir, name)
-  return { path: toDocsRelative(docsDir, abs), title: titleFor(abs, name.replace(/\.md$/, '')) }
+  return {
+    path: toDocsRelative(docsDir, abs),
+    title: titleFor(abs, name.replace(/\.md$/, '')),
+  }
 }
 
 interface EnvironmentGuide {
@@ -381,7 +384,10 @@ export function readDocsPage(
   const abs = resolveStudentsPath(docsDir, relPath)
   if (abs === null) return null
   try {
-    return { path: toDocsRelative(docsDir, abs), content: readFileSync(abs, 'utf8') }
+    return {
+      path: toDocsRelative(docsDir, abs),
+      content: readFileSync(abs, 'utf8'),
+    }
   } catch {
     return null
   }
@@ -401,6 +407,8 @@ export function readDocsIndex(docsDir: string, docsIndexFile?: string): DocsPage
     return { path, content: readFileSync(source, 'utf8') }
   } catch (cause) {
     const which = docsIndexFile !== undefined ? `DOCS_INDEX_FILE (${source})` : source
-    throw new DocsIndexError(`cannot read documentation index from ${which}`, { cause })
+    throw new DocsIndexError(`cannot read documentation index from ${which}`, {
+      cause,
+    })
   }
 }

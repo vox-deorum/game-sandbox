@@ -157,6 +157,8 @@ export interface ResultEnvelope {
   failedPlayer: string | null
   /** A present `failed_player` must be a string or null. Other values invalidate the envelope. */
   failedPlayerMalformed: boolean
+  /** The harness's one-line description of the exception that ended the episode, or `null`. */
+  error: string | null
 }
 
 /** How a finished game's container fared: a clean episode, a crashed agent, or a timed-out agent. */
@@ -789,11 +791,29 @@ class DockerWorkflowRunner implements WorkflowRunner {
 
       // Register the produced recording (owned by the seat's natural owner) and link it to the game.
       // An automated run has no producing session, so the recording carries its own termination reason
-      // for the replay viewer's game-over card. Only a cleanly completed game gets one, taken from its
-      // recognized result-envelope reason (a clean exit lacking one was already faulted above, so we
-      // never invent a reason); a crashed or timed-out game stays reasonless so its replay shows no final
-      // standings, mirroring a live session that ended badly.
+      // for the replay viewer's game-over card. A cleanly completed game takes its recognized
+      // result-envelope reason (a clean exit lacking one was already faulted above, so we never invent a
+      // reason). A crash the harness described is stored as `error` with that description and the
+      // charged player, so its replay explains why it ended. Any other failed or timed-out game stays
+      // reasonless. Neither shows final standings, mirroring a live session that ended badly.
       const owner = recordingOwner(seats, run.requested_by)
+      const crashDetail =
+        status === 'failed' && !exit.oomKilled && exit.code !== 0
+          ? (captured.result?.error ?? null)
+          : null
+      const recordingOutcome =
+        status === 'completed'
+          ? { termination_reason: coerceResultReason(captured.result?.reason) }
+          : crashDetail !== null
+            ? {
+                termination_reason: 'error' as const,
+                failed_player:
+                  attribution.scope === 'attributed'
+                    ? (attribution.culprit?.playerId ?? null)
+                    : null,
+                termination_detail: crashDetail,
+              }
+            : { termination_reason: null }
       // Publish the game association before its recording row. Retention can then recognize the
       // active workflow in the first instant the row exists, including for non-LLM recordings that
       // have no execution-scope id of their own.
@@ -804,8 +824,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
           user_id: owner,
           env_id: envId,
           created_at: new Date().toISOString(),
-          termination_reason:
-            status === 'completed' ? coerceResultReason(captured.result?.reason) : null,
+          ...recordingOutcome,
           llm_scope_id: llmPolicy.enabled ? runId : null,
           llm_session_id: llmPolicy.enabled ? game.id : null,
         })
@@ -1290,7 +1309,8 @@ export function parseResultEnvelope(value: Record<string, unknown>): ResultEnvel
       }
     }
   }
-  return { reason, scores, failedPlayer, failedPlayerMalformed }
+  const error = typeof value.error === 'string' && value.error !== '' ? value.error : null
+  return { reason, scores, failedPlayer, failedPlayerMalformed, error }
 }
 
 /**
@@ -1399,7 +1419,11 @@ function classifyFailure(
     return { kind: 'crash', reason: 'agent exceeded its memory quota (oom_killed)' }
   }
   if (exit.code !== 0) {
-    return { kind: 'crash', reason: `agent container exited with code ${exit.code}` }
+    // Prefer the harness's own description of the exception over the bare exit code.
+    return {
+      kind: 'crash',
+      reason: result?.error ?? `agent container exited with code ${exit.code}`,
+    }
   }
   if (result?.reason === 'episode_limit') {
     return { kind: 'timeout', reason: 'agent exceeded its per-episode time budget' }

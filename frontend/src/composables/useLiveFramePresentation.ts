@@ -5,12 +5,14 @@ import type { ConnectionState } from '../api/socket.js'
 import { type ChatEntry, messageKey } from '../lib/chat.js'
 import type { HealthVerdict } from '../lib/session-health.js'
 import { type DecisionEntry, decisionEntries } from '../lib/state.js'
-import { isCompletedOutcome, reasonText } from '../replay/reason.js'
+import { failureText, isCompletedOutcome, type RunFailure, reasonText } from '../replay/reason.js'
 
 interface LiveFramePresentationOptions {
   status: Readonly<Ref<'starting' | 'running' | 'ended'>>
   paused: Readonly<Ref<boolean>>
   endReason: Readonly<Ref<string | null>>
+  /** What the harness reported about the exception behind an `error` ending, when it said anything. */
+  endFailure: Readonly<Ref<RunFailure | null>>
   connection: Readonly<Ref<ConnectionState>>
   /** Why the picture is standing still, measured from per-step timing. See lib/session-health.ts. */
   health: Readonly<Ref<HealthVerdict | null>>
@@ -24,6 +26,7 @@ export function useLiveFramePresentation({
   status,
   paused,
   endReason,
+  endFailure,
   connection,
   health,
 }: LiveFramePresentationOptions) {
@@ -84,6 +87,10 @@ export function useLiveFramePresentation({
     return paused.value ? 'warning' : status.value === 'running' ? 'success' : 'neutral'
   })
   const completedOutcome = computed(() => isCompletedOutcome(endReason.value))
+  /** The line under an "Ended unexpectedly" badge naming what raised; null for every other ending. */
+  const endCause = computed(() =>
+    status.value === 'ended' && endReason.value === 'error' ? failureText(endFailure.value) : null,
+  )
 
   /**
    * The second badge, beside the status one: why the picture is standing still, or null when there is
@@ -110,6 +117,7 @@ export function useLiveFramePresentation({
     chatLog,
     completedOutcome,
     decisions,
+    endCause,
     healthLabel,
     healthTone,
     statusLabel,

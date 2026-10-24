@@ -471,7 +471,10 @@ function filteredQuery(
       values.push(value)
     }
   }
-  return { sql: clauses.length === 0 ? base : `${base} WHERE ${clauses.join(' AND ')}`, values }
+  return {
+    sql: clauses.length === 0 ? base : `${base} WHERE ${clauses.join(' AND ')}`,
+    values,
+  }
 }
 
 export const EXECUTION_TELEMETRY_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION

@@ -171,7 +171,11 @@ function checkFields(
   // A required field that is missing or has the wrong type, reported in declaration order.
   for (const field of REQUIRED_FIELDS) {
     if (issues.some((issue) => issue.path[0] === field)) {
-      return reject({ code: 'manifest_field_invalid', field, message: FIELD_MESSAGE[field] })
+      return reject({
+        code: 'manifest_field_invalid',
+        field,
+        message: FIELD_MESSAGE[field],
+      })
     }
   }
 

@@ -40,7 +40,10 @@ export class AsyncChannel<T> implements AsyncIterable<T> {
     return {
       next: (): Promise<IteratorResult<T>> => {
         if (this.buffer.length > 0) {
-          return Promise.resolve({ value: this.buffer.shift() as T, done: false })
+          return Promise.resolve({
+            value: this.buffer.shift() as T,
+            done: false,
+          })
         }
         if (this.closed) {
           return Promise.resolve({ value: undefined, done: true })

@@ -85,11 +85,17 @@ function admitSubmissionSource(
 ): SourceInput | undefined {
   const input = sourceInputFromBody(body)
   if (input === null) {
-    reply.code(400).send({ error: 'a repo_url or local_path is required', code: 'invalid_source' })
+    reply.code(400).send({
+      error: 'a repo_url or local_path is required',
+      code: 'invalid_source',
+    })
     return undefined
   }
   if (input.kind === 'local' && !allowLocalSubmissions) {
-    reply.code(403).send({ error: 'local submissions are disabled', code: 'local_disabled' })
+    reply.code(403).send({
+      error: 'local submissions are disabled',
+      code: 'local_disabled',
+    })
     return undefined
   }
   return input
@@ -149,9 +155,10 @@ export function registerSubmissionRoutes(app: FastifyInstance, deps: SubmissionR
     }
     const season = await deps.storage.getOpenSubmissionSeason(body.env_id)
     if (season === undefined) {
-      return reply
-        .code(409)
-        .send({ error: 'submissions are closed for this environment', code: 'no_open_season' })
+      return reply.code(409).send({
+        error: 'submissions are closed for this environment',
+        code: 'no_open_season',
+      })
     }
     try {
       const submission = await deps.storage.createSubmission({

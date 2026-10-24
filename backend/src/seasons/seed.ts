@@ -172,7 +172,10 @@ export async function seedOpenSeasons(
       continue
     }
 
-    const seasons = await storage.listSeasons({ envId: meta.env_id, scope: 'all' })
+    const seasons = await storage.listSeasons({
+      envId: meta.env_id,
+      scope: 'all',
+    })
     const configured = environmentConfigured(seasons)
     if (!configured) {
       const planted = await storage.getTemplateArcPlanted(meta.env_id)
@@ -229,7 +232,10 @@ export async function seedOpenSeasons(
               await storage.setSeasonDescription(existing.id, seedTemplateDescription(meta, preset))
             }
             if (overridesChanged) {
-              await storage.updateSeasonConfig(existing.id, { ...storedConfig, overrides })
+              await storage.updateSeasonConfig(existing.id, {
+                ...storedConfig,
+                overrides,
+              })
             }
           }
         }

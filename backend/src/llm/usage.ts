@@ -37,7 +37,11 @@ export function resolveUsage(
     reasoning <= completionTotal
   ) {
     return {
-      usage: { inputTokens: prompt, reasoningTokens: reasoning, outputTokens: completionTotal },
+      usage: {
+        inputTokens: prompt,
+        reasoningTokens: reasoning,
+        outputTokens: completionTotal,
+      },
       estimated: false,
     }
   }

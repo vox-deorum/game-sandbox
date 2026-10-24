@@ -49,11 +49,15 @@ export async function openSqlite(dbPath: string): Promise<SqliteHandle> {
   sqlite.pragma('journal_mode = WAL')
   sqlite.pragma('foreign_keys = ON')
 
-  const db = new Kysely<Database>({ dialect: new SqliteDialect({ database: sqlite }) })
+  const db = new Kysely<Database>({
+    dialect: new SqliteDialect({ database: sqlite }),
+  })
 
   try {
     await migrateToLatest(db)
-    const schemaVersion = sqlite.pragma('user_version', { simple: true }) as number
+    const schemaVersion = sqlite.pragma('user_version', {
+      simple: true,
+    }) as number
     if (schemaVersion !== CURRENT_SCHEMA_VERSION) {
       const state = schemaVersion < CURRENT_SCHEMA_VERSION ? 'stale' : 'newer than this build'
       throw new Error(

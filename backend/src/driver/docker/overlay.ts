@@ -376,7 +376,12 @@ export async function listOverlayImages(docker: Docker, prefix: string): Promise
     for (const tag of image.RepoTags ?? []) {
       const submissionId = parseOverlayTag(prefix, tag)
       if (submissionId !== null) {
-        overlays.push({ ref: tag, kind: 'submission', submissionId, createdAtMs })
+        overlays.push({
+          ref: tag,
+          kind: 'submission',
+          submissionId,
+          createdAtMs,
+        })
         continue
       }
       const session = parseSessionOverlayTag(prefix, tag)

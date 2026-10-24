@@ -1167,6 +1167,47 @@ describe('SessionPage', () => {
     expect(drawn.at(-1)).toMatchObject({ tick: 2 })
   })
 
+  it('names the cause of a reopened session that crashed, without final standings', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue({
+      ...endedOwnerRow(),
+      termination_reason: 'error',
+      failed_player: 'player_0',
+      termination_detail: "KeyError: 'evening' (agent.py:88 in assign)",
+    })
+    const view = await renderSession()
+
+    expect(
+      await screen.findByText("P0's agent raised KeyError: 'evening' (agent.py:88 in assign)"),
+    ).toBeInTheDocument()
+    const statusBar = view.container.querySelector('.session-status') as HTMLElement
+    expect(within(statusBar).getByText('Ended unexpectedly')).toBeInTheDocument()
+    await waitFor(() => expect(drawn.at(-1)).toMatchObject({ tick: 2 }))
+    expect(screen.queryByRole('dialog', { name: 'Game over' })).toBeNull()
+  })
+
+  it('names the cause a live crash reports in its result envelope', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
+    vi.mocked(getSession).mockResolvedValue(ownerRow())
+    await renderSession()
+    await waitForHandlers()
+    handlers.onHeader(HEADER)
+    handlers.onSessionStatus?.('running')
+    handlers.onResult?.({
+      ticks: 3,
+      reason: 'error',
+      scores: { player_0: 0 },
+      failed_player: null,
+      error: 'ValueError: bad layout (env.py:12 in step)',
+    })
+    handlers.onSessionStatus?.('ended', 'error')
+
+    expect(
+      await screen.findByText('The game raised ValueError: bad layout (env.py:12 in step)'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Ended unexpectedly')).toBeInTheDocument()
+  })
+
   it('rebuilds complete standings for a directly opened ended session', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('dev-user'))
     vi.mocked(getSession).mockResolvedValue(endedOwnerRow())

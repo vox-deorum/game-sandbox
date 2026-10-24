@@ -62,7 +62,10 @@ function assertSafeRef(ref: string | null): void {
 }
 
 /** Classify a non-zero git exit from its stderr into a typed failure with a credential-free detail. */
-function classifyGitStderr(stderr: string): { failure: SourceFailureKind; detail: string } {
+function classifyGitStderr(stderr: string): {
+  failure: SourceFailureKind
+  detail: string
+} {
   const text = stderr.toLowerCase()
   if (
     text.includes('authentication failed') ||
@@ -89,7 +92,10 @@ function classifyGitStderr(stderr: string): { failure: SourceFailureKind; detail
   }
   // Everything else (host resolution, missing repo, refused fetch) is reported as unreachable; the
   // detail is generic on purpose so a tokenized URL echoed in stderr can never leak into the log.
-  return { failure: 'unreachable', detail: 'the repository could not be reached' }
+  return {
+    failure: 'unreachable',
+    detail: 'the repository could not be reached',
+  }
 }
 
 /** The ls-remote patterns used for a participant-supplied branch/tag/full-ref name. */
@@ -138,7 +144,11 @@ export class GitSource {
       await assertSafeGitTarget(input.repoUrl, this.hostResolver)
     } catch (error) {
       if (error instanceof SourceError) {
-        return { reachable: false, failure: error.failure, detail: error.message }
+        return {
+          reachable: false,
+          failure: error.failure,
+          detail: error.message,
+        }
       }
       throw error
     }

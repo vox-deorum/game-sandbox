@@ -1,9 +1,10 @@
 /**
  * The container `result` envelope reasons that map directly to a stored {@link TerminationReason}.
  *
- * These are the endings a sandbox reports for itself from inside the run; the orchestrator-side
- * outcomes (a client stop turned crash, the idle window, the wall-clock backstop, a quota kill, or a
- * bare crash) are decided outside this set when a session or run finalizes. Shared by the live-session
+ * These are the endings a sandbox reports for itself from inside the run, including `error` for an
+ * exception the harness caught; the orchestrator-side outcomes (the idle window, the wall-clock
+ * backstop, a quota kill, or a crash that left no result) are decided outside this set when a session
+ * or run finalizes. Shared by the live-session
  * relay (which stamps the producing session's reason) and the workflow runner (which stamps an
  * automated recording's reason, since an automated run has no session to carry it).
  */
@@ -15,6 +16,7 @@ export const RESULT_REASONS: ReadonlySet<string> = new Set([
   'truncated',
   'episode_limit',
   'stopped',
+  'error',
 ])
 
 /**

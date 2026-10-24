@@ -494,6 +494,87 @@ describe('relay (LiveSession)', () => {
     })
   })
 
+  describe('a process that exits on its own', () => {
+    const CRASH_RESULT = JSON.stringify({
+      kind: 'result',
+      ticks: 720,
+      scores: { player_0: 0 },
+      reason: 'error',
+      step_timeouts: { player_0: 0 },
+      recording_id: 'flappy_bird-sess-1',
+      failed_player: 'player_0',
+      error: "KeyError: 'evening' (agent.py:88 in assign)",
+    })
+
+    async function endWith(lines: string[], exit: { code: number; oomKilled: boolean }) {
+      const process: SessionProcess = {
+        output: (async function* () {
+          yield* lines
+        })(),
+        diagnostics: (async function* () {})(),
+        exited: Promise.resolve(exit),
+        send: () => {},
+        kill: async () => {},
+      }
+      live.push(
+        new LiveSession({
+          id: 'sess-1',
+          userId: 'alice',
+          envId: 'flappy_bird',
+          mode: 'scripted',
+          recordingId: 'flappy_bird-sess-1',
+          createdAt: '2026-06-11T00:00:00.000Z',
+          process,
+          externalPlayers: [],
+          externalChatPlayer: null,
+          messaging: { enabled: false, cap: null },
+          deps: {
+            storage,
+            onEnd: () => {},
+            idleTimeoutMs: 1_000_000,
+            maxDurationMs: 1_000_000,
+            killGraceMs: 10,
+          },
+        }),
+      )
+      await settle()
+      return await storage.getSession('sess-1')
+    }
+
+    it('stores a reported crash as an error with its player and cause', async () => {
+      expect(await endWith([HEADER, CRASH_RESULT], { code: 1, oomKilled: false })).toMatchObject({
+        termination_reason: 'error',
+        failed_player: 'player_0',
+        termination_detail: "KeyError: 'evening' (agent.py:88 in assign)",
+      })
+    })
+
+    it('never lets a non-zero exit pass for the natural ending its envelope claimed', async () => {
+      expect(
+        await endWith([HEADER, RESULT_TERMINATED], { code: 1, oomKilled: false }),
+      ).toMatchObject({
+        termination_reason: 'error',
+        failed_player: null,
+        termination_detail: null,
+      })
+    })
+
+    it('stores a crash with no result envelope as a bare error', async () => {
+      expect(await endWith([HEADER], { code: 1, oomKilled: false })).toMatchObject({
+        termination_reason: 'error',
+        termination_detail: null,
+      })
+    })
+
+    it('keeps the failure fields off a session that did not end in error', async () => {
+      expect(await endWith([HEADER, CRASH_RESULT], { code: 0, oomKilled: true })).toMatchObject({
+        termination_reason: 'oom_killed',
+        failed_player: null,
+        termination_detail: null,
+      })
+    })
+  })
+
   describe('inbound command authority', () => {
     it('drops gated commands before Start and forwards them after resume', async () => {
       const { session, process } = makeSession('human')

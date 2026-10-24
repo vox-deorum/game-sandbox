@@ -94,6 +94,12 @@ export interface SessionRow {
   mode: 'human' | 'scripted'
   status: 'starting' | 'running' | 'ended'
   termination_reason: string | null
+  /**
+   * For a session that ended with `error`: the player whose agent raised (null when none is to blame)
+   * and the harness's one-line description of the exception. Null or absent for every other ending.
+   */
+  failed_player?: string | null
+  termination_detail?: string | null
   recording_id: string | null
   /** The competition season this session belongs to; null only for non-competitive legacy rows. */
   season_id: string | null
@@ -132,6 +138,9 @@ export interface RecordingSummary {
   pinned: boolean
   /** How the producing session ended, so the replay viewer can label its outcome; null when unknown. */
   termination_reason: string | null
+  /** The crash attribution read from the same row as the reason; see {@link SessionRow}. */
+  failed_player?: string | null
+  termination_detail?: string | null
   /** The winning seat id (`seat_0`, `seat_1`, ...), -1 for a tie, or null without a result. */
   winner_id?: string | -1 | null
   /** The season the producing session competed in; null when no session claims the recording. */

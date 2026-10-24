@@ -149,7 +149,10 @@ function redactModeration(
       results: side.results.map((result) => ({ ...result, model: alias })),
     }
   }
-  return { input: redactSide(moderation.input), output: redactSide(moderation.output) }
+  return {
+    input: redactSide(moderation.input),
+    output: redactSide(moderation.output),
+  }
 }
 
 function redactUpstreamModel(error: unknown, upstreamModel: string, alias: ModelAlias): unknown {

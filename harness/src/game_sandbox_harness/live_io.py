@@ -439,6 +439,7 @@ def result_envelope(result: EpisodeResult) -> dict[str, Any]:
         "step_timeouts": result.step_timeouts,
         "recording_id": result.recording_id,
         "failed_player": result.failed_player,
+        "error": result.error,
     }
 
 

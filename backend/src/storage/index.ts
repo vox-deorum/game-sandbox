@@ -141,8 +141,17 @@ export interface NewRecordingInput {
    * reason) and for a non-completed automated game.
    */
   termination_reason?: TerminationReason | null
+  /** The crash attribution for an automated game that ended with `error`; see {@link SessionFailure}. */
+  failed_player?: string | null
+  termination_detail?: string | null
   llm_scope_id?: string | null
   llm_session_id?: string | null
+}
+
+/** Why a run ended with `error`: the player whose agent raised (when one is to blame) and the cause. */
+export interface SessionFailure {
+  failed_player: string | null
+  termination_detail: string | null
 }
 
 /**
@@ -431,9 +440,15 @@ export interface Storage {
   createSession(input: NewSessionInput): Promise<Session>
   /** Move a session to `running` (the container's header line has arrived). */
   markRunning(id: string): Promise<void>
-  /** Finalize a session: `ended`, with its reason and end timestamp. Idempotent at the SQL
-   * level (it simply writes the columns), so the orchestrator's finalize can call it freely. */
-  markEnded(id: string, reason: TerminationReason, endedAt: string): Promise<void>
+  /** Finalize a session: `ended`, with its reason, end timestamp, and any crash attribution.
+   * Idempotent at the SQL level (it simply writes the columns), so the orchestrator's finalize can
+   * call it freely. */
+  markEnded(
+    id: string,
+    reason: TerminationReason,
+    endedAt: string,
+    failure?: SessionFailure | null,
+  ): Promise<void>
   /** The user's active (`starting` or `running`) session, if any; backs the one-per-user rule. */
   findActiveSessionByUser(userId: string): Promise<Session | undefined>
   /** One session by id. */

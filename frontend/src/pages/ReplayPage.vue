@@ -35,6 +35,7 @@ import GameOverCard from '../components/GameOverCard.vue'
 import GameThread from '../components/GameThread.vue'
 import ReplayTransport from '../components/ReplayTransport.vue'
 import SeatAttribution from '../components/SeatAttribution.vue'
+import RunEndCause from '../components/RunEndCause.vue'
 import RunMetadata from '../components/RunMetadata.vue'
 import SessionRatings from '../components/SessionRatings.vue'
 import StageFrame from '../components/StageFrame.vue'
@@ -55,7 +56,7 @@ import { playbackIntervalMs } from '../lib/playback.js'
 import { decisionEntries, type DecisionEntry, type RunSummary } from '../lib/state.js'
 import { hidesNames, isAdmin, useMe, userId } from '../me.js'
 import { parseRecording, UnsupportedVersionError } from '../replay/parse.js'
-import { isCompletedOutcome, reasonText } from '../replay/reason.js'
+import { failureText, isCompletedOutcome, reasonText, runFailure } from '../replay/reason.js'
 import { summarizeStates } from '../replay/summary.js'
 
 const route = useRoute()
@@ -192,6 +193,13 @@ const statusLabel = computed(() =>
     ? reasonText(listingEntry.value.termination_reason)
     : 'Replay',
 )
+// Under an "Ended unexpectedly" badge, the line naming what raised, from the same row as the reason.
+const endCause = computed(() => {
+  const entry = listingEntry.value
+  return entry?.termination_reason === 'error'
+    ? failureText(runFailure(entry.failed_player, entry.termination_detail))
+    : null
+})
 
 // What this episode was played with: the visible parameters the recording header carries, resolved
 // against the environment's declarations, plus the seed. The seed no longer has a row of its own in
@@ -373,6 +381,7 @@ onMounted(async () => {
         />
       </div>
     </header>
+    <RunEndCause v-if="endCause !== null" :text="endCause" />
 
     <SeatAttribution
       :players="header?.players"

@@ -28,6 +28,7 @@ import type {
   RecordingCleanupClaimResult,
   RecordingOrigin,
   SeasonTemplateRepository,
+  SessionFailure,
   SetPlayStatusResult,
   SetSubmissionStatusResult,
   Storage,
@@ -99,8 +100,13 @@ export class KyselyStorage implements Storage {
   markRunning(id: string): Promise<void> {
     return sessions.markRunning(this.db, id)
   }
-  markEnded(id: string, reason: TerminationReason, endedAt: string): Promise<void> {
-    return sessions.markEnded(this.db, id, reason, endedAt)
+  markEnded(
+    id: string,
+    reason: TerminationReason,
+    endedAt: string,
+    failure?: SessionFailure | null,
+  ): Promise<void> {
+    return sessions.markEnded(this.db, id, reason, endedAt, failure)
   }
   findActiveSessionByUser(userId: string): Promise<Session | undefined> {
     return sessions.findActiveSessionByUser(this.db, userId)

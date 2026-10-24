@@ -48,7 +48,9 @@ export async function buildLlmListener(deps: LlmListenerDeps): Promise<FastifyIn
   app.post('/internal/inflight', async (request, reply) => {
     try {
       const entry = deps.registry.authenticateOfficial(readBearer(request.headers.authorization))
-      return { inflight_ms: deps.registry.inFlightMsForScope(entry.grant.accountingScope.key) }
+      return {
+        inflight_ms: deps.registry.inFlightMsForScope(entry.grant.accountingScope.key),
+      }
     } catch (error) {
       const normalized = asLlmError(error)
       return reply.code(normalized.status).send(normalized.body())

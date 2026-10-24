@@ -60,6 +60,7 @@ import {
   toPlayerScores,
 } from '../lib/state.js'
 import type { RenderOptions } from '../renderers/types.js'
+import { type RunFailure, runFailure } from '../replay/reason.js'
 import { formatScoreMap } from '../replay/summary.js'
 
 /** The viewing cadence for a paced watch run whose environment declares no pace interval. */
@@ -130,6 +131,8 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
   const canStart = ref(false)
   const startPending = ref(false)
   const endReason = ref<string | null>(null)
+  // The harness's description of the exception that ended the run, carried by an `error` result.
+  const endFailure = ref<RunFailure | null>(null)
   const finalResult = ref<RunSummary | null>(null)
   // The latest recorded score for every player seen on the transport. This remains complete when an
   // individually inactive player is absent from later frames and covers reconnect until result arrives.
@@ -208,6 +211,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     if (typeof value.reason === 'string') {
       endReason.value = value.reason
     }
+    endFailure.value = runFailure(value.failed_player, value.error)
   }
 
   /** Reveal the end of the run: surface the held result, mark ended, and stop playing out. */
@@ -747,6 +751,7 @@ export function useSessionSocket(sessionId: string, frames: SessionFrameHandlers
     buffering,
     health,
     endReason,
+    endFailure,
     finalResult,
     accumulatedScores,
     latestState,

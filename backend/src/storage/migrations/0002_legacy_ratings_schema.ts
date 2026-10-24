@@ -37,7 +37,9 @@ async function createVersionTwoRatingsIndexes(db: Kysely<Database>): Promise<voi
 /** Add the required rating comment and named-builtin identity to the legacy rating table. */
 export const legacyRatingsSchema: Migration = {
   async up(db: Kysely<Database>): Promise<void> {
-    const version = await sql<{ user_version: number }>`PRAGMA user_version`.execute(db)
+    const version = await sql<{
+      user_version: number
+    }>`PRAGMA user_version`.execute(db)
     if (version.rows[0]?.user_version !== 0) {
       return
     }

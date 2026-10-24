@@ -1,3 +1,5 @@
+import { formatPlayer } from '../lib/format.js'
+
 // The termination reasons that mean a run reached a natural conclusion — a terminal state, or the
 // environment's own step cap (`truncated`) — as opposed to being stopped, idled out, killed, crashed,
 // or cut off for exhausting its per-episode compute budget (`episode_limit`, a timeout, not a finish).
@@ -35,4 +37,31 @@ export function reasonText(reason: string | null): string {
     default:
       return reason ?? 'Ended'
   }
+}
+
+/** Why a run ended with `error`: the player whose agent raised (null when none is to blame) and the
+ * harness's one-line description of the exception. */
+export interface RunFailure {
+  failedPlayer: string | null
+  detail: string
+}
+
+/** Read a failure from untrusted wire or row fields; null when there is no description to show. */
+export function runFailure(failedPlayer: unknown, detail: unknown): RunFailure | null {
+  if (typeof detail !== 'string' || detail === '') {
+    return null
+  }
+  return { failedPlayer: typeof failedPlayer === 'string' ? failedPlayer : null, detail }
+}
+
+// The line shown under an "Ended unexpectedly" badge, shared by the live session page and the replay
+// viewer: "P3's agent raised KeyError: 'evening' (agent.py:88 in assign)". A fault no single player owns
+// (the environment itself, say) is charged to the game.
+export function failureText(failure: RunFailure | null): string | null {
+  if (failure === null) {
+    return null
+  }
+  const source =
+    failure.failedPlayer === null ? 'The game' : `${formatPlayer(failure.failedPlayer)}'s agent`
+  return `${source} raised ${failure.detail}`
 }

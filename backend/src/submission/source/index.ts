@@ -27,7 +27,11 @@ export * from './types.js'
 
 import type { HostResolver } from './url-safety.js'
 
-export { defaultHostResolver, isPrivateAddress, unsafeGitUrlReason } from './url-safety.js'
+export {
+  defaultHostResolver,
+  isPrivateAddress,
+  unsafeGitUrlReason,
+} from './url-safety.js'
 export type { HostResolver }
 
 /** Test seam: inject fakes for the `git` CLI and the GitHub HTTP client. */

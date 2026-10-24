@@ -91,7 +91,11 @@ export function createGitHubClient(token: string | undefined): GitHubClient {
           headers,
         })
       } catch {
-        return { reachable: false, failure: 'unreachable', detail: 'could not reach github.com' }
+        return {
+          reachable: false,
+          failure: 'unreachable',
+          detail: 'could not reach github.com',
+        }
       }
       if (response.ok) {
         return { reachable: true }
@@ -107,7 +111,11 @@ export function createGitHubClient(token: string | undefined): GitHubClient {
         // GitHub returns 404 for both a missing repo and a private one the caller cannot see. With a
         // token it means not-found; without one it most likely means private-and-unauthenticated.
         return token !== undefined && token !== ''
-          ? { reachable: false, failure: 'unreachable', detail: 'the repository was not found' }
+          ? {
+              reachable: false,
+              failure: 'unreachable',
+              detail: 'the repository was not found',
+            }
           : {
               reachable: false,
               failure: 'auth_required',

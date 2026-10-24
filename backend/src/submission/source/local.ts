@@ -32,7 +32,11 @@ export class LocalSource {
       }
       return { reachable: true }
     } catch {
-      return { reachable: false, failure: 'unreachable', detail: 'the local path does not exist' }
+      return {
+        reachable: false,
+        failure: 'unreachable',
+        detail: 'the local path does not exist',
+      }
     }
   }
 

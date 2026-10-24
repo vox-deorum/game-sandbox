@@ -38,6 +38,7 @@ from game_sandbox_harness.live import (
     LiveConfigError,
     PlayerBinding,
     build_players,
+    describe_failure,
     parse_config,
     run_live_loop,
 )
@@ -48,6 +49,7 @@ from game_sandbox_harness.live_io import (
     TransportSource,
     result_envelope,
 )
+from game_sandbox_harness.participant_runner import IllegalAgentActionError
 from game_sandbox_harness.session import AgentPlayer, Episode, ExternalPlayer
 
 DEFAULT_ACTION = -1
@@ -1362,6 +1364,11 @@ def test_module_subprocess_charges_a_crashing_agent_to_its_own_player(tmp_path: 
     ]
     assert len(results) == 1, proc.stdout
     assert results[0]["failed_player"] == "player_0"
+    # A crash is never reported as a natural ending, and it names the exception and the agent's own line.
+    assert results[0]["reason"] == "error"
+    assert results[0]["error"] == "RuntimeError: boom (agent.py:4 in act)"
+    # The backend log keeps the whole stack.
+    assert "Traceback (most recent call last)" in proc.stderr
 
 
 def test_module_subprocess_charges_a_reset_crash_to_its_own_player(tmp_path: Path):
@@ -1412,7 +1419,35 @@ def test_module_subprocess_charges_a_reset_crash_to_its_own_player(tmp_path: Pat
     ]
     assert len(results) == 1, proc.stdout
     assert results[0]["failed_player"] == "player_0"
+    assert results[0]["reason"] == "error"
+    assert results[0]["error"] == "RuntimeError: reset boom (agent.py:3 in reset)"
     # The recording was opened before the reset crash, so a readable header is on disk: the
     # orchestrator sees an attributable crash, not a recording-less infrastructure fault.
     header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert header["environment"] == "flappy_bird"
+
+
+def _raised(error: Exception) -> Exception:
+    """Raise ``error`` from this file so it carries a traceback outside the harness package."""
+    try:
+        raise error
+    except Exception as caught:  # noqa: BLE001 - the test inspects the caught exception
+        return caught
+
+
+def test_describe_failure_names_the_type_message_and_the_innermost_non_harness_line():
+    description = describe_failure(_raised(KeyError("evening")))
+    assert description.startswith("KeyError: 'evening' (test_live.py:")
+    assert description.endswith(" in _raised)")
+
+
+def test_describe_failure_omits_the_location_when_no_frame_is_outside_the_harness():
+    error = IllegalAgentActionError("player_1 returned an illegal action: 9")
+    assert describe_failure(error) == "IllegalAgentActionError: player_1 returned an illegal action: 9"
+
+
+def test_describe_failure_flattens_and_caps_the_message():
+    assert describe_failure(RuntimeError()) == "RuntimeError"
+    assert describe_failure(RuntimeError("two\n  lines")) == "RuntimeError: two lines"
+    long = describe_failure(RuntimeError("x" * 1000))
+    assert long == "RuntimeError: " + "x" * 297 + "..."

@@ -35,7 +35,7 @@ Each completed environment transition produces one [state object](interaction.md
 
 Chat is stored in the state for each step, as [Communication](communication.md) defines. The JSONL file contains only the header and state objects. A recording keeps durable links to its successful LLM calls, while the [LLM API](llm.md#successful-call-accounting) defines their telemetry, retention, and visibility.
 
-A naturally completed session or automated match ends its replay with the final-standings card, ranked by seat. The termination reason comes from the live session; an automated match has no user-facing live-session row, so it stores the reason directly. A stopped, timed-out, or crashed run shows no final standings. See [Frontend](frontend.md) for how a replay presents results.
+A naturally completed session or automated match ends its replay with the final-standings card, ranked by seat. The termination reason comes from the live session; an automated match has no user-facing live-session row, so it stores the reason directly. A stopped, timed-out, or crashed run shows no final standings. A crashed run reads "Ended unexpectedly", followed by a line naming what raised and where, for example "P3's agent raised KeyError: 'evening' (agent.py:88 in assign)". Live sessions and automated matches show this line the same way. See [Frontend](frontend.md) for how a replay presents results.
 
 A recording belongs to the season of the session that produced it. An automated match's recording, which has no session, belongs to the season of its run. While that season's play window is open, a signed-in viewer of the replay can rate the agents in it. See [Frontend](frontend.md#feedback) for the rating panel on a replay.
 

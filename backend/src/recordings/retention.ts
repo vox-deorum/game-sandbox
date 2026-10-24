@@ -52,6 +52,12 @@ export interface RecordingListing {
    * session. Null when neither carries one (foreign debris, or a session still running when listed).
    */
   termination_reason: string | null
+  /**
+   * For a run that ended with `error`: the player whose agent raised (null when no single player is
+   * to blame) and a one-line description of the exception. Read from the same row as the reason.
+   */
+  failed_player: string | null
+  termination_detail: string | null
   /** The winning seat id (`seat_0`, `seat_1`, ...), -1 for a tie, or null without ranking data. */
   winner_id: string | -1 | null
   /**
@@ -282,17 +288,20 @@ export class Retention {
     // The termination reason lives on the session, keyed back to the recording it produced. Only an
     // ended session carries a reason; a running session's recording lists with a null reason until it
     // ends, then falls back to the recording row's own reason (set for an automated run that had no
-    // session). The season comes from the recording's origin (its session, else its tournament run).
-    const reasonByRecording = new Map<string, string | null>()
+    // session). The crash attribution travels with whichever row supplied the reason. The season
+    // comes from the recording's origin (its session, else its tournament run).
+    type Outcome = Pick<Recording, 'termination_reason' | 'failed_player' | 'termination_detail'>
+    const outcomeBySession = new Map<string, Outcome>()
     for (const session of sessions) {
-      if (session.recording_id !== null) {
-        reasonByRecording.set(session.recording_id, session.termination_reason)
+      if (session.recording_id !== null && session.termination_reason !== null) {
+        outcomeBySession.set(session.recording_id, session)
       }
     }
 
     const merged: RecordingListing[] = volume.map((entry) => {
       const row = rowById.get(entry.id)
-      const terminationReason = reasonByRecording.get(entry.id) ?? row?.termination_reason ?? null
+      const outcome = outcomeBySession.get(entry.id) ?? row
+      const terminationReason = outcome?.termination_reason ?? null
       return {
         id: entry.id,
         header: entry.header,
@@ -300,6 +309,8 @@ export class Retention {
         created_at: row?.created_at ?? null,
         pinned: row?.pinned === 1,
         termination_reason: terminationReason,
+        failed_player: outcome?.failed_player ?? null,
+        termination_detail: outcome?.termination_detail ?? null,
         winner_id: COMPLETED_OUTCOMES.has(terminationReason ?? '') ? entry.winner_id : null,
         season_id: seasonByRecording.get(entry.id) ?? null,
       }

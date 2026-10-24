@@ -66,7 +66,13 @@ export type SeatBinding =
  */
 export type AgentBinding =
   | { driver: 'builtin'; name: string; label: string }
-  | { driver: 'submission'; submissionId: string; userId: string; path: string; ownerName?: string }
+  | {
+      driver: 'submission'
+      submissionId: string
+      userId: string
+      path: string
+      ownerName?: string
+    }
 
 /** The two session-config blocks derived from a seat assignment, keyed by player id. */
 export interface AssembledLaunch {
@@ -180,7 +186,11 @@ function addPlayer(
       break
     case 'builtin':
       playerBindings[playerId] = { kind: 'builtin-agent', name: seat.name }
-      players[playerId] = { kind: 'agent', builtin_name: seat.name, label: seat.label }
+      players[playerId] = {
+        kind: 'agent',
+        builtin_name: seat.name,
+        label: seat.label,
+      }
       break
     case 'submission':
       playerBindings[playerId] = { kind: 'builtin-agent', path: seat.path }

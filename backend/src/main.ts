@@ -307,7 +307,10 @@ async function main(): Promise<void> {
         'warn',
       )
     }
-    await llmListener.listen({ port: config.llm.internalPort, host: llmListenHost ?? '0.0.0.0' })
+    await llmListener.listen({
+      port: config.llm.internalPort,
+      host: llmListenHost ?? '0.0.0.0',
+    })
     appLog(
       'main',
       `internal LLM proxy listening on ${llmListenHost ?? '0.0.0.0'}:${config.llm.internalPort}`,

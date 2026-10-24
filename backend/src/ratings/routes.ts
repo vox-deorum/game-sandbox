@@ -44,7 +44,10 @@ export interface RatingDeps {
 
 /** The agent identity as it arrives on the wire: no `user_id`, which the route resolves server-side. */
 const AgentWireSchema = z.discriminatedUnion('kind', [
-  z.strictObject({ kind: z.literal('submission'), submission_id: z.string().min(1) }),
+  z.strictObject({
+    kind: z.literal('submission'),
+    submission_id: z.string().min(1),
+  }),
   z.strictObject({ kind: z.literal('builtin'), name: z.string().min(1) }),
 ])
 type AgentWire = z.infer<typeof AgentWireSchema>
@@ -212,7 +215,11 @@ async function resolveRateableAgents(
         continue
       }
       if ('builtin_name' in entry) {
-        candidates.push({ kind: 'builtin', name: entry.builtin_name, label: entry.label })
+        candidates.push({
+          kind: 'builtin',
+          name: entry.builtin_name,
+          label: entry.label,
+        })
       }
     }
   } else if (sessionId !== undefined) {
@@ -263,7 +270,11 @@ async function resolveRateableAgents(
               entry.kind === 'builtin' && entry.name === ref.name,
           )
         : undefined
-    agents.push({ ref, wire, ...optionalField('builtinLabel', candidate?.label) })
+    agents.push({
+      ref,
+      wire,
+      ...optionalField('builtinLabel', candidate?.label),
+    })
   }
   // A baseline-only watch recording is useful as a replay, but there is no participant agent to give
   // feedback about. Mixed sessions still include the Naive baseline as a normal rateable agent.
@@ -536,9 +547,10 @@ function registerRatingSource(
     }
     const { context } = resolved
     if (context.season.play_status !== 'open') {
-      return reply
-        .code(409)
-        .send({ error: 'the play window for this season is closed', code: 'play_closed' })
+      return reply.code(409).send({
+        error: 'the play window for this season is closed',
+        code: 'play_closed',
+      })
     }
     const validated = validatePayload(parsed.data.ratings, context, callerId)
     if (!validated.ok) {
@@ -564,7 +576,12 @@ function registerRatingSource(
  * the first error. The comment is required for every rating (`empty_feedback` when blank after trim)
  * and capped at {@link RATING_FEEDBACK_MAX} code points (`feedback_too_long`). */
 type PayloadValidation =
-  | { ok: true; accepted: AgentRef[]; scores: Map<string, number>; feedback: Map<string, string> }
+  | {
+      ok: true
+      accepted: AgentRef[]
+      scores: Map<string, number>
+      feedback: Map<string, string>
+    }
   | { ok: false; code: string; error: string }
 
 /**
@@ -584,7 +601,11 @@ function validatePayload(
   const feedback = new Map<string, string>()
   for (const rating of ratings) {
     if (!Number.isInteger(rating.score) || rating.score < 1 || rating.score > 5) {
-      return { ok: false, code: 'invalid_score', error: 'a score must be an integer from 1 to 5' }
+      return {
+        ok: false,
+        code: 'invalid_score',
+        error: 'a score must be an integer from 1 to 5',
+      }
     }
     const key = agentRefKey(rating.agent)
     const match = byKey.get(key)
