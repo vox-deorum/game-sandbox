@@ -12,7 +12,7 @@ import fastifyStatic from '@fastify/static'
 import websocket from '@fastify/websocket'
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify'
 
-import { registerAdminRoutes } from './admin/routes.js'
+import { type AdminSandboxDeployment, registerAdminRoutes } from './admin/routes.js'
 import type { Auth } from './auth/auth.js'
 import { createRequestIdentity } from './auth/identity.js'
 import { registerAuthRoutes } from './auth/routes.js'
@@ -71,6 +71,8 @@ export interface AppDeps {
   retention: Retention
   /** Dependency-set versions backed by concrete base-image definitions on this deployment. */
   knownDepsVersions: ReadonlySet<number>
+  /** Container defaults and GPU availability for the admin season editor; absent means no GPUs. */
+  sandbox?: AdminSandboxDeployment
   /** The background workflow execution seam the admin trigger enqueues onto and the log stream relays. */
   workflowRunner: WorkflowRunner
   /** The storage seam used across route domains. */
@@ -192,6 +194,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     workflowRunner: deps.workflowRunner,
     identity,
     knownDepsVersions: deps.knownDepsVersions,
+    ...(deps.sandbox === undefined ? {} : { sandbox: deps.sandbox }),
     snapshots: deps.submissionSnapshots,
     userDirectory: deps.userDirectory,
     llm: deps.llm,

@@ -1416,6 +1416,37 @@ describe('Docker-backed workflow runner', () => {
     await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
   })
 
+  it('launches with the season resources and caps a GPU season at the host GPU slots', async () => {
+    const driver = new FakeDriver({ cpuCount: 32, memoryBytes: 64 * 1024 ** 3, gpuSlots: 2 })
+    const handle = makeRunner(storage, driver, { leaderboardConcurrency: 8 })
+    const run = await makeRun(storage, [naiveGame(0), naiveGame(1), naiveGame(2), naiveGame(3)], {
+      overrides: { sandbox: { cpus: 4, memory_mb: 2048, gpu: true } },
+    })
+
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(driver.launches).toHaveLength(2))
+    await Promise.resolve()
+    expect(driver.launches).toHaveLength(2)
+    expect(driver.launches[0]?.spec.sandbox).toMatchObject({
+      cpus: 4,
+      memoryMb: 2048,
+      gpu: { whenBusy: 'wait' },
+    })
+
+    handle.runner.cancel(run.id)
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+  })
+
+  it('fails a GPU season run on a host without GPUs before launching anything', async () => {
+    const driver = new FakeDriver()
+    const handle = makeRunner(storage, driver)
+    const run = await makeRun(storage, [naiveGame(0)], { overrides: { sandbox: { gpu: true } } })
+
+    await expect(runToTerminal(handle, run.id)).resolves.toMatchObject({ status: 'failed' })
+    expect((await storage.getRun(run.id))?.error).toMatch(/needs a GPU/)
+    expect(driver.launches).toHaveLength(0)
+  })
+
   it('caps ordinary games with half of host memory', async () => {
     const driver = new FakeDriver({ cpuCount: 16, memoryBytes: 2 * 1024 ** 3 })
     const handle = makeRunner(storage, driver, { leaderboardConcurrency: 8 })

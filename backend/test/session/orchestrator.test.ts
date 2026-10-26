@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthUser } from '../../src/auth/identity.js'
 import type { UserDirectory } from '../../src/auth/users.js'
+import { GpuBusyError } from '../../src/driver/gpu-pool.js'
 import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { ensureRecordingsDir } from '../../src/session/live-session.js'
 import type { IssueOfficialGrantsInput } from '../../src/session/official-grants.js'
@@ -349,6 +350,29 @@ describe('orchestrator', () => {
   })
 
   describe('start', () => {
+    it('launches with the play season sandbox and never queues for a GPU', async () => {
+      await storage.updateSeasonConfig(PLAY_SEASONS.get('flappy_bird') ?? '', {
+        deps_version: 1,
+        matches: [],
+        overrides: { sandbox: { cpus: 3, memory_mb: 2048, gpu: true } },
+      })
+      await start(makeOrchestrator(), {})
+      expect(driver.lastLaunch()?.spec.sandbox).toMatchObject({
+        cpus: 3,
+        memoryMb: 2048,
+        gpu: { whenBusy: 'fail' },
+      })
+    })
+
+    it('answers busy GPUs with a retryable 503 and leaves no active session', async () => {
+      driver.launch = () => Promise.reject(new GpuBusyError())
+      const orch = makeOrchestrator()
+      const error = await orch.start(startRequest()).catch((caught: unknown) => caught)
+      expect(error).toBeInstanceOf(OrchestratorError)
+      expect(error).toMatchObject({ status: 503, code: 'gpus_busy' })
+      expect((error as Error).message).toMatch(/all GPUs are busy/)
+    })
+
     it('uses the deployment override', async () => {
       vi.useFakeTimers()
       const orch = makeOrchestrator(1_000_000, undefined, undefined, { sessionMaxDurationMs: 10 })

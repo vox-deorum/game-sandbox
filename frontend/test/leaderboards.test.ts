@@ -346,6 +346,7 @@ describe('LeaderboardsPage', () => {
         released_at: null,
       }),
       settings: settings(),
+      sandbox_defaults: { cpus: 1, memory_mb: 512, gpu_available: false },
       eligible_submission_count: 0,
       latest_run: null,
       board: board(),

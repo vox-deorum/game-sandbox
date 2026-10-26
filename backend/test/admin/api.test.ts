@@ -15,6 +15,7 @@ import type { FastifyInstance } from 'fastify'
 import tar from 'tar-fs'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import type { AdminSandboxDeployment } from '../../src/admin/routes.js'
 import { buildApp } from '../../src/app.js'
 import { DEPS_VERSION } from '../../src/build/deps-version.js'
 import { decodeResolvedOfficialLlmPolicy } from '../../src/llm/config.js'
@@ -81,6 +82,7 @@ describe('admin API', () => {
 
   async function build(
     knownDepsVersions: ReadonlySet<number> = DEFAULT_KNOWN_DEPS_VERSIONS,
+    sandbox?: AdminSandboxDeployment,
   ): Promise<void> {
     dir = mkdtempSync(join(tmpdir(), 'gs-admin-'))
     const stack = await openTestStack()
@@ -107,9 +109,17 @@ describe('admin API', () => {
       llm: config.llm,
       templateRepoUrl: config.templateRepoUrl,
       knownDepsVersions,
+      ...(sandbox === undefined ? {} : { sandbox }),
       workflowRunner: runner,
     })
     await app.ready()
+  }
+
+  async function teardown(): Promise<void> {
+    await orchestrator.shutdown()
+    await app.close()
+    await storage.close()
+    rmSync(dir, { recursive: true, force: true })
   }
 
   async function createRun(
@@ -170,12 +180,7 @@ describe('admin API', () => {
 
   beforeEach(() => build())
 
-  afterEach(async () => {
-    await orchestrator.shutdown()
-    await app.close()
-    await storage.close()
-    rmSync(dir, { recursive: true, force: true })
-  })
+  afterEach(() => teardown())
 
   describe('operator gating', () => {
     it('rejects every admin route for a non-operator with 403 not_operator', async () => {
@@ -776,6 +781,49 @@ describe('admin API', () => {
         expect(body.code).toBe('invalid_config')
         expect(body.reason).toBeTruthy()
       }
+    })
+
+    it('rejects a GPU season on a deployment without GPUs', async () => {
+      const id = await declare()
+      const res = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/config`,
+        headers: OPERATOR,
+        payload: flappyConfig({ overrides: { sandbox: { cpus: 2, gpu: true } } }),
+      })
+
+      expect(res.statusCode).toBe(400)
+      expect(res.json()).toMatchObject({
+        code: 'invalid_config',
+        reason: expect.stringContaining('overrides.sandbox.gpu'),
+      })
+    })
+
+    it('stores a GPU season and reports the sandbox defaults when the deployment has GPUs', async () => {
+      await teardown()
+      await build(DEFAULT_KNOWN_DEPS_VERSIONS, {
+        defaults: { cpus: 2, memoryMb: 1024 },
+        gpuAvailable: true,
+      })
+      const id = await declare()
+      const sandbox = { cpus: 4, memory_mb: 8192, gpu: true }
+      const put = await app.inject({
+        method: 'PUT',
+        url: `/api/admin/seasons/${id}/config`,
+        headers: OPERATOR,
+        payload: flappyConfig({ overrides: { sandbox } }),
+      })
+      expect(put.statusCode).toBe(200)
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/admin/seasons/${id}`,
+        headers: OPERATOR,
+      })
+      expect(res.json()).toMatchObject({
+        season: { config: { overrides: { sandbox } } },
+        sandbox_defaults: { cpus: 2, memory_mb: 1024, gpu_available: true },
+      })
     })
 
     it('rejects a model alias unavailable on this deployment', async () => {

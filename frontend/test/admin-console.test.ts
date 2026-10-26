@@ -106,6 +106,7 @@ function adminView(overrides: Partial<AdminSeasonView> = {}): AdminSeasonView {
         llm_enabled: false,
       },
     },
+    sandbox_defaults: { cpus: 1, memory_mb: 512, gpu_available: false },
     eligible_submission_count: 0,
     latest_run: null,
     board: emptyBoard(),
@@ -701,6 +702,57 @@ describe('AdminConsolePage', () => {
     const savedConfig = vi.mocked(configureSeason).mock.calls[0]?.[1]
     expect(savedConfig?.overrides?.step_timeout_ms).toBe(500)
     expect(savedConfig?.overrides?.messaging).toBeUndefined()
+  })
+
+  it('round-trips a stored size cap and sandbox block without reading as an edit', async () => {
+    const overrides = {
+      submission_max_size_mb: 20,
+      sandbox: { cpus: 4, memory_mb: 4096, gpu: true },
+    }
+    const configured = season({
+      config: {
+        deps_version: 1,
+        matches: [{ seats: ['submission'], seeds: [0], games: 1 }],
+        overrides,
+      },
+    })
+    vi.mocked(getAdminSeason).mockResolvedValue(
+      adminView({
+        season: configured,
+        sandbox_defaults: { cpus: 1, memory_mb: 512, gpu_available: true },
+      }),
+    )
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: configured })
+    await renderConsole()
+
+    expect(await screen.findByLabelText('Submission size limit (MB)')).toHaveValue(20)
+    expect(screen.getByLabelText('CPU cores')).toHaveValue(4)
+    expect(screen.getByLabelText('Memory (MB)')).toHaveValue(4096)
+    expect(screen.getByLabelText('GPU')).toHaveDisplayValue('On, one per container')
+    expect(screen.getByLabelText('GPU')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Run workflow' })).toBeEnabled()
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides).toEqual(overrides)
+  })
+
+  it('shows the deployment sandbox defaults, saves only the fields set, and locks GPU off without GPUs', async () => {
+    vi.mocked(configureSeason).mockResolvedValue({ ok: true, season: season() })
+    await renderConsole()
+
+    const cpus = await screen.findByLabelText('CPU cores')
+    expect(cpus).toHaveAttribute('placeholder', 'default 1')
+    expect(screen.getByLabelText('Memory (MB)')).toHaveAttribute('placeholder', 'default 512')
+    expect(screen.getByLabelText('GPU')).toBeDisabled()
+    expect(screen.getByText('This deployment has no GPUs.')).toBeInTheDocument()
+
+    await fireEvent.update(cpus, '2')
+    await fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+    await waitFor(() => expect(vi.mocked(configureSeason)).toHaveBeenCalled())
+    expect(vi.mocked(configureSeason).mock.calls[0]?.[1].overrides).toEqual({
+      sandbox: { cpus: 2 },
+    })
   })
 
   it('prefixes an unnamed season exactly once', async () => {

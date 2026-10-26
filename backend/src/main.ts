@@ -237,6 +237,7 @@ async function main(): Promise<void> {
     recordings,
     retention,
     knownDepsVersions: KNOWN_DEPS_VERSIONS,
+    sandbox: { defaults: config.sandbox, gpuAvailable: config.docker.gpu !== undefined },
     workflowRunner,
     frontendDir: config.frontendDir,
     googleAnalyticsId: config.googleAnalyticsId,

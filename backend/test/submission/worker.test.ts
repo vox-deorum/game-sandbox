@@ -205,6 +205,26 @@ describe('ValidationWorker', () => {
     expect(disposed).toBe(1)
   })
 
+  it('runs the load check with the season CPU and memory, but never a GPU', async () => {
+    const treePath = writeTree()
+    const submission = await seedSubmission()
+    await storage.updateSeasonConfig(submission.season_id, {
+      deps_version: 1,
+      matches: [],
+      overrides: { sandbox: { cpus: 4, memory_mb: 4096, gpu: true } },
+    })
+    const driver = driverEmitting({ ok: true }, 0)
+    const worker = makeWorker(driver, new FakeSource({ treePath }))
+
+    worker.enqueue(submission.id)
+    await worker.whenIdle()
+
+    expect((await storage.getSubmission(submission.id))?.status).toBe('ready')
+    const sandbox = driver.lastLaunch()?.spec.sandbox
+    expect(sandbox).toMatchObject({ cpus: 4, memoryMb: 4096 })
+    expect(sandbox?.gpu).toBeUndefined()
+  })
+
   it('turns an unreachable repo into static_failed with a failed resolve and no static check', async () => {
     const submission = await seedSubmission()
     const worker = makeWorker(

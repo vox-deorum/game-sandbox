@@ -20,8 +20,13 @@ import type { AuthUser } from '../auth/identity.js'
 import type { UserDirectory } from '../auth/users.js'
 import { currentSessionBaseImageSpec } from '../build/deps-version.js'
 import type { Config } from '../config/config.js'
+import { GpuBusyError } from '../driver/gpu-pool.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
-import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
+import {
+  buildSandboxProfile,
+  sandboxResourcesForPlayers,
+  sandboxResourcesForSeason,
+} from '../driver/sandbox.js'
 import { resolveSeasonRules, type SeasonRules } from '../environments/parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { resolveLlm as defaultResolveLlm } from '../llm/config.js'
@@ -396,8 +401,13 @@ export class Orchestrator {
       // An LLM-enabled session exposes its staged keys file to the container as an extra read-only
       // mount; the config argv then carries only the keys_file path, never the keys themselves.
       const llmBlock = llmHandle.block(this.config.llm.internalPort)
+      // A live session never queues for a GPU: its user would only see a stalled start, so a busy
+      // pool fails the request at once.
       sandbox = buildSandboxProfile(
-        sandboxResourcesForPlayers(this.config.sandbox, layout.playerCount),
+        sandboxResourcesForPlayers(
+          sandboxResourcesForSeason(this.config.sandbox, seasonConfig.overrides?.sandbox),
+          layout.playerCount,
+        ),
         llmHandle.withKeysMount([
           {
             // Each session mounts only its own recordings directory (see settle.ts), so one
@@ -409,6 +419,7 @@ export class Orchestrator {
           },
         ]),
         llm.enabled ? 'llm' : 'none',
+        'fail',
       )
       sessionConfig = await this.sessionConfig(
         meta,
@@ -450,6 +461,9 @@ export class Orchestrator {
       await llmHandle.teardown()
       this.deleteUnusedLlmScope(id)
       await this.storage.markEnded(id, 'error', new Date().toISOString()).catch(() => undefined)
+      if (error instanceof GpuBusyError) {
+        throw new OrchestratorError(503, error.message, 'gpus_busy')
+      }
       throw new OrchestratorError(500, `failed to launch session: ${String(error)}`)
     }
 

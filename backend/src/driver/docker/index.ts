@@ -16,6 +16,7 @@ import type { Container, ContainerCreateOptions, Network } from 'dockerode'
 import Docker from 'dockerode'
 
 import type { DockerDriverOptions } from '../../config/config.js'
+import { type GpuLease, GpuPool } from '../gpu-pool.js'
 import type {
   ExecutionDriver,
   HostResources,
@@ -26,7 +27,13 @@ import type {
   SessionBaseImageSpec,
   SessionProcess,
 } from '../index.js'
-import { type EnsureImagePolicy, ensureImage } from './image.js'
+import {
+  type EnsureImagePolicy,
+  ensureImage,
+  type TorchVariant,
+  torchVariant,
+  variantImageTagPrefix,
+} from './image.js'
 import {
   ensureOverlayImage,
   ensureSessionOverlayImage,
@@ -148,22 +155,38 @@ export class DockerDriver implements ExecutionDriver {
   private readonly baseImageBuilds = new Map<number, Promise<ImageRef>>()
   private readonly sessionOverlayStates = new Map<string, SessionOverlayState>()
   private readonly sessionOverlayLocks = new Map<string, Promise<void>>()
+  /** Every image name carries the torch variant, so one cache never mixes vendors' builds. */
+  private readonly imageTagPrefix: string
+  private readonly torchVariant: TorchVariant
+  private readonly gpuPool: GpuPool | undefined
 
   constructor(
     private readonly docker: Docker,
     private readonly options: DockerDriverOptions,
     private readonly llmInternalPort?: number,
-  ) {}
+  ) {
+    this.imageTagPrefix = variantImageTagPrefix(options)
+    this.torchVariant = torchVariant(options.gpu)
+    this.gpuPool =
+      options.gpu === undefined
+        ? undefined
+        : new GpuPool(options.gpu.devices, options.gpu.slotsPerDevice)
+  }
 
   async getHostResources(): Promise<HostResources> {
     const info = await this.docker.info()
-    return { cpuCount: info.NCPU, memoryBytes: info.MemTotal }
+    return {
+      cpuCount: info.NCPU,
+      memoryBytes: info.MemTotal,
+      ...(this.gpuPool === undefined ? {} : { gpuSlots: this.gpuPool.capacity }),
+    }
   }
 
   async ensureImage(spec: ImageSpec): Promise<ImageRef> {
-    const { imageTagPrefix, imagePolicy } = this.options
+    const { imageTagPrefix } = this
+    const { imagePolicy } = this.options
     if (spec.kind === 'session-base') {
-      return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec)
+      return ensureImage(this.docker, imageTagPrefix, imagePolicy, spec, this.torchVariant)
     }
     // Both overlay kinds layer onto the base image for their deps version, referenced by tag in the
     // Dockerfile `FROM`. A missing base would make the daemon treat that tag as a registry image and
@@ -193,10 +216,13 @@ export class DockerDriver implements ExecutionDriver {
   private ensureBaseImage(depsVersion: number): Promise<ImageRef> {
     let pending = this.baseImageBuilds.get(depsVersion)
     if (pending === undefined) {
-      pending = ensureImage(this.docker, this.options.imageTagPrefix, 'reuse', {
-        kind: 'session-base',
-        depsVersion,
-      }).finally(() => this.baseImageBuilds.delete(depsVersion))
+      pending = ensureImage(
+        this.docker,
+        this.imageTagPrefix,
+        'reuse',
+        { kind: 'session-base', depsVersion },
+        this.torchVariant,
+      ).finally(() => this.baseImageBuilds.delete(depsVersion))
       this.baseImageBuilds.set(depsVersion, pending)
     }
     return pending
@@ -204,7 +230,7 @@ export class DockerDriver implements ExecutionDriver {
 
   /** Enumerate the overlay images this driver manages, for the Stage 5.4 eviction sweep. */
   listOverlayImages(): Promise<OverlayImage[]> {
-    return listOverlayImages(this.docker, this.options.imageTagPrefix)
+    return listOverlayImages(this.docker, this.imageTagPrefix)
   }
 
   /** Remove one image by ref, tolerating an already-absent image. */
@@ -224,14 +250,14 @@ export class DockerDriver implements ExecutionDriver {
 
   /** Release a composed session-overlay image once its session ends; a no-op for any other ref. */
   releaseSessionOverlay(ref: string): Promise<void> {
-    const parsed = parseSessionOverlayTag(this.options.imageTagPrefix, ref)
+    const parsed = parseSessionOverlayTag(this.imageTagPrefix, ref)
     if (parsed === null || parsed.staged) {
       return Promise.resolve()
     }
     return this.withSessionOverlayLock(ref, async () => {
       const state = this.sessionOverlayStates.get(ref)
       if (state === undefined) {
-        await releaseSessionOverlayImage(this.docker, this.options.imageTagPrefix, ref)
+        await releaseSessionOverlayImage(this.docker, this.imageTagPrefix, ref)
         return
       }
       if (state.acquisitions > 1) {
@@ -239,7 +265,7 @@ export class DockerDriver implements ExecutionDriver {
         return
       }
       try {
-        await releaseSessionOverlayImage(this.docker, this.options.imageTagPrefix, ref)
+        await releaseSessionOverlayImage(this.docker, this.imageTagPrefix, ref)
       } finally {
         if (this.sessionOverlayStates.get(ref) === state) {
           this.sessionOverlayStates.delete(ref)
@@ -256,7 +282,7 @@ export class DockerDriver implements ExecutionDriver {
     baseTag: string,
     spec: Extract<ImageSpec, { kind: 'session-overlay' }>,
   ): Promise<ImageRef> {
-    const tag = sessionOverlayImageTag(this.options.imageTagPrefix, spec.depsVersion, spec.seats)
+    const tag = sessionOverlayImageTag(this.imageTagPrefix, spec.depsVersion, spec.seats)
     let state!: SessionOverlayState
     await this.withSessionOverlayLock(tag, () => {
       const active = this.sessionOverlayStates.get(tag)
@@ -270,7 +296,7 @@ export class DockerDriver implements ExecutionDriver {
         building: true,
         image: ensureSessionOverlayImage(
           this.docker,
-          this.options.imageTagPrefix,
+          this.imageTagPrefix,
           this.options.imagePolicy,
           this.options.overlayBuildTimeoutMs,
           baseTag,
@@ -303,7 +329,7 @@ export class DockerDriver implements ExecutionDriver {
 
   /** Map a final or scratch tag to the final composition tag that owns its lifecycle. */
   private sessionOverlayFamily(ref: string): { family: string; staged: boolean } | undefined {
-    const parsed = parseSessionOverlayTag(this.options.imageTagPrefix, ref)
+    const parsed = parseSessionOverlayTag(this.imageTagPrefix, ref)
     if (parsed === null) {
       return undefined
     }
@@ -332,19 +358,36 @@ export class DockerDriver implements ExecutionDriver {
   }
 
   async launch(spec: LaunchSpec): Promise<SessionProcess> {
+    const gpu = await this.leaseGpu(spec)
     let llm: LlmNetworkResources | undefined
     try {
       if (spec.sandbox.network === 'llm') {
         llm = await this.createLlmNetwork(spec.sessionId)
       }
       const container = await this.docker.createContainer(
-        this.createOptions(spec, llm?.networkName ?? 'none'),
+        containerCreateOptions(spec, llm?.networkName ?? 'none', gpu),
       )
-      return await DockerSessionProcess.start(container, llm?.cleanup)
+      // The lease ends with the container: the process releases it once the container is removed.
+      return await DockerSessionProcess.start(container, llm?.cleanup, gpu?.release)
     } catch (error) {
       await llm?.cleanup().catch(() => undefined)
+      gpu?.release()
       throw error
     }
+  }
+
+  /** Lease a GPU slot when the profile asks for one, refusing a profile this host cannot serve. */
+  private async leaseGpu(spec: LaunchSpec): Promise<GpuLease | undefined> {
+    const request = spec.sandbox.gpu
+    if (request === undefined) {
+      return undefined
+    }
+    if (this.gpuPool === undefined) {
+      throw new Error(
+        'this sandbox needs a GPU, but the deployment has none (SANDBOX_GPU_VENDOR=none)',
+      )
+    }
+    return await this.gpuPool.lease(request.whenBusy)
   }
 
   /**
@@ -481,52 +524,6 @@ export class DockerDriver implements ExecutionDriver {
     return this.relayImageReady
   }
 
-  /** Map the sandbox profile and session config onto Docker container-create options. */
-  private createOptions(spec: LaunchSpec, networkMode: string): ContainerCreateOptions {
-    const { sandbox } = spec
-    const memoryBytes = sandbox.memoryMb * 1024 * 1024
-    const binds = sandbox.mounts.map(
-      (mount) => `${mount.hostPath}:${mount.containerPath}${mount.readOnly ? ':ro' : ''}`,
-    )
-    return {
-      Image: spec.image.ref,
-      Cmd: spec.argv,
-      // The orchestrator never overrides the entrypoint; the driver-level sandbox tests do.
-      ...(spec.entrypoint ? { Entrypoint: spec.entrypoint } : {}),
-      Labels: {
-        [SESSION_LABEL]: spec.sessionId,
-        [OWNER_PID_LABEL]: String(process.pid),
-      },
-      Tty: false,
-      OpenStdin: true,
-      StdinOnce: false,
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      HostConfig: {
-        NanoCpus: Math.round(sandbox.cpus * 1e9),
-        Memory: memoryBytes,
-        // Swap equal to memory means the quota is hard: the kernel cannot soften an overage onto swap.
-        MemorySwap: memoryBytes,
-        ReadonlyRootfs: sandbox.readOnlyRoot,
-        // `mode=1777` keeps the scratch writable by the non-root session user; `nodev`/`nosuid` keep a
-        // device or setuid helper out of the only writable path. `exec` stays on: /tmp also serves as
-        // the student run directory.
-        Tmpfs: {
-          [sandbox.scratch.containerPath]:
-            `rw,nosuid,nodev,mode=1777,size=${sandbox.scratch.sizeMb}m`,
-        },
-        NetworkMode: networkMode,
-        Binds: binds.length > 0 ? binds : undefined,
-        CapDrop: ['ALL'],
-        // Blocks setuid-binary privilege gain inside the container even before the non-root user.
-        SecurityOpt: ['no-new-privileges:true'],
-        // A fork bomb may not drain the shared host pid table.
-        PidsLimit: sandbox.pids,
-      },
-    }
-  }
-
   /**
    * Remove orphaned session containers: those whose creating backend process is no longer alive (a
    * crash or a previous run), plus legacy containers from before the owner-pid label existed. This
@@ -597,6 +594,68 @@ export class DockerDriver implements ExecutionDriver {
   }
 }
 
+/** The thread pools numerical libraries otherwise size from the host's cores, not the quota. */
+const THREAD_COUNT_VARIABLES = ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS']
+
+/** Map the sandbox profile and session config onto Docker container-create options. */
+export function containerCreateOptions(
+  spec: LaunchSpec,
+  networkMode: string,
+  gpu?: GpuLease,
+): ContainerCreateOptions {
+  const { sandbox } = spec
+  const memoryBytes = sandbox.memoryMb * 1024 * 1024
+  // Thread pools follow the CPU quota: threads beyond it only buy throttling stalls.
+  const threads = String(Math.max(1, Math.floor(sandbox.cpus)))
+  const binds = sandbox.mounts.map(
+    (mount) => `${mount.hostPath}:${mount.containerPath}${mount.readOnly ? ':ro' : ''}`,
+  )
+  return {
+    Image: spec.image.ref,
+    Cmd: spec.argv,
+    // The orchestrator never overrides the entrypoint; the driver-level sandbox tests do.
+    ...(spec.entrypoint ? { Entrypoint: spec.entrypoint } : {}),
+    Labels: {
+      [SESSION_LABEL]: spec.sessionId,
+      [OWNER_PID_LABEL]: String(process.pid),
+    },
+    Env: THREAD_COUNT_VARIABLES.map((name) => `${name}=${threads}`),
+    Tty: false,
+    OpenStdin: true,
+    StdinOnce: false,
+    AttachStdin: true,
+    AttachStdout: true,
+    AttachStderr: true,
+    HostConfig: {
+      NanoCpus: Math.round(sandbox.cpus * 1e9),
+      Memory: memoryBytes,
+      // Swap equal to memory means the quota is hard: the kernel cannot soften an overage onto swap.
+      MemorySwap: memoryBytes,
+      ReadonlyRootfs: sandbox.readOnlyRoot,
+      // `mode=1777` keeps the scratch writable by the non-root session user; `nodev`/`nosuid` keep a
+      // device or setuid helper out of the only writable path. `exec` stays on: /tmp also serves as
+      // the student run directory.
+      Tmpfs: {
+        [sandbox.scratch.containerPath]:
+          `rw,nosuid,nodev,mode=1777,size=${sandbox.scratch.sizeMb}m`,
+      },
+      NetworkMode: networkMode,
+      Binds: binds.length > 0 ? binds : undefined,
+      CapDrop: ['ALL'],
+      // Blocks setuid-binary privilege gain inside the container even before the non-root user.
+      SecurityOpt: ['no-new-privileges:true'],
+      // A fork bomb may not drain the shared host pid table.
+      PidsLimit: sandbox.pids,
+      // The NVIDIA Container Toolkit attaches exactly the one leased device.
+      ...(gpu === undefined
+        ? {}
+        : {
+            DeviceRequests: [{ Driver: 'nvidia', DeviceIDs: [gpu.device], Capabilities: [['gpu']] }],
+          }),
+    },
+  }
+}
+
 /**
  * Build a {@link DockerDriver} against the local daemon and reap any orphaned session containers
  * before returning, so the driver is ready and the host is clean. dockerode's socket defaults
@@ -635,5 +694,11 @@ export function buildImage(
   spec: SessionBaseImageSpec,
   policy: EnsureImagePolicy = options.imagePolicy,
 ): Promise<ImageRef> {
-  return ensureImage(new Docker(), options.imageTagPrefix, policy, spec)
+  return ensureImage(
+    new Docker(),
+    variantImageTagPrefix(options),
+    policy,
+    spec,
+    torchVariant(options.gpu),
+  )
 }

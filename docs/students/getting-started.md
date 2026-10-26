@@ -51,7 +51,7 @@ If automatic setup fails, follow Python's [virtual environment guide](https://do
 python -m pip install -r requirements.txt -r requirements-dev.txt
 ```
 
-When a virtual environment is active, your terminal usually shows `(.venv)` at the start of the prompt. The requirements files list the packages used by the template and its tests, so do not edit `requirements.txt` or install different versions in the project. Ask your instructor if you need a package that is not included.
+When a virtual environment is active, your terminal usually shows `(.venv)` at the start of the prompt. The requirements files list the packages used by the template and its tests, so do not edit `requirements.txt` or install different versions in the project. The one exception is PyTorch, which you may add as [Optional: use PyTorch](#optional-use-pytorch) describes. Ask your instructor if you need a package that is not included.
 
 ## 3. Improve your agent
 
@@ -129,6 +129,68 @@ Submit your repository URL through the course website. The server records one ex
 | `--help` | List the options for any command. |
 
 To compare an older version, copy its project files to `rivals/v1`, then add `--vs rivals/v1` to `play`, `watch`, or `eval`. An absolute path also works.
+
+## Optional: use PyTorch
+
+[PyTorch](https://pytorch.org/tutorials/beginner/basics/intro.html) is a Python library for building and running neural networks. The course server already has it installed, so your agent may use it even though the template does not include it.
+
+> _What's a neural network?_ It is a model made of layers of numbers, called **weights**, that turn an input (here, an observation) into an output (such as a score for each action). Training adjusts the weights. PyTorch's [beginner tutorial](https://pytorch.org/tutorials/beginner/basics/intro.html) walks through one from the start.
+
+To use it:
+
+1. Add this exact line to the end of `requirements.txt`, then run `python -m sandbox setup` to install it into your project:
+
+   ```text
+   torch==2.14.1
+   ```
+
+   Use exactly this version. The server ignores your `requirements.txt` and always runs its own copy of torch, so any other version would only make your computer behave differently from the official games.
+
+2. Make your agent work on a CPU. Many seasons have no GPU, and the submission check always runs on a CPU. Pick the device in one line, so your agent uses a GPU only when the season provides one:
+
+   ```python
+   device = "cuda" if torch.cuda.is_available() else "cpu"
+   ```
+
+3. Save trained weights to a file in your repository with `torch.save(model.state_dict(), "model.pt")`, and load them in `__init__`. The file counts toward the season's [size limit](submitting.md#repository-rules), so keep the model small.
+
+A minimal agent that loads saved weights looks like this:
+
+```python
+from pathlib import Path
+
+import torch
+
+WEIGHTS = Path(__file__).parent / "model.pt"
+
+
+class Agent:
+    def __init__(self):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = torch.nn.Sequential(
+            torch.nn.Linear(8, 32),
+            torch.nn.ReLU(),
+            torch.nn.Linear(32, 2),
+        )
+        state = torch.load(WEIGHTS, map_location=self.device)
+        self.model.load_state_dict(state)
+        self.model.to(self.device)
+        self.model.eval()
+
+    def reset(self, seed: int, observation) -> None:
+        torch.manual_seed(seed)
+
+    def act(self, observation):
+        # Turn the observation into the list of numbers your model was trained on.
+        inputs = torch.as_tensor(observation, dtype=torch.float32, device=self.device)
+        with torch.no_grad():
+            scores = self.model(inputs)
+        return int(scores.argmax())
+```
+
+The layer sizes (`8` inputs and `2` actions here) must match your game and the model you trained. `Path(__file__).parent` finds `model.pt` beside `agent.py` no matter which folder the game starts in.
+
+Torch uses as many threads as the season's CPU allowance. A small model rarely gets faster beyond 2 to 4 threads, so a smaller model is usually the surest way to make decisions quicker.
 
 ## Optional: use the LLM API
 

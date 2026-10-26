@@ -79,7 +79,7 @@ An instance can remember information for the rest of the current game, including
 
 Official games run under these restrictions:
 
-- The template supplies a fixed set of Python packages. You cannot install extra packages during a game.
+- The template supplies a fixed set of Python packages, and the server also provides PyTorch (see [Optional: use PyTorch](getting-started.md#optional-use-pytorch)). You cannot install extra packages during a game.
 - Your project files and the rest of the computer are read-only. The only writable place is a small temporary directory, the one Python's `tempfile` module uses by default.
 - General internet access is unavailable, and the only exception is the Game Sandbox LLM API when it is enabled.
 - CPU time and memory are limited.

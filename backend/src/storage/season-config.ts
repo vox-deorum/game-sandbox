@@ -83,9 +83,22 @@ export const ParameterOverridesSchema = z.record(
 )
 
 /**
+ * The season's container resources. `cpus` and `memory_mb` replace the deployment's `SANDBOX_CPUS`
+ * and `SANDBOX_MEMORY_MB` (the per-player memory increment still applies on top), and `gpu: true`
+ * leases one GPU per container. Absent fields keep the deployment defaults; no GPU is the default.
+ */
+export const SandboxOverrideSchema = z.strictObject({
+  cpus: z.number().positive().finite().optional(),
+  memory_mb: z.int().positive().optional(),
+  gpu: z.boolean().optional(),
+})
+export type SandboxOverride = z.infer<typeof SandboxOverrideSchema>
+
+/**
  * The optional override block. `step_timeout_ms`/`episode_timeout_ms` are effective this stage (they
  * fall back to the environment defaults when absent). `submission_max_size_mb` overrides the site
  * default cap on a submission's checked-out source size for this season (absent = the site default).
+ * `sandbox` sets the season's container resources.
  */
 export const OverridesSchema = z.strictObject({
   step_timeout_ms: z.int().positive().optional(),
@@ -94,6 +107,7 @@ export const OverridesSchema = z.strictObject({
   messaging: MessagingOverrideSchema.optional(),
   llm: LlmOverrideSchema.optional(),
   parameters: ParameterOverridesSchema.optional(),
+  sandbox: SandboxOverrideSchema.optional(),
 })
 export type Overrides = z.infer<typeof OverridesSchema>
 

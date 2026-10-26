@@ -1,5 +1,5 @@
 # Dependency set for the deps-v1 session base image. This snapshot may be regenerated with the matching
-# template until template-v1 is published. After publication it is immutable, and changes require v2.
+# template until template-v1 is published. After publication it only gains packages, and changing or removing a pin requires v2.
 annotated-types==0.7.0
 anyio==4.13.0
 attrs==26.1.0

@@ -955,6 +955,13 @@ export interface LlmOverride {
   development?: LlmLimitOverride
 }
 
+/** A season's container resources; absent fields keep the deployment defaults, and no GPU. */
+export interface SandboxOverride {
+  cpus?: number
+  memory_mb?: number
+  gpu?: boolean
+}
+
 /**
  * The override block. Each nested capability has a strict shape shared with the backend season codec.
  */
@@ -966,6 +973,7 @@ export interface SeasonOverrides {
   messaging?: MessagingOverride
   llm?: LlmOverride
   parameters?: Record<string, ParameterValue>
+  sandbox?: SandboxOverride
 }
 
 /** The whole season configuration document (the `seasons.config` JSON, decoded). */
@@ -1117,10 +1125,19 @@ export interface RunSummaryView {
   game_count: number
 }
 
+/** The deployment container defaults a season's sandbox override replaces; null when unreported. */
+export interface SandboxDefaultsView {
+  cpus: number | null
+  memory_mb: number | null
+  gpu_available: boolean
+}
+
 /** The full admin view of one season: its config and gates, the latest run, and both boards. */
 export interface AdminSeasonView {
   season: SeasonView
   settings: ResolvedSeasonSettings
+  /** The deployment's container defaults and whether it has GPUs, for the config editor. */
+  sandbox_defaults: SandboxDefaultsView
   /** Ready active submissions that a workflow triggered now would freeze into its roster. */
   eligible_submission_count: number
   latest_run: RunView | null

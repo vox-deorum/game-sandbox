@@ -38,7 +38,22 @@ The backend's `TEMPLATE_REPO_URL` setting must name the same repository as `DEFA
 
 Edit `templates/base/requirements.in` to change dependencies, then regenerate `templates/base/requirements.txt` with `uv pip compile`. Do not hand-edit the pinned file.
 
-An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. Once published, the matching `deps-v<N>` directory is immutable. A [republish](#cutting-a-release) reuses it because CI pins every dependency reference to it.
+An active, unreleased `deps-v<N>` directory may be regenerated with its matching template. Once published, the matching `deps-v<N>` directory accepts additive changes only: a new package may join it through a [republish](#cutting-a-release), but changing or removing an existing pin needs the next version, `deps-v<N+1>`. A republish reuses the directory because CI pins every dependency reference to it.
+
+### Server-only platform layer
+
+The session base image also installs a platform layer that templates never see. Today it holds PyTorch. Student templates do not gain torch; an agent opts in by pinning the same version in its own `requirements.txt` for local installs, and the server always provides the base image's copy.
+
+The layer lives beside the shared set in `backend/images/session-base/deps-v<N>/`, with one intent file (`.in`) and one compiled pin file (`.txt`) per variant:
+
+| Variant | Files | Pin | Used when |
+| --- | --- | --- | --- |
+| `cpu` (default) | `requirements.platform.cpu.in` and `.txt` | `torch==2.14.1+cpu` from `https://download.pytorch.org/whl/cpu` | `SANDBOX_GPU_VENDOR=none` |
+| `cuda` | `requirements.platform.cuda.in` and `.txt` | `torch==2.14.1`, the regular PyPI wheel with CUDA | `SANDBOX_GPU_VENDOR=nvidia` |
+
+The CPU-only wheel keeps the image small (about 1.7 GB in all, against about 9 GB for the CUDA build), and both report the same torch version to an agent. Each is compiled with the shared `requirements.txt` as a constraint, so torch never moves a shared pin. To regenerate a variant, edit its `.in` file and rerun the `uv pip compile` command recorded in the header of its `.txt` file, from inside the `deps-v<N>` directory. Do not hand-edit the pinned file. The [runtime execution guide](../runtime/execution.md#base-image-contents) covers how the image installs the layer.
+
+`scripts/bump_template_version.py` carries both platform files forward unchanged into a new `deps-v<N>` snapshot. Its `--check` mode fails when a variant's `.txt` is missing or when the Dockerfile does not copy its own platform file.
 
 ## Cutting a release
 

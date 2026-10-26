@@ -10,6 +10,10 @@
  * is assembled from monorepo sources (see the Dockerfile); the tar packs only the definition's
  * registered input trees (plus the ancestor directory entries needed to reach them), so only the
  * sources the Dockerfile copies are sent to the daemon.
+ *
+ * The base image's torch build follows the deployment's GPU vendor ({@link torchVariant}), and the
+ * CUDA build lives under its own image prefix, so no tag or cache entry is ever shared between the
+ * two builds.
  */
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 import type Docker from 'dockerode'
 import tar from 'tar-fs'
 import { sessionBaseImageDefinition, sessionBaseImageInputs } from '../../build/deps-version.js'
-import type { ImagePolicy } from '../../config/config.js'
+import type { DockerDriverOptions, ImagePolicy, SandboxGpuOptions } from '../../config/config.js'
 import type { ImageRef, SessionBaseImageSpec } from '../index.js'
 import { buildContextIgnore, computeBuildInputsDigest } from './build-inputs.js'
 
@@ -45,6 +49,25 @@ const TRANSIENT_BUILD_ERROR = new RegExp(
  * `refresh` policy to decide whether the tag is still fresh.
  */
 const BUILD_INPUTS_DIGEST_LABEL = 'game-sandbox.build-inputs-digest'
+
+/** The torch build a session base image installs: the regular `cuda` wheel for NVIDIA GPUs, the `cpu` wheel otherwise. */
+export type TorchVariant = 'cpu' | 'cuda'
+
+/** The torch build a deployment's GPU settings call for. */
+export function torchVariant(gpu: SandboxGpuOptions | undefined): TorchVariant {
+  return gpu?.vendor === 'nvidia' ? 'cuda' : 'cpu'
+}
+
+/**
+ * The image name prefix every base and overlay tag of a deployment uses: the configured prefix for
+ * the CPU build, and `<prefix>-cuda` for the CUDA build.
+ */
+export function variantImageTagPrefix(
+  options: Pick<DockerDriverOptions, 'imageTagPrefix' | 'gpu'>,
+): string {
+  const variant = torchVariant(options.gpu)
+  return variant === 'cpu' ? options.imageTagPrefix : `${options.imageTagPrefix}-${variant}`
+}
 
 /** {@link ImagePolicy} plus `refresh`, which reuses an existing tag only while its inputs digest matches. */
 export type EnsureImagePolicy = ImagePolicy | 'refresh'
@@ -94,14 +117,16 @@ async function build(
   dockerfile: string,
   inputsDigest: string,
   inputs: readonly string[],
+  variant: TorchVariant,
 ): Promise<void> {
-  console.error(`building ${tag} from ${dockerfile}`)
+  console.error(`building ${tag} from ${dockerfile} (torch ${variant})`)
   const context = tar.pack(REPO_ROOT, {
     ignore: buildContextIgnore(REPO_ROOT, inputs),
   })
   const buildStream = await docker.buildImage(context, {
     t: tag,
     dockerfile,
+    buildargs: { TORCH_VARIANT: variant },
     labels: { [BUILD_INPUTS_DIGEST_LABEL]: inputsDigest },
   })
   await new Promise<void>((resolve, reject) => {
@@ -141,10 +166,11 @@ async function buildWithRetry(
   dockerfile: string,
   inputsDigest: string,
   inputs: readonly string[],
+  variant: TorchVariant,
 ): Promise<void> {
   for (let attempt = 0; ; attempt += 1) {
     try {
-      await build(docker, tag, dockerfile, inputsDigest, inputs)
+      await build(docker, tag, dockerfile, inputsDigest, inputs, variant)
       return
     } catch (error) {
       const delayMs = BUILD_RETRY_DELAYS_MS[attempt]
@@ -165,13 +191,15 @@ async function buildWithRetry(
  * Resolve `spec` to a launch-ready {@link ImageRef}, building when needed. Under `reuse` an
  * existing tag is returned untouched; under `rebuild` the image is always rebuilt; under `refresh`
  * an existing tag is reused only while its stamped inputs digest matches the checkout, so a
- * pre-label or stale image is rebuilt and a fresh one is returned in seconds.
+ * pre-label or stale image is rebuilt and a fresh one is returned in seconds. `prefix` should come
+ * from {@link variantImageTagPrefix} for the same `variant`.
  */
 export async function ensureImage(
   docker: Docker,
   prefix: string,
   policy: EnsureImagePolicy,
   spec: SessionBaseImageSpec,
+  variant: TorchVariant = 'cpu',
 ): Promise<ImageRef> {
   const definition = sessionBaseImageDefinition(spec.depsVersion)
   const tag = imageTag(prefix, spec)
@@ -185,6 +213,6 @@ export async function ensureImage(
     console.error(`reusing ${tag} (build inputs unchanged)`)
     return { ref: tag }
   }
-  await buildWithRetry(docker, tag, definition.dockerfile, inputsDigest, inputs)
+  await buildWithRetry(docker, tag, definition.dockerfile, inputsDigest, inputs, variant)
   return { ref: tag }
 }

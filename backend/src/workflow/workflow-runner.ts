@@ -42,8 +42,19 @@ import {
 } from '@game-sandbox/schema/environment'
 import type { UserDirectory } from '../auth/users.js'
 import type { ImagePolicy, SandboxDefaults } from '../config/config.js'
-import type { ExecutionDriver, ExitInfo, ImageRef, SessionProcess } from '../driver/index.js'
-import { buildSandboxProfile, sandboxResourcesForPlayers } from '../driver/sandbox.js'
+import type {
+  ExecutionDriver,
+  ExitInfo,
+  HostResources,
+  ImageRef,
+  SessionProcess,
+} from '../driver/index.js'
+import {
+  buildSandboxProfile,
+  type SandboxResources,
+  sandboxResourcesForPlayers,
+  sandboxResourcesForSeason,
+} from '../driver/sandbox.js'
 import { resolveSeasonRules, type SeasonRules } from '../environments/parameters.js'
 import type { EnvironmentMeta, EnvironmentRegistry } from '../environments/registry.js'
 import { forfeitScore, normalizeEpisodeScore } from '../leaderboards/score.js'
@@ -439,7 +450,10 @@ class DockerWorkflowRunner implements WorkflowRunner {
         }
         preparedGames.push({ game, seats })
       }
-      const sandboxResources = sandboxResourcesForPlayers(this.deps.sandbox, layout.playerCount)
+      const sandboxResources = sandboxResourcesForPlayers(
+        sandboxResourcesForSeason(this.deps.sandbox, config.overrides?.sandbox),
+        layout.playerCount,
+      )
       const hostResources = await this.deps.driver.getHostResources()
       const concurrency = leaderboardConcurrency(
         hostResources,
@@ -545,7 +559,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
     seasonRules: SeasonRules,
     parameters: Record<string, ParameterValue>,
     layout: ReturnType<typeof resolveLayout>,
-    sandboxResources: SandboxDefaults,
+    sandboxResources: SandboxResources,
     llmPolicy: ResolvedOfficialLlmPolicy,
     watchdogMs: number,
     game: SeasonRunGame,
@@ -1231,11 +1245,12 @@ function describeSeats(seats: readonly AgentRef[]): string {
 
 /**
  * Bound one run's worker pool by its configured override or half the host CPUs divided by the match CPU quota, half the host
- * memory, and the schedule size. Memory uses the full player-scaled sandbox quota for one game.
+ * memory, and the schedule size. Memory uses the full player-scaled sandbox quota for one game. A GPU
+ * season is also bounded by the host's GPU slots, so games do not sit in the driver's lease queue.
  */
 function leaderboardConcurrency(
-  host: { cpuCount: number; memoryBytes: number },
-  sandbox: SandboxDefaults,
+  host: HostResources,
+  sandbox: SandboxResources,
   override: number | null | undefined,
   gameCount: number,
 ): number {
@@ -1258,7 +1273,13 @@ function leaderboardConcurrency(
     )
   }
   const requested = override ?? Math.max(1, Math.floor(host.cpuCount / 2 / sandbox.cpus))
-  return Math.min(requested, memorySlots, gameCount)
+  const gpuSlots = sandbox.gpu === true ? (host.gpuSlots ?? 0) : Number.POSITIVE_INFINITY
+  if (gpuSlots < 1) {
+    throw new Error(
+      'the season needs a GPU, but this deployment has none (SANDBOX_GPU_VENDOR=none)',
+    )
+  }
+  return Math.min(requested, memorySlots, gameCount, gpuSlots)
 }
 
 /**

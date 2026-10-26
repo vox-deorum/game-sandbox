@@ -46,7 +46,21 @@ Dedicated parsers and Zod schemas validate every value. A missing or malformed s
 
 When unset, `LEADERBOARD_CONCURRENCY` derives its requested count as `max(1, floor((Docker_CPUs / 2) / SANDBOX_CPUS))`. `SANDBOX_CPUS` accepts fractional quotas. The minimum permits one match even when its quota exceeds half or all of Docker's CPUs, so valid CPU capacity never prevents a run from starting. A positive `LEADERBOARD_CONCURRENCY` value overrides this CPU-derived request.
 
+A season may replace `SANDBOX_CPUS` and `SANDBOX_MEMORY_MB` through its [`overrides.sandbox`](../../specs/seasons.md#sandbox-resources) block. Its leaderboard runs then use the season values wherever this section names those settings.
+
 Leaderboard runs read Docker's CPU count and total RAM when execution starts, including Docker Desktop's VM capacity. Each match reserves its full sandbox quota: `SANDBOX_MEMORY_MB + SANDBOX_MEMORY_PER_PLAYER_MB × (player_count - 1)`. Concurrent match quotas may consume at most half of Docker's total RAM, even when `LEADERBOARD_CONCURRENCY` requests more. The remaining half is for the backend, image builds, LLM relays, and other activity. This fixed ceiling does not monitor currently free memory. If host capacity is unavailable or invalid, the match quota is not positive, or one match cannot fit within the half-RAM budget, the run fails before launching containers. Season runs remain queued one at a time. Use `LEADERBOARD_CONCURRENCY=1` to reduce timing contention with sequential matches, still subject to the memory ceiling.
+
+## GPUs
+
+A deployment has no GPUs by default. Setting a vendor lets a season opt into one GPU per container through `overrides.sandbox.gpu`. Read [GPU access](../runtime/execution.md#gpu-access) for leasing, busy behavior, and the security trade-off.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `SANDBOX_GPU_VENDOR` | `none` | `none` or `nvidia`. It also picks the session base image's torch build: `nvidia` builds the CUDA wheel, and `none` builds the much smaller CPU-only wheel. |
+| `SANDBOX_GPU_DEVICES` | unset | Comma-separated NVIDIA device indexes or UUIDs. Required when a vendor is set. |
+| `SANDBOX_GPU_SLOTS_PER_DEVICE` | `1` | Positive number of containers that may hold one device at once; `1` means exclusive |
+
+Startup fails when a vendor is set without devices. The host also needs the NVIDIA Container Toolkit.
 
 ## Authentication
 

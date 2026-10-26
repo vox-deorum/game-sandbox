@@ -52,12 +52,13 @@ const SESSION_BASE_IMAGES: ReadonlyMap<number, SessionBaseImageDefinition> = new
 ])
 """
 
-# A tiny stand-in Dockerfile with the version in both COPY paths and comment prose.
+# A tiny stand-in Dockerfile with the version in its COPY paths and comment prose.
 _DOCKERFILE = """\
 # The session base image for dependency-set version 1, tagged game-sandbox/session-base:deps-v1.
 FROM python:3.12-slim
 # The frozen v1 dependency set installs first.
 COPY backend/images/session-base/deps-v1/requirements.txt ./requirements.txt
+COPY backend/images/session-base/deps-v1/requirements.platform.${TORCH_VARIANT}.txt ./platform.txt
 COPY backend/images/session-base/deps-v1/builtin /opt/agents/builtin
 """
 
@@ -85,7 +86,7 @@ def test_rewrite_dockerfile_rewrites_paths_and_comment_prose_only():
     out = rewrite_dockerfile(_DOCKERFILE, 1, 2)
     # Every deps-v1 path is now deps-v2; none of the old marker survives.
     assert "deps-v1" not in out
-    assert out.count("deps-v2") == 3  # one comment mention + two COPY paths
+    assert out.count("deps-v2") == 4  # one comment mention + three COPY paths
     # Comment prose is rewritten...
     assert "dependency-set version 2" in out
     assert "frozen v2 dependency set" in out
@@ -150,6 +151,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     deps_v1 = images / "deps-v1"
     _write(deps_v1 / "Dockerfile", _DOCKERFILE)
     _write(deps_v1 / "requirements.txt", freeze_requirements(_PIP_COMPILE, 1))
+    for variant in bump.TORCH_VARIANTS:
+        _write(deps_v1 / f"requirements.platform.{variant}.in", f"torch==9.9.9 # {variant}\n")
+        _write(deps_v1 / f"requirements.platform.{variant}.txt", f"torch==9.9.9 # {variant} pins\n")
     _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "manifest.json", _manifest(1))
     _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "requirements.txt", "wcwidth==0.2.13\n")
     _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "agent.py", "# agent\n")
@@ -209,6 +213,13 @@ def test_apply_bumps_every_touchpoint(repo: Path):
         deps_v2 / "builtin" / "flappy_bird" / "naive" / "requirements.txt"
     ).read_text() == "wcwidth==0.2.13\n"
     assert (deps_v2 / "builtin" / "flappy_bird" / "naive" / "agent.py").read_text() == "# agent\n"
+    # The server-only torch layers carry forward verbatim, and the Dockerfile copies its own.
+    for variant in bump.TORCH_VARIANTS:
+        assert (
+            deps_v2 / f"requirements.platform.{variant}.txt"
+        ).read_text() == f"torch==9.9.9 # {variant} pins\n"
+        assert (deps_v2 / f"requirements.platform.{variant}.in").read_text() == f"torch==9.9.9 # {variant}\n"
+    assert "deps-v2/requirements.platform.${TORCH_VARIANT}.txt" in (deps_v2 / "Dockerfile").read_text()
 
 
 def test_apply_self_verifies_the_completed_bump(repo: Path, monkeypatch: pytest.MonkeyPatch):
@@ -365,6 +376,12 @@ def test_check_flags_missing_snapshot_dir(repo: Path):
     shutil.rmtree(repo / "backend" / "images" / "session-base" / "deps-v1")
     problems = bump.check()
     assert any("is missing" in p for p in problems)
+
+
+def test_check_flags_a_missing_torch_layer(repo: Path):
+    (repo / "backend" / "images" / "session-base" / "deps-v1" / "requirements.platform.cuda.txt").unlink()
+    problems = bump.check()
+    assert any("requirements.platform.cuda.txt is missing" in p for p in problems)
 
 
 # --- live tree --------------------------------------------------------------------------------

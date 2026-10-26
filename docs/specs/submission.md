@@ -33,9 +33,11 @@ Every repository contains `manifest.json` at its root:
 
 The manifest names the Python module, class, and template dependency version. The current template release provides the authoritative `template_version`.
 
-Dependencies are set by the template, not by individual submissions. Each template release pins exact package versions, and older releases remain available for reproducibility. Every agent in a season uses the same dependency version, so agents can share a session container without conflicts.
+Dependencies are set by the template and the server, not by individual submissions. The server never installs a submission's `requirements.txt`. Each template release pins exact package versions, and older releases remain available for reproducibility. Every agent in a season uses the same dependency version, so agents can share a session container without conflicts.
 
-A participant who needs a missing library asks the operator for a new template release, which keeps local development, validation, and official sessions on the same package set.
+The session image also provides PyTorch, which templates leave out because of its size. A participant who wants torch pins the exact version the image provides (currently `torch==2.14.1`) in their own `requirements.txt` so local development matches. The server ignores that pin and always uses its own copy.
+
+A participant who needs a missing library asks the operator to add it. A published dependency version accepts additive changes only, so a new package can join the current release, while changing or removing an existing pin needs a new template release. Either way, local development, validation, and official sessions stay on the same package set.
 
 ## Templates and local development
 

@@ -553,6 +553,7 @@ onUnmounted(() => {
                 :season="view.season"
                 :eligible-submission-count="view.eligible_submission_count"
                 :environment="meta ?? undefined"
+                :sandbox-defaults="view.sandbox_defaults"
                 @changed="refresh"
                 @dirty-change="configDirty = $event"
               >

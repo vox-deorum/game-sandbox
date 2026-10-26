@@ -38,7 +38,11 @@ import { z } from 'zod'
 import type { RequestIdentity } from '../auth/identity.js'
 import { enrichAgentRef, type UserDirectory } from '../auth/users.js'
 import { DEPS_VERSION } from '../build/deps-version.js'
-import { isSafeTemplateBranch, isSafeTemplateRepoUrl } from '../config/config.js'
+import {
+  isSafeTemplateBranch,
+  isSafeTemplateRepoUrl,
+  type SandboxDefaults,
+} from '../config/config.js'
 import { resolveSeasonParameters } from '../environments/parameters.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
@@ -79,6 +83,13 @@ import { zodReason } from '../util/zod-error.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
 import { registerAdminLogRoutes } from './log-routes.js'
 
+/** The deployment's container defaults a season's `overrides.sandbox` may replace. */
+export interface AdminSandboxDeployment {
+  defaults: Pick<SandboxDefaults, 'cpus' | 'memoryMb'>
+  /** Whether the deployment configured GPUs a season may lease. */
+  gpuAvailable: boolean
+}
+
 /** Everything the admin routes need beyond the Fastify instance. */
 export interface AdminDeps {
   storage: Storage
@@ -97,6 +108,8 @@ export interface AdminDeps {
   userDirectory: UserDirectory
   /** Deployment aliases and defaults used to validate season edits and freeze run policy. */
   llm: ResolveLlmOptions
+  /** Container defaults for the editor's placeholders and GPU validation; absent means no GPUs. */
+  sandbox?: AdminSandboxDeployment
   llmDevelopment?: {
     keys: Pick<DevelopmentKeyService, 'resolveReadPolicy'>
     ledger: DevelopmentLedgerStore
@@ -574,6 +587,13 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         if (!deps.knownDepsVersions.has(parsed.data.deps_version)) {
           return unsupportedDepsVersion(reply, parsed.data.deps_version, 'invalid_config')
         }
+        if (parsed.data.overrides?.sandbox?.gpu === true && deps.sandbox?.gpuAvailable !== true) {
+          return reply.code(400).send({
+            error: 'invalid season config',
+            code: 'invalid_config',
+            reason: 'overrides.sandbox.gpu: this deployment has no GPUs (SANDBOX_GPU_VENDOR=none)',
+          })
+        }
         const unavailableAliases = unavailableLlmAliases(parsed.data, deps.llm.models)
         if (unavailableAliases.length > 0) {
           return reply.code(400).send({
@@ -969,6 +989,7 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
         return reply.code(200).send({
           season: seasonView(season),
           settings: resolveSeasonDisplaySettings(meta, season, deps.llm),
+          sandbox_defaults: sandboxDefaultsView(deps.sandbox),
           eligible_submission_count: eligibleSubmissionCount,
           latest_run:
             latest === undefined ? null : runView(latest, games, names, meta, latestResults),
@@ -1135,6 +1156,19 @@ export function validateSeasonMatches(
     }
   }
   return null
+}
+
+/** The editor's sandbox placeholders; null fields mean the deployment did not report a default. */
+function sandboxDefaultsView(sandbox: AdminSandboxDeployment | undefined): {
+  cpus: number | null
+  memory_mb: number | null
+  gpu_available: boolean
+} {
+  return {
+    cpus: sandbox?.defaults.cpus ?? null,
+    memory_mb: sandbox?.defaults.memoryMb ?? null,
+    gpu_available: sandbox?.gpuAvailable === true,
+  }
 }
 
 /** Parse the `?force=` query flag; the console sends it after a destructive-edit confirmation. */

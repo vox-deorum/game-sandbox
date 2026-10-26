@@ -24,7 +24,7 @@
  */
 import type { SandboxDefaults } from '../config/config.js'
 import type { ExecutionDriver, ImageRef } from '../driver/index.js'
-import { buildSandboxProfile } from '../driver/sandbox.js'
+import { buildSandboxProfile, sandboxResourcesForSeason } from '../driver/sandbox.js'
 import { appLog } from '../logging/log-buffer.js'
 import type {
   Storage,
@@ -291,7 +291,15 @@ export class ValidationWorker implements SubmissionEnqueuer {
       runningStage = 'load'
       await this.deps.storage.startSubmissionCheck(submissionId, 'load')
       const loadResult = await runLoadCheck(this.deps.driver, image, {
-        sandbox: buildSandboxProfile(this.deps.sandbox, []),
+        // The season's CPU and memory, but never a GPU: the check only imports and constructs, a
+        // queue behind running games would eat its timeout, and an agent must construct on CPU.
+        sandbox: buildSandboxProfile(
+          {
+            ...sandboxResourcesForSeason(this.deps.sandbox, seasonConfig.overrides?.sandbox),
+            gpu: false,
+          },
+          [],
+        ),
         sessionId: submissionId,
         timeoutMs: this.deps.loadCheckTimeoutMs,
         seatId: SEAT_ID,

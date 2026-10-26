@@ -223,6 +223,31 @@ describe('loadConfig', () => {
     ).toThrow(new RegExp(name))
   })
 
+  it('has no GPUs by default', () => {
+    expect(load({}).docker.gpu).toBeUndefined()
+  })
+
+  it('parses the NVIDIA GPU settings', () => {
+    expect(
+      load({
+        SANDBOX_GPU_VENDOR: 'nvidia',
+        SANDBOX_GPU_DEVICES: '0, GPU-1234',
+        SANDBOX_GPU_SLOTS_PER_DEVICE: '2',
+      }).docker.gpu,
+    ).toEqual({ vendor: 'nvidia', devices: ['0', 'GPU-1234'], slotsPerDevice: 2 })
+  })
+
+  it.each([
+    [{ SANDBOX_GPU_VENDOR: 'amd' }, /SANDBOX_GPU_VENDOR/],
+    [{ SANDBOX_GPU_VENDOR: 'nvidia' }, /SANDBOX_GPU_DEVICES/],
+    [
+      { SANDBOX_GPU_VENDOR: 'nvidia', SANDBOX_GPU_DEVICES: '0', SANDBOX_GPU_SLOTS_PER_DEVICE: '0' },
+      /SLOTS/,
+    ],
+  ])('rejects an incomplete or malformed GPU setting: %o', (env, message) => {
+    expect(() => load(env)).toThrow(message)
+  })
+
   it('defaults the submission settings to the dev gate off and no token', () => {
     const { submission } = load({})
     expect(submission.allowLocalSubmissions).toBe(false)

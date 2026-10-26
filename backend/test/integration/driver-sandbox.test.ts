@@ -76,6 +76,16 @@ describe('driver-level sandbox guarantees', () => {
     return proc.exited
   }
 
+  it('sizes the torch and BLAS thread pools to the CPU quota', async () => {
+    const script =
+      'import os, sys, torch\n' +
+      'ok = torch.get_num_threads() == 2 and os.environ.get("OPENBLAS_NUM_THREADS") == "2"\n' +
+      'sys.exit(0 if ok else 1)\n'
+    await expect(
+      runPython(script, profile({ cpus: 2, memoryMb: 1024 }), 'it-thread-count'),
+    ).resolves.toMatchObject({ code: 0, oomKilled: false })
+  })
+
   it('refuses writes to the root filesystem with a read-only filesystem error', async () => {
     // /var/tmp permits unprivileged writes on a writable image. EROFS distinguishes a read-only
     // mount from an ordinary permission denial, which would not prove this sandbox guarantee.

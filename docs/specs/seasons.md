@@ -38,6 +38,8 @@ Each season defines:
 - Optional gameplay parameter overrides, including `players` for player-bounds environments or `seat_plan` for environments with declared plans. Every match's seat count must equal the number of seats in the resolved layout.
 - Optional step and episode limit overrides.
 - Optional messaging overrides.
+- An optional submission size limit (`submission_max_size_mb`) that replaces the deployment default. See [Submission](submission.md).
+- Optional sandbox resources (`overrides.sandbox`), described in [Sandbox resources](#sandbox-resources) below.
 - Optional overrides for the deployment's LLM model aliases, token prices, official limits, and student development limits. Limits set the weighted token budget and request rate per minute. See [LLM API](llm.md#budgets-and-limits).
 - Optional season-wide rating prompt.
 - An optional **Season description**: display-only Markdown metadata that operators may save, replace, or clear at any time. The [frontend](frontend.md) defines its format and visibility.
@@ -58,3 +60,17 @@ Every override applies to the season's automated matches and live sessions alike
 Operators manage seasons through the website's admin console and an operator-only HTTP API. They can declare, configure, describe, open, close, run, rerun, cancel, preview, and release seasons. They may also permanently delete a closed, unreleased season with no submissions, sessions, runs, ratings, prompts, or development keys. The admin console requires explicit confirmation. The API refuses deletion rather than removing related historical activity. The backend runs these workflows and streams logs to the console.
 
 The template repository URL and branch and the Season description remain editable after runs or submissions exist. They are display and setup metadata, not part of the configuration captured by an official run.
+
+### Sandbox resources
+
+The `overrides.sandbox` block sets the container resources for the season. Every field is optional:
+
+| Field | Value | When absent |
+| --- | --- | --- |
+| `cpus` | Positive number of CPU cores | The deployment's `SANDBOX_CPUS` |
+| `memory_mb` | Positive whole number of megabytes | The deployment's `SANDBOX_MEMORY_MB` |
+| `gpu` | `true` leases one GPU per container | No GPU |
+
+The deployment's per-player memory increment (`SANDBOX_MEMORY_PER_PLAYER_MB`) still applies on top of `memory_mb`. The values apply to live sessions, to leaderboard games (whose automatic concurrency then uses the season's CPUs and memory), and to the submission load check. The load check never gets a GPU, so every agent must be able to construct on CPU.
+
+A season may ask for a GPU only on a deployment that has GPUs configured; saving `gpu: true` elsewhere is rejected. GPU passthrough exposes the host's GPU driver to student code, which is why it is off unless a season opts in. When every GPU is busy, a live session is refused right away and leaderboard games wait for a free one. See [Execution boundary](../contributors/runtime/execution.md#gpu-access) for leasing and host requirements.

@@ -38,6 +38,22 @@ export interface SandboxDefaults {
   pids: number
 }
 
+/** The GPU vendor whose devices a deployment can pass into sandboxes. */
+export type GpuVendor = 'nvidia'
+
+/**
+ * The host GPUs a season with `overrides.sandbox.gpu` may lease. Absent on a deployment without GPUs
+ * (`SANDBOX_GPU_VENDOR=none`). The vendor also picks the base image's torch build: `nvidia` builds the
+ * regular CUDA wheel, and a deployment without GPUs builds the much smaller CPU-only wheel.
+ */
+export interface SandboxGpuOptions {
+  vendor: GpuVendor
+  /** NVIDIA device indexes or UUIDs. */
+  devices: string[]
+  /** How many containers may hold one device at once. */
+  slotsPerDevice: number
+}
+
 /** Options specific to the local Docker driver. */
 export interface DockerDriverOptions {
   imageTagPrefix: string
@@ -46,6 +62,8 @@ export interface DockerDriverOptions {
   overlayBuildTimeoutMs: number
   /** The validated LLM relay topology used only by LLM-enabled sandboxes. */
   llmRelay: DockerLlmRelay
+  /** The GPUs sandboxes may lease; absent when the deployment has none. */
+  gpu?: SandboxGpuOptions
 }
 
 /**
@@ -505,11 +523,33 @@ export function loadDockerOptions(env?: NodeJS.ProcessEnv): DockerDriverOptions 
     )
   }
   const llmRelay = loadDockerLlmRelay(env)
+  const gpu = loadSandboxGpu(env)
   return {
     imageTagPrefix: requiredStringVar(env, 'DOCKER_IMAGE_TAG_PREFIX'),
     imagePolicy: imagePolicyResult.data,
     overlayBuildTimeoutMs: intVar(env, 'SUBMISSION_BUILD_TIMEOUT_MS'),
     llmRelay,
+    ...(gpu === undefined ? {} : { gpu }),
+  }
+}
+
+/** Parse the GPU settings as one unit, so a vendor can never come without the devices it needs. */
+function loadSandboxGpu(env: NodeJS.ProcessEnv): SandboxGpuOptions | undefined {
+  const vendor = optionalStringVar(env, 'SANDBOX_GPU_VENDOR') ?? 'none'
+  if (vendor === 'none') {
+    return undefined
+  }
+  if (vendor !== 'nvidia') {
+    throw new ConfigError(`SANDBOX_GPU_VENDOR must be 'none' or 'nvidia', got ${vendor}`)
+  }
+  const devices = listVar(env, 'SANDBOX_GPU_DEVICES')
+  if (devices.length === 0) {
+    throw new ConfigError(`SANDBOX_GPU_DEVICES is required when SANDBOX_GPU_VENDOR=${vendor}`)
+  }
+  return {
+    vendor,
+    devices,
+    slotsPerDevice: positiveIntVar(env, 'SANDBOX_GPU_SLOTS_PER_DEVICE'),
   }
 }
 

@@ -29,12 +29,13 @@ What a bump touches, all to the same ``N``:
    version stays buildable forever).
 4. ``backend/images/session-base/deps-v<N>/``: a fresh frozen snapshot: ``requirements.txt`` frozen
    from the *current* ``templates/base/requirements.txt``, the previous version's ``Dockerfile`` with
-   its ``deps-v<prev>`` paths and version prose rewritten, and its ``builtin/`` agents copied with
-   their manifests bumped. A target snapshot directory must not already exist. This keeps each bump
-   mechanical and prevents an existing snapshot from being silently retained. To preserve intentional
-   snapshot edits, move the target aside, create the mechanical snapshot, reapply the edits, and run
-   ``--check``. A failed apply restores every version touchpoint and discards only snapshot paths it
-   created.
+   its ``deps-v<prev>`` paths and version prose rewritten, its server-only
+   ``requirements.platform.<variant>.{in,txt}`` torch layers copied verbatim, and its ``builtin/``
+   agents copied with their manifests bumped. A target snapshot directory must not already exist.
+   This keeps each bump mechanical and prevents an existing snapshot from being silently retained.
+   To preserve intentional snapshot edits, move the target aside, create the mechanical snapshot,
+   reapply the edits, and run ``--check``. A failed apply restores every version touchpoint and
+   discards only snapshot paths it created.
 """
 
 from __future__ import annotations
@@ -59,6 +60,9 @@ from _paths import (
 # survivor that is not one of these (an ``-e`` editable, a ``-r`` include, an unpinned name), so a
 # non-locked template requirements file fails loudly rather than shipping a wobbly frozen image.
 _PIN_RE = re.compile(r"^[A-Za-z0-9._-]+(?:\[[A-Za-z0-9,._-]+\])?==\S+$")
+
+# The torch builds a snapshot's server-only platform layer offers, one compiled file per variant.
+TORCH_VARIANTS = ("cpu", "cuda")
 
 # The two anchors in deps-version.ts the bump edits. Each must match exactly once; a miss means the
 # file was refactored out from under the script, which must fail rather than silently no-op.
@@ -111,8 +115,8 @@ def _frozen_header_marker(version: int) -> str:
 def _frozen_header(version: int) -> str:
     return (
         f"{_frozen_header_marker(version)} session base image. This snapshot may be regenerated with "
-        f"the matching\n# template until template-v{version} is published. After publication it is "
-        f"immutable, and changes require v{version + 1}.\n"
+        f"the matching\n# template until template-v{version} is published. After publication it only "
+        f"gains packages, and changing or removing a pin requires v{version + 1}.\n"
     )
 
 
@@ -213,6 +217,8 @@ def _validate_snapshot(deps_dir: Path, version: int) -> list[str]:
             problems.append(f"{dockerfile} does not COPY its own deps-v{version}/requirements.txt")
         if f"deps-v{version}/builtin" not in df_text:
             problems.append(f"{dockerfile} does not COPY its own deps-v{version}/builtin")
+        if f"deps-v{version}/requirements.platform.${{TORCH_VARIANT}}.txt" not in df_text:
+            problems.append(f"{dockerfile} does not COPY its own deps-v{version} platform requirements")
         stray = {other for other in re.findall(r"deps-v(\d+)", df_text) if int(other) != version}
         if stray:
             problems.append(
@@ -223,6 +229,11 @@ def _validate_snapshot(deps_dir: Path, version: int) -> list[str]:
         problems.append(f"{requirements} is missing")
     elif _frozen_header_marker(version) not in requirements.read_text(encoding="utf-8"):
         problems.append(f"{requirements} is not headed '{_frozen_header_marker(version)[2:]}'")
+
+    for variant in TORCH_VARIANTS:
+        platform = deps_dir / f"requirements.platform.{variant}.txt"
+        if not platform.is_file():
+            problems.append(f"{platform} is missing")
 
     if not builtin.is_dir():
         problems.append(f"{builtin} is missing")
@@ -256,6 +267,11 @@ def _populate_deps_snapshot(prev: int, new: int, new_dir: Path) -> None:
 
     dockerfile = rewrite_dockerfile((prev_dir / "Dockerfile").read_text(encoding="utf-8"), prev, new)
     (new_dir / "Dockerfile").write_text(dockerfile, encoding="utf-8")
+
+    # The torch layers are server-only and not derived from the template set, so their intent files
+    # and compiled pins carry forward unchanged.
+    for platform in sorted(prev_dir.glob("requirements.platform.*")):
+        shutil.copyfile(platform, new_dir / platform.name)
 
     # Copy the built-in agents verbatim (skipping any stray bytecode a local run left behind), then bump
     # each baseline's manifest to the new version so a submitted agent's manifest_version matches it.

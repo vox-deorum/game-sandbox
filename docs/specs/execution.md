@@ -51,6 +51,9 @@ The backend keeps one base image per template dependency version. Each base cont
 - PettingZoo.
 - The environments.
 - The exact dependency set for that version.
+- A server-only platform layer with PyTorch. Templates do not include it; a participant opts in by pinning the exact same torch version in their own `requirements.txt` for local work.
+
+The server never installs a submission's requirements, so a submission always runs with the base image's packages, torch included. A published dependency version accepts additive changes only: a new package may join it, but changing or removing an existing pin needs a new version.
 
 A single-agent submission image adds one pinned repository to the base. A multi-agent session image adds every participating submission in separate locations so repositories with the same module name do not conflict. Each submission is staged once per seat. Builds install no new dependencies. A missing base is built before the submission or session image that needs it. Every submission in a session uses the season's dependency version, so the shared base already contains everything it needs. [Environments](environment.md#players-and-seats) defines the per-player instances for a seat.
 
@@ -64,7 +67,9 @@ Sessions with the same submitted seating can share a composed image. The driver 
 
 Session containers have:
 
-- A fixed CPU quota and a memory quota that scales with player count.
+- A fixed CPU quota and a memory quota that scales with player count. A season may set its own CPU and memory base values; see [Sandbox resources](seasons.md#sandbox-resources).
+- Numerical thread pools sized to the CPU quota, so libraries such as torch and numpy do not oversubscribe it.
+- No GPU, unless the season opts into one GPU per container on a deployment that has GPUs.
 - A read-only root filesystem.
 - A bounded writable scratch directory.
 - No general internet access, so an agent cannot outsource decisions or reach an unmetered service.

@@ -2,8 +2,8 @@
   The match-design config editor of the operator console (Stage 6.7). It edits the season's whole
   SeasonConfig: the match design (each match's seat composition of builtin:<name> / submission seats,
   its seeds, and its game count), the deps_version (defaulted to the current release at declaration),
-  and the override blocks. The per-step / per-episode timeout, messaging, and LLM fields all map to
-  the backend's strict season codec. Official and development LLM limits remain separate because
+  and the override blocks. The per-step / per-episode timeout, submission size, container resource,
+  messaging, and LLM fields all map to the backend's strict season codec. Official and development LLM limits remain separate because
   they apply to different accounting scopes.
 
   Match rows follow the resolved seat layout: one selector per seat the row holds, and a restricted seat
@@ -44,6 +44,7 @@ import {
   configureSeason,
   type LlmLimitOverride,
   type LlmModelAlias,
+  type SandboxDefaultsView,
   type SeasonConfig,
   type SeasonOverrides,
   type SeasonView,
@@ -66,6 +67,8 @@ const props = defineProps<{
   /** The registry entry for the season's environment: its messaging capability, its declared
    *  parameters, and the seat-order rule the schedule projection needs. */
   environment?: EnvironmentMeta
+  /** The deployment's container defaults, shown as placeholders, and whether it has GPUs. */
+  sandboxDefaults?: SandboxDefaultsView
 }>()
 
 /** The environment's declared parameters, empty until the registry entry arrives. */
@@ -92,6 +95,12 @@ const depsVersion = ref(props.season.config.deps_version)
 const matches = ref<MatchDraft[]>([])
 const stepTimeout = ref<number | ''>('')
 const episodeTimeout = ref<number | ''>('')
+const submissionMaxSize = ref<number | ''>('')
+const sandboxCpus = ref<number | ''>('')
+const sandboxMemory = ref<number | ''>('')
+// No GPU is the default, so the only explicit choice is turning one on.
+const sandboxGpu = ref<'default' | 'on'>('default')
+const gpuAvailable = computed(() => props.sandboxDefaults?.gpu_available === true)
 // A season can inherit the environment's messaging capability or turn it off. An explicit `true`
 // has the same runtime meaning as inheritance, so the editor canonicalizes it back to "default".
 const messagingEnabled = ref<'default' | 'off'>('default')
@@ -101,16 +110,20 @@ const messagingDefaultLabel = computed(() =>
     : `Environment default (${props.environment.messaging ? 'on' : 'off'})`,
 )
 /**
- * What an empty timeout field falls back to: the environment's own limit, named as a number so the
- * operator sees what leaving the field blank actually means. Stays the bare word until the
- * environment metadata arrives, since there is no number to show yet.
+ * What an empty numeric field falls back to: the environment's or deployment's own value, named as a
+ * number so the operator sees what leaving the field blank actually means. Stays the bare word until
+ * that value arrives, since there is no number to show yet.
  */
-function timeoutPlaceholder(limit: number | undefined): string {
-  return limit === undefined ? 'default' : `default ${limit}`
+function defaultPlaceholder(value: number | null | undefined): string {
+  return value === undefined || value === null ? 'default' : `default ${value}`
 }
-const stepTimeoutPlaceholder = computed(() => timeoutPlaceholder(props.environment?.step_limit_ms))
+const stepTimeoutPlaceholder = computed(() => defaultPlaceholder(props.environment?.step_limit_ms))
 const episodeTimeoutPlaceholder = computed(() =>
-  timeoutPlaceholder(props.environment?.episode_limit_ms),
+  defaultPlaceholder(props.environment?.episode_limit_ms),
+)
+const sandboxCpusPlaceholder = computed(() => defaultPlaceholder(props.sandboxDefaults?.cpus))
+const sandboxMemoryPlaceholder = computed(() =>
+  defaultPlaceholder(props.sandboxDefaults?.memory_mb),
 )
 const llmEnabled = ref<'default' | 'on' | 'off'>('default')
 const llmModelsMode = ref<'all' | 'medium-small' | 'small' | 'script-managed'>('all')
@@ -291,6 +304,11 @@ function seedFromSeason(): void {
   }))
   stepTimeout.value = config.overrides?.step_timeout_ms ?? ''
   episodeTimeout.value = config.overrides?.episode_timeout_ms ?? ''
+  submissionMaxSize.value = config.overrides?.submission_max_size_mb ?? ''
+  const sandbox = config.overrides?.sandbox
+  sandboxCpus.value = sandbox?.cpus ?? ''
+  sandboxMemory.value = sandbox?.memory_mb ?? ''
+  sandboxGpu.value = sandbox?.gpu === true ? 'on' : 'default'
   const messaging = config.overrides?.messaging
   messagingEnabled.value = messaging?.enabled === false ? 'off' : 'default'
   const llm = config.overrides?.llm
@@ -452,6 +470,14 @@ function buildConfig(): { config: SeasonConfig } | { error: string } {
   const overrides: NonNullable<SeasonConfig['overrides']> = {}
   if (stepTimeout.value !== '') overrides.step_timeout_ms = Number(stepTimeout.value)
   if (episodeTimeout.value !== '') overrides.episode_timeout_ms = Number(episodeTimeout.value)
+  if (submissionMaxSize.value !== '') {
+    overrides.submission_max_size_mb = Number(submissionMaxSize.value)
+  }
+  const sandbox: NonNullable<SeasonOverrides['sandbox']> = {}
+  if (sandboxCpus.value !== '') sandbox.cpus = Number(sandboxCpus.value)
+  if (sandboxMemory.value !== '') sandbox.memory_mb = Number(sandboxMemory.value)
+  if (sandboxGpu.value === 'on') sandbox.gpu = true
+  if (Object.keys(sandbox).length > 0) overrides.sandbox = sandbox
   const messaging: NonNullable<SeasonOverrides['messaging']> = {}
   if (messagingEnabled.value === 'off') messaging.enabled = false
   if (Object.keys(messaging).length > 0) overrides.messaging = messaging
@@ -519,6 +545,8 @@ function canonicalOverrides(overrides: SeasonConfig['overrides']): Record<string
   const normalized = {
     step_timeout_ms: overrides.step_timeout_ms ?? null,
     episode_timeout_ms: overrides.episode_timeout_ms ?? null,
+    submission_max_size_mb: overrides.submission_max_size_mb ?? null,
+    sandbox: canonicalSandbox(overrides.sandbox),
     messaging: canonicalMessaging(overrides.messaging),
     llm: canonicalLlm(overrides.llm),
     parameters: canonicalParameters(overrides.parameters),
@@ -539,6 +567,17 @@ function canonicalParameters(
   )
   const { values } = validateParameters(declarations, parameters)
   return Object.keys(values).length === 0 ? null : values
+}
+
+/** Normalize the sandbox block because an explicit `gpu: false` and inheritance resolve identically. */
+function canonicalSandbox(sandbox: SeasonOverrides['sandbox']): Record<string, unknown> | null {
+  if (sandbox === undefined) return null
+  const normalized = {
+    cpus: sandbox.cpus ?? null,
+    memory_mb: sandbox.memory_mb ?? null,
+    gpu: sandbox.gpu === true ? true : null,
+  }
+  return Object.values(normalized).every((value) => value === null) ? null : normalized
 }
 
 /** Normalize explicit messaging enablement because `true` and inheritance resolve identically. */
@@ -759,6 +798,55 @@ watch(confirmOpen, (open) => {
           <UiSelect :id="id" v-model="messagingEnabled">
             <option value="default">{{ messagingDefaultLabel }}</option>
             <option value="off">Off</option>
+          </UiSelect>
+        </template>
+      </UiField>
+      <UiField label="Submission size limit (MB)">
+        <template #default="{ id }">
+          <UiInput
+            :id="id"
+            v-model.number="submissionMaxSize"
+            type="number"
+            min="1"
+            placeholder="default"
+          />
+        </template>
+      </UiField>
+      <UiField label="CPU cores" hint="Per container. Agents' thread pools follow it.">
+        <template #default="{ id, describedby }">
+          <UiInput
+            :id="id"
+            v-model.number="sandboxCpus"
+            type="number"
+            min="0.1"
+            step="0.1"
+            :placeholder="sandboxCpusPlaceholder"
+            :aria-describedby="describedby"
+          />
+        </template>
+      </UiField>
+      <UiField label="Memory (MB)" hint="Per container, before the per-player increment.">
+        <template #default="{ id, describedby }">
+          <UiInput
+            :id="id"
+            v-model.number="sandboxMemory"
+            type="number"
+            min="1"
+            :placeholder="sandboxMemoryPlaceholder"
+            :aria-describedby="describedby"
+          />
+        </template>
+      </UiField>
+      <UiField label="GPU" :hint="gpuAvailable ? undefined : 'This deployment has no GPUs.'">
+        <template #default="{ id, describedby }">
+          <UiSelect
+            :id="id"
+            v-model="sandboxGpu"
+            :disabled="!gpuAvailable && sandboxGpu === 'default'"
+            :aria-describedby="describedby"
+          >
+            <option value="default">Off</option>
+            <option value="on">On, one per container</option>
           </UiSelect>
         </template>
       </UiField>

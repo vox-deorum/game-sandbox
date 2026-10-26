@@ -44,6 +44,8 @@ The Docker implementation lives under `driver/docker/`. This interface lets a la
 | `scratch`      | Bounded writable tmpfs    |
 | `network`      | Network policy            |
 | `mounts`       | Approved mounted paths    |
+| `pids`         | Per-container pid ceiling |
+| `gpu`          | Optional GPU lease, with what to do when every slot is busy |
 
 The Docker driver maps these to Docker settings, drops capabilities, and labels containers with `game-sandbox.session=<id>`. Startup reaps leftover labeled containers from an interrupted backend process.
 
@@ -58,6 +60,49 @@ The backend-facing relay topology depends on where the backend runs:
 
 Both modes leave the session container on the per-session network alone. Startup rejects incomplete relay configuration, and Compose-mode launch fails clearly when the configured network does not exist.
 
+### Season resources
+
+A season's [`overrides.sandbox`](../../specs/seasons.md#sandbox-resources) block may replace the deployment's `SANDBOX_CPUS` and `SANDBOX_MEMORY_MB` and ask for a GPU. `sandboxResourcesForSeason` applies it, and the per-player memory increment (`SANDBOX_MEMORY_PER_PLAYER_MB`) still applies on top. The block reaches three callers:
+
+| Caller | CPU and memory | GPU |
+| --- | --- | --- |
+| Live session | Season values | Leased when the season asks; refused at once when every slot is busy |
+| Leaderboard game | Season values, which also drive the automatic concurrency | Leased when the season asks; waits for a free slot |
+| Submission load check | Season values | Never, so an agent must be able to construct on CPU |
+
+### Thread pools
+
+Numerical libraries such as torch and numpy size their thread pools from the host's cores, not the container's quota, so a container would otherwise oversubscribe its CPU allowance and stall on throttling. The driver sets `OMP_NUM_THREADS`, `MKL_NUM_THREADS`, and `OPENBLAS_NUM_THREADS` in every container to the whole number of CPUs in its quota, with a minimum of 1.
+
+When choosing a season's `cpus`, note that small batch-1 models stop gaining beyond 2 to 4 threads, while mid-size transformer inference scales to roughly 4 to 8 cores.
+
+### GPU access
+
+GPU passthrough exposes the host GPU kernel driver to untrusted student code. It is therefore off by default and opt-in per season. The `SANDBOX_GPU_*` [settings](../setup/configuration.md#gpus) describe the host's devices.
+
+The Docker driver holds a pool (`driver/gpu-pool.ts`) with one slot per device times `SANDBOX_GPU_SLOTS_PER_DEVICE`. A container that asks for a GPU leases the least-loaded device for its whole lifetime, and the lease is released when the container is removed. When every slot is busy:
+
+- A live session is refused at once with HTTP 503, code `gpus_busy`, and the message "all GPUs are busy; try again when a running session ends".
+- A leaderboard game waits for a slot. A GPU season's leaderboard concurrency is also capped at the total slot count, so games do not sit in the lease queue.
+- A GPU season's run fails at once on a deployment without GPUs.
+
+NVIDIA is the only supported vendor. The driver passes the one leased device index or UUID to Docker as a device request, which needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on the host. All other hardening stays in place for GPU containers: read-only root, every capability dropped, `no-new-privileges`, the pid limit, and no network.
+
+The admin API rejects saving `overrides.sandbox.gpu: true` on a deployment without GPUs with 400 `invalid_config`. `GET /api/admin/seasons/:id` reports `sandbox_defaults: { cpus, memory_mb, gpu_available }`, which the season editor uses for its placeholders and to disable its GPU field.
+
+### Verifying GPUs on a deployment
+
+Run this check on a GPU host after setting up the drivers:
+
+1. Set the `SANDBOX_GPU_*` settings in `.env` or the process environment.
+2. From `backend/`, run the GPU integration test:
+
+   ```console
+   npx vitest run --config vitest.integration.config.ts test/integration/gpu-sandbox.test.ts
+   ```
+
+The test builds the CUDA base image variant, launches a sandbox with one leased GPU, and checks that `torch.cuda.is_available()` is true, that exactly one device is visible, and that a matrix multiplication is correct. It is skipped on machines without GPU settings.
+
 ## Session base images
 
 Each supported dependency version has a concrete base-image definition:
@@ -68,14 +113,21 @@ backend/images/session-base/deps-v<N>/
 
 `backend/src/build/deps-version.ts` is the registry. A template version is valid only when this registry points to its Dockerfile.
 
+### Base image contents
+
 Each base contains:
 
+- The versioned dependency set from `requirements.txt`. Once published, it accepts additive changes only: a new package may join through a republish, but changing or removing a pin needs the next `deps-v<N+1>`. See [Versioned dependency set](../environments/templates.md#versioned-dependency-set).
+- The server-only platform layer with PyTorch, installed in its own layer after the shared set. The Dockerfile's `TORCH_VARIANT` build argument picks `requirements.platform.cpu.txt` (the default) or `requirements.platform.cuda.txt`. The CPU-only build adds under a gigabyte to the image. The CUDA build adds about 6 GB of NVIDIA libraries, and it also runs on CPU when no GPU is attached. See [Server-only platform layer](../environments/templates.md#server-only-platform-layer).
 - Harness and environments.
-- Frozen dependency set.
 - Every declared builtin agent for the environment. An environment can declare more than one: Spades bundles both a Naive agent and a Cautious bidder.
 - `python -m game_sandbox_harness.live` entrypoint.
 
+The build fails, rather than a session, if the harness, an environment package, torch, or a builtin agent cannot load.
+
 The image tag is `game-sandbox/session-base:deps-v<N>`. The driver either reuses or rebuilds it according to `DOCKER_IMAGE_POLICY`.
+
+The driver picks the torch variant from `SANDBOX_GPU_VENDOR`: `nvidia` builds `cuda`, and `none` builds `cpu`. CUDA images use their own image prefix, `<DOCKER_IMAGE_TAG_PREFIX>-cuda` (for example `game-sandbox-cuda/session-base:deps-v1`), and so do their overlays, so one image cache never mixes the two builds. Turning GPUs on for an existing deployment therefore builds a new base image.
 
 To make the image fresh, run this from `backend/`; it rebuilds only when an image input changed and reuses the existing image otherwise:
 

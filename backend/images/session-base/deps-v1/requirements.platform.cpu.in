@@ -1,0 +1,3 @@
+# The server-only cpu torch layer of this session base image. Students do not get it from
+# a template; an agent opts in by pinning the same torch version in its own requirements.txt.
+torch==2.14.1+cpu

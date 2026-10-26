@@ -11,6 +11,7 @@
  * exit code and `inspect()` for the driver-neutral OOM flag (the container is created without
  * auto-remove precisely so that inspect still works). LLM-network cleanup is held after exit until
  * the lifecycle owner calls {@link kill}, giving it a safe point to revoke and drain proxy work.
+ * `onRemoved` (a GPU lease release) runs once the container is gone, without changing that timing.
  */
 import type { PassThrough } from 'node:stream'
 import { PassThrough as PassThroughStream } from 'node:stream'
@@ -29,6 +30,7 @@ export class DockerSessionProcess implements SessionProcess {
   private readonly stdin: NodeJS.WritableStream
   private readonly container: Container
   private readonly cleanup: (() => Promise<void>) | undefined
+  private readonly onRemoved: (() => void) | undefined
   private readonly settleExit: (info: ExitInfo) => void
   private removal: Promise<void> | null = null
 
@@ -36,10 +38,12 @@ export class DockerSessionProcess implements SessionProcess {
     container: Container,
     stdio: NodeJS.ReadWriteStream,
     cleanup?: () => Promise<void>,
+    onRemoved?: () => void,
   ) {
     this.container = container
     this.stdin = stdio
     this.cleanup = cleanup
+    this.onRemoved = onRemoved
 
     const outChannel = new AsyncChannel<string>()
     const diagChannel = new AsyncChannel<string>()
@@ -76,6 +80,7 @@ export class DockerSessionProcess implements SessionProcess {
   static async start(
     container: Container,
     cleanup?: () => Promise<void>,
+    onRemoved?: () => void,
   ): Promise<DockerSessionProcess> {
     let stdio: NodeJS.ReadWriteStream
     try {
@@ -95,9 +100,10 @@ export class DockerSessionProcess implements SessionProcess {
       // the driver, so remove it directly or it leaks (nothing upstream holds a handle to clean up).
       await container.remove({ force: true }).catch(() => undefined)
       await cleanup?.().catch(() => undefined)
+      onRemoved?.()
       throw error
     }
-    const process = new DockerSessionProcess(container, stdio, cleanup)
+    const process = new DockerSessionProcess(container, stdio, cleanup, onRemoved)
     try {
       await container.start()
     } catch (error) {
@@ -170,6 +176,7 @@ export class DockerSessionProcess implements SessionProcess {
       this.removal = this.container
         .remove({ force: true })
         .catch(() => undefined)
+        .then(() => this.onRemoved?.())
         .then(() => this.cleanup?.().catch(() => undefined))
     }
     return this.removal

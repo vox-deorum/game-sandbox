@@ -133,6 +133,8 @@ export interface HostResources {
   cpuCount: number
   /** Total memory available to the driver host, in bytes. */
   memoryBytes: number
+  /** How many GPU leases the driver can hold at once; absent or 0 on a host without GPUs. */
+  gpuSlots?: number
 }
 
 /** A writable scratch area inside the otherwise read-only container. */
@@ -169,7 +171,15 @@ export interface SandboxProfile {
   mounts: MountSpec[]
   /** Per-container pid ceiling, mapped by the Docker driver onto `HostConfig.PidsLimit`. */
   pids: number
+  /** Lease one GPU for the container's lifetime; absent means no GPU. */
+  gpu?: { whenBusy: GpuBusyPolicy }
 }
+
+/**
+ * What a GPU launch does when every slot is taken: `wait` queues until one frees (leaderboard games,
+ * load checks), and `fail` rejects at once (a live session, whose user should not stare at a spinner).
+ */
+export type GpuBusyPolicy = 'wait' | 'fail'
 
 /** Everything needed to launch one session container. */
 export interface LaunchSpec {
