@@ -176,13 +176,15 @@ export interface SandboxProfile {
 }
 
 /**
- * What a GPU launch does when every slot is taken: `wait` queues until one frees (leaderboard games,
- * load checks), and `fail` rejects at once (a live session, whose user should not stare at a spinner).
+ * What a GPU launch does when every slot is taken: `wait` queues until one frees (leaderboard games),
+ * and `fail` rejects at once (a live session, whose user should not stare at a spinner).
  */
 export type GpuBusyPolicy = 'wait' | 'fail'
 
 /** Everything needed to launch one session container. */
 export interface LaunchSpec {
+  /** Cancel resource acquisition before a container is created, including a queued GPU lease. */
+  signal?: AbortSignal
   /** The image resolved by {@link ExecutionDriver.ensureImage}. */
   image: ImageRef
   /** Argv appended to the image entrypoint — the session config, see transport-and-live-runner. */
@@ -226,7 +228,8 @@ export interface SessionProcess {
   /**
    * Forcefully tear the session down, escalating from a polite stop to a hard kill after
    * `graceMs`. This is the orchestrator's backstop; a graceful end is a protocol concern (the
-   * `stop` command), not a driver call.
+   * `stop` command), not a driver call. It resolves once the session no longer runs and rejects
+   * only when that cannot be confirmed. A driver may finish reclaiming resources in the background.
    */
   kill(graceMs: number): Promise<void>
 }

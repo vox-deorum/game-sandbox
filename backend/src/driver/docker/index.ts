@@ -358,22 +358,27 @@ export class DockerDriver implements ExecutionDriver {
   }
 
   async launch(spec: LaunchSpec): Promise<SessionProcess> {
+    spec.signal?.throwIfAborted()
     const gpu = await this.leaseGpu(spec)
     let llm: LlmNetworkResources | undefined
+    let container: Container
     try {
+      spec.signal?.throwIfAborted()
       if (spec.sandbox.network === 'llm') {
         llm = await this.createLlmNetwork(spec.sessionId)
       }
-      const container = await this.docker.createContainer(
+      spec.signal?.throwIfAborted()
+      container = await this.docker.createContainer(
         containerCreateOptions(spec, llm?.networkName ?? 'none', gpu),
       )
-      // The lease ends with the container: the process releases it once the container is removed.
-      return await DockerSessionProcess.start(container, llm?.cleanup, gpu?.release)
     } catch (error) {
       await llm?.cleanup().catch(() => undefined)
       gpu?.release()
       throw error
     }
+    // The lease ends with the container: from here start() owns cleanup, and the process releases
+    // the lease only once Docker confirms removal.
+    return await DockerSessionProcess.start(container, llm?.cleanup, gpu?.release)
   }
 
   /** Lease a GPU slot when the profile asks for one, refusing a profile this host cannot serve. */
@@ -387,7 +392,7 @@ export class DockerDriver implements ExecutionDriver {
         'this sandbox needs a GPU, but the deployment has none (SANDBOX_GPU_VENDOR=none)',
       )
     }
-    return await this.gpuPool.lease(request.whenBusy)
+    return await this.gpuPool.lease(request.whenBusy, spec.signal)
   }
 
   /**
@@ -650,7 +655,9 @@ export function containerCreateOptions(
       ...(gpu === undefined
         ? {}
         : {
-            DeviceRequests: [{ Driver: 'nvidia', DeviceIDs: [gpu.device], Capabilities: [['gpu']] }],
+            DeviceRequests: [
+              { Driver: 'nvidia', DeviceIDs: [gpu.device], Capabilities: [['gpu']] },
+            ],
           }),
     },
   }

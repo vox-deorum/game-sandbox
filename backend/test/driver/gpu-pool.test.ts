@@ -41,4 +41,41 @@ describe('GpuPool', () => {
     held.release()
     await expect(pool.lease('fail')).rejects.toBeInstanceOf(GpuBusyError)
   })
+
+  it('rejects an already cancelled request without taking a free slot', async () => {
+    const pool = new GpuPool(['0'], 1)
+    const abort = new AbortController()
+    abort.abort()
+
+    await expect(pool.lease('wait', abort.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(pool.lease('fail')).resolves.toMatchObject({ device: '0' })
+  })
+
+  it('cancels a queued request without waiting for or blocking the next lease', async () => {
+    const pool = new GpuPool(['0'], 1)
+    const held = await pool.lease('fail')
+    const abort = new AbortController()
+    const cancelled = pool.lease('wait', abort.signal)
+    const next = pool.lease('wait')
+
+    abort.abort()
+    await expect(cancelled).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(pool.lease('fail')).rejects.toBeInstanceOf(GpuBusyError)
+    held.release()
+    const lease = await next
+    expect(lease.device).toBe('0')
+    lease.release()
+    await expect(pool.lease('fail')).resolves.toMatchObject({ device: '0' })
+  })
+
+  it('hands a released slot to the queued request before a new caller can take it', async () => {
+    const pool = new GpuPool(['0'], 1)
+    const held = await pool.lease('fail')
+    const next = pool.lease('wait')
+
+    held.release()
+    await expect(pool.lease('fail')).rejects.toBeInstanceOf(GpuBusyError)
+    const lease = await next
+    lease.release()
+  })
 })

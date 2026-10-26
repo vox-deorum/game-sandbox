@@ -192,7 +192,8 @@ class DockerWorkflowRunner implements WorkflowRunner {
   private pumpPromise: Promise<void> | null = null
   private stopping = false
   private shutdownPromise: Promise<void> | null = null
-  private activeRunId: string | null = null
+  /** The run the pump is executing, with the controller that aborts its queued GPU acquisition. */
+  private activeRun: { id: string; abort: AbortController } | null = null
   /** Runs an operator asked to cancel; checked cooperatively between and during games. */
   private readonly cancelRequested = new Set<string>()
   /** Active containers and grants keyed by run and game, so one stop tears down every worker. */
@@ -245,8 +246,11 @@ class DockerWorkflowRunner implements WorkflowRunner {
     this.stopping = true
     // Queued rows remain pending for startup reconciliation; only already-started work needs teardown.
     this.queue.length = 0
-    if (this.activeRunId !== null) this.cancelRequested.add(this.activeRunId)
-    if (this.activeRunId !== null) await this.stopActiveWork(this.activeRunId)
+    const active = this.activeRun
+    if (active !== null) {
+      this.cancelRequested.add(active.id)
+      await this.stopActiveWork(active.id)
+    }
     await this.pumpPromise
   }
 
@@ -289,6 +293,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
 
   /** Start every cleanup; each worker awaits and reports its own failures before settling. */
   private async stopActiveWork(runId: string): Promise<void> {
+    if (this.activeRun?.id === runId) this.activeRun.abort.abort()
     const leases = [...(this.inFlightLlm.get(runId)?.values() ?? [])]
     const processes = [...(this.inFlight.get(runId)?.values() ?? [])]
     await Promise.allSettled(leases.map((lease) => Promise.resolve().then(() => lease.revoke())))
@@ -311,7 +316,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
   private async pump(): Promise<void> {
     try {
       for (let next = this.queue.shift(); next !== undefined; next = this.queue.shift()) {
-        this.activeRunId = next
+        this.activeRun = { id: next, abort: new AbortController() }
         // Nothing awaits the pump during normal operation, so a throw here (e.g. a storage read
         // failing before executeRun's own try) would be an unhandled rejection that kills the
         // process and drops the rest of the queue. Contain it to the one run and keep draining.
@@ -326,7 +331,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         }
       }
     } finally {
-      this.activeRunId = null
+      this.activeRun = null
       // The pump owns its idle transition. Clearing the marker here, in the same turn that observed
       // the empty queue, ensures a later enqueue starts a replacement pump instead of attaching work
       // to a promise whose external cleanup callback has not run yet.
@@ -667,6 +672,7 @@ class DockerWorkflowRunner implements WorkflowRunner {
         // flat store after the game exits (settled below).
         await ensureRecordingsDir(this.sessionRecordingsDir(game.id))
         process = await this.deps.driver.launch({
+          signal: this.activeRun?.abort.signal,
           image,
           argv: [JSON.stringify(sessionConfig)],
           sandbox: buildSandboxProfile(

@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { UserDirectory } from '../../src/auth/users.js'
+import { GpuBusyError, GpuPool } from '../../src/driver/gpu-pool.js'
 import type { ExitInfo } from '../../src/driver/index.js'
 import { EnvironmentRegistry } from '../../src/environments/registry.js'
 import { forfeitScore } from '../../src/leaderboards/score.js'
@@ -1445,6 +1446,50 @@ describe('Docker-backed workflow runner', () => {
     await expect(runToTerminal(handle, run.id)).resolves.toMatchObject({ status: 'failed' })
     expect((await storage.getRun(run.id))?.error).toMatch(/needs a GPU/)
     expect(driver.launches).toHaveLength(0)
+  })
+
+  it.each([
+    'cancel',
+    'shutdown',
+  ] as const)('%s interrupts a queued GPU launch while another session still holds the device', async (action) => {
+    const pool = new GpuPool(['0'], 1)
+    const liveLease = await pool.lease('fail')
+    const driver = new FakeDriver({ cpuCount: 8, memoryBytes: 8 * 1024 ** 3, gpuSlots: 1 })
+    const launch = driver.launch.bind(driver)
+    let waiting = false
+    vi.spyOn(driver, 'launch').mockImplementation(async (spec) => {
+      if (spec.sandbox.gpu !== undefined) {
+        waiting = true
+        const lease = await pool.lease(spec.sandbox.gpu.whenBusy, spec.signal)
+        lease.release()
+      }
+      return launch(spec)
+    })
+    driver.onLaunch = ({ process, spec }) =>
+      emitRecording(process, JSON.parse(spec.argv[0] ?? '{}'))
+    const handle = makeRunner(storage, driver)
+    const run = await makeRun(storage, [naiveGame(0), naiveGame(1)], {
+      overrides: { sandbox: { gpu: true } },
+    })
+    const terminal = runToTerminal(handle, run.id)
+    await vi.waitFor(() => expect(waiting).toBe(true))
+    const nextRun = action === 'cancel' ? await makeRun(storage, [naiveGame(0)]) : undefined
+    const nextTerminal = nextRun === undefined ? undefined : runToTerminal(handle, nextRun.id)
+
+    if (action === 'cancel') handle.runner.cancel(run.id)
+    else await handle.runner.shutdown()
+
+    await expect(terminal).resolves.toMatchObject({ status: 'cancelled' })
+    expect((await storage.listRunGames(run.id)).every((game) => game.status === 'cancelled')).toBe(
+      true,
+    )
+    if (nextTerminal !== undefined) {
+      await expect(nextTerminal).resolves.toMatchObject({ status: 'completed' })
+    }
+    expect(driver.launches.every(({ spec }) => spec.sandbox.gpu === undefined)).toBe(true)
+    await expect(pool.lease('fail')).rejects.toBeInstanceOf(GpuBusyError)
+    liveLease.release()
+    await handle.runner.shutdown()
   })
 
   it('caps ordinary games with half of host memory', async () => {

@@ -23,7 +23,7 @@ export interface GpuLease {
 
 export class GpuPool {
   private readonly load: Map<string, number>
-  private readonly waiters: Array<() => void> = []
+  private readonly waiters = new Set<() => void>()
 
   constructor(
     devices: readonly string[],
@@ -38,17 +38,33 @@ export class GpuPool {
   }
 
   /** Lease a slot. `wait` queues until one frees; `fail` throws {@link GpuBusyError} instead. */
-  async lease(whenBusy: GpuBusyPolicy): Promise<GpuLease> {
-    for (;;) {
-      const lease = this.tryLease()
-      if (lease !== undefined) {
-        return lease
-      }
-      if (whenBusy === 'fail') {
-        throw new GpuBusyError()
-      }
-      await new Promise<void>((resolve) => this.waiters.push(resolve))
+  async lease(whenBusy: GpuBusyPolicy, signal?: AbortSignal): Promise<GpuLease> {
+    signal?.throwIfAborted()
+    const lease = this.tryLease()
+    if (lease !== undefined) {
+      return lease
     }
+    if (whenBusy === 'fail') {
+      throw new GpuBusyError()
+    }
+    return new Promise<GpuLease>((resolve, reject) => {
+      const clear = (): void => {
+        this.waiters.delete(wake)
+        signal?.removeEventListener('abort', abort)
+      }
+      const wake = (): void => {
+        const lease = this.tryLease()
+        if (lease === undefined) return
+        clear()
+        resolve(lease)
+      }
+      const abort = (): void => {
+        clear()
+        reject(signal?.reason)
+      }
+      this.waiters.add(wake)
+      signal?.addEventListener('abort', abort, { once: true })
+    })
   }
 
   private tryLease(): GpuLease | undefined {
@@ -74,7 +90,7 @@ export class GpuPool {
         }
         released = true
         this.load.set(leased, (this.load.get(leased) ?? 1) - 1)
-        this.waiters.shift()?.()
+        this.waiters.values().next().value?.()
       },
     }
   }

@@ -30,8 +30,10 @@ What a bump touches, all to the same ``N``:
 4. ``backend/images/session-base/deps-v<N>/``: a fresh frozen snapshot: ``requirements.txt`` frozen
    from the *current* ``templates/base/requirements.txt``, the previous version's ``Dockerfile`` with
    its ``deps-v<prev>`` paths and version prose rewritten, its server-only
-   ``requirements.platform.<variant>.{in,txt}`` torch layers copied verbatim, and its ``builtin/``
-   agents copied with their manifests bumped. A target snapshot directory must not already exist.
+   ``requirements.platform.<variant>.{in,txt}`` torch layers copied verbatim (validation rejects any
+   overlapping pin that contradicts the freshly frozen shared set, naming the variant to recompile),
+   and its ``builtin/`` agents copied with their manifests bumped. A target snapshot directory must
+   not already exist.
    This keeps each bump mechanical and prevents an existing snapshot from being silently retained.
    To preserve intentional snapshot edits, move the target aside, create the mechanical snapshot,
    reapply the edits, and run ``--check``. A failed apply restores every version touchpoint and
@@ -60,6 +62,10 @@ from _paths import (
 # survivor that is not one of these (an ``-e`` editable, a ``-r`` include, an unpinned name), so a
 # non-locked template requirements file fails loudly rather than shipping a wobbly frozen image.
 _PIN_RE = re.compile(r"^[A-Za-z0-9._-]+(?:\[[A-Za-z0-9,._-]+\])?==\S+$")
+
+# A pin in a compiled platform layer, which also carries pip options, index lines, inline comments,
+# environment markers, and hash continuation lines. The overlap check only needs its name and version.
+_PINNED_LINE_RE = re.compile(r"^([A-Za-z0-9._-]+)(?:\[[A-Za-z0-9,._-]+\])?==([^\s;]+)(?:\s*;.*)?$")
 
 # The torch builds a snapshot's server-only platform layer offers, one compiled file per variant.
 TORCH_VARIANTS = ("cpu", "cuda")
@@ -202,8 +208,68 @@ def rewrite_dockerfile(text: str, prev: int, new: int) -> str:
     return "".join(rewritten)
 
 
+def _normalized_name(name: str) -> str:
+    """A PEP 503 style package name, so ``typing_extensions`` and ``typing-extensions`` overlap."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _parse_pins(text: str) -> dict[str, set[str]]:
+    """Return the ``name==version`` pins in a requirements file, keyed by normalized name.
+
+    Mirrors ``freeze_requirements``' line-by-line reading, but tolerates the extra content a compiled
+    platform layer carries: pip options and index lines, comments, blank lines, continuations, inline
+    comments, and environment markers. Anything that is not a pin is ignored, because the overlap
+    check only cares about packages pinned in both a platform layer and the shared set.
+    """
+    pins: dict[str, set[str]] = {}
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        line = line.removesuffix("\\").rstrip()
+        match = _PINNED_LINE_RE.match(line)
+        if match is not None:
+            pins.setdefault(_normalized_name(match.group(1)), set()).add(match.group(2))
+    return pins
+
+
+def _pins_compatible(variant_version: str, shared_version: str) -> bool:
+    """Whether a platform pin agrees with the shared pin under PEP 440 local-version semantics.
+
+    ``==2.14.1`` accepts the ``2.14.1+cpu`` build, so a local suffix only conflicts with a different
+    local suffix. Two plain versions agree, as do two equal local builds.
+    """
+    variant_public, _, variant_local = variant_version.partition("+")
+    shared_public, _, shared_local = shared_version.partition("+")
+    if variant_public != shared_public:
+        return False
+    return not variant_local or not shared_local or variant_local == shared_local
+
+
+def _platform_conflicts(
+    platform: Path, variant: str, requirements: Path, shared_pins: dict[str, set[str]]
+) -> list[str]:
+    """Return one problem per platform pin that disagrees with an overlapping shared pin."""
+    problems: list[str] = []
+    for name, variant_versions in _parse_pins(platform.read_text(encoding="utf-8")).items():
+        for variant_version in sorted(variant_versions):
+            for shared_version in sorted(shared_pins.get(name, ())):
+                if not _pins_compatible(variant_version, shared_version):
+                    problems.append(
+                        f"{platform} pins {name}=={variant_version}, but {requirements} pins "
+                        f"{name}=={shared_version}; recompile the {variant} variant against the shared "
+                        "constraints so the two layers agree."
+                    )
+    return problems
+
+
 def _validate_snapshot(deps_dir: Path, version: int) -> list[str]:
-    """Return the ways ``deps_dir`` fails to be a consistent deps-v<version> snapshot (empty = ok)."""
+    """Return the ways ``deps_dir`` fails to be a consistent deps-v<version> snapshot (empty = ok).
+
+    Besides the file and manifest shape, every platform pin must agree with the shared set. A bump
+    carries the compiled platform files forward while regenerating the shared freeze, so a stale
+    variant would otherwise install two versions of an overlapping package.
+    """
     problems: list[str] = []
     dockerfile = deps_dir / "Dockerfile"
     requirements = deps_dir / "requirements.txt"
@@ -225,15 +291,22 @@ def _validate_snapshot(deps_dir: Path, version: int) -> list[str]:
                 f"{dockerfile} references other versions deps-v{sorted(stray)} besides its own {version}"
             )
 
+    shared_pins: dict[str, set[str]] | None = None
     if not requirements.is_file():
         problems.append(f"{requirements} is missing")
-    elif _frozen_header_marker(version) not in requirements.read_text(encoding="utf-8"):
-        problems.append(f"{requirements} is not headed '{_frozen_header_marker(version)[2:]}'")
+    else:
+        shared_text = requirements.read_text(encoding="utf-8")
+        if _frozen_header_marker(version) not in shared_text:
+            problems.append(f"{requirements} is not headed '{_frozen_header_marker(version)[2:]}'")
+        shared_pins = _parse_pins(shared_text)
 
     for variant in TORCH_VARIANTS:
         platform = deps_dir / f"requirements.platform.{variant}.txt"
         if not platform.is_file():
             problems.append(f"{platform} is missing")
+            continue
+        if shared_pins is not None:
+            problems.extend(_platform_conflicts(platform, variant, requirements, shared_pins))
 
     if not builtin.is_dir():
         problems.append(f"{builtin} is missing")
