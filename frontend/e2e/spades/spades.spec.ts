@@ -366,6 +366,14 @@ test('Spades watchers see complete chat live and in replay', async ({
     await expect(controllerChat).toBeVisible()
     await expect(message).toHaveValue('draft across opponent turns')
 
+    // Clicking the painted table releases the composer even when Pixi cancels pointer defaults.
+    await message.focus()
+    await expect(message).toBeFocused()
+    await canvas.click({ position: { x: 80, y: 20 } })
+    await expect(message).not.toBeFocused()
+    await page.keyboard.type('w')
+    await expect(message).toHaveValue('draft across opponent turns')
+
     await expect(spectatorChat.getByText(BROADCAST)).toBeVisible()
     await expect(spectatorChat.getByText(TARGETED)).toBeVisible()
     await expect(spectatorTwoChat.getByText(BROADCAST)).toBeVisible()

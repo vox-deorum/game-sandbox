@@ -76,6 +76,13 @@ function revealControls(): void {
   }
 }
 
+function onGamePointerDown(event: PointerEvent): void {
+  if (!(event.target instanceof HTMLCanvasElement)) return
+  // Renderer gestures cancel the browser's default focus change. Release the composer before they run.
+  const focused = document.activeElement
+  if (focused instanceof HTMLElement) focused.blur()
+}
+
 function onStageFocusIn(event: FocusEvent): void {
   // Only focus in the transport bar itself deserves to keep the controls visible; a focused toggle
   // (or anything else on the canvas) must still allow the idle timer to fade them, so it is excluded.
@@ -132,6 +139,7 @@ onBeforeUnmount(() => {
       <div
         ref="rendererHost"
         class="renderer-host"
+        @pointerdown.capture="onGamePointerDown"
         :style="
           aspectRatio === null
             ? undefined

@@ -96,6 +96,45 @@ describe('StageFrame', () => {
     expect(screen.queryByText('Hidden log')).toBeNull()
   })
 
+  it('leaves the chat draft intact and releases focus before renderer pointer handlers run', async () => {
+    const view = render(StageFrame, {
+      props: { aspectRatio: 1.5, logBeside: true, canvasLabel: 'Environment' },
+      slots: { 'beside-log': '<input aria-label="Message" value="Unsent draft" />' },
+    })
+    const host = view.container.querySelector('.renderer-host') as HTMLElement
+    const canvas = document.createElement('canvas')
+    host.append(canvas)
+    const message = screen.getByRole('textbox', { name: 'Message' })
+    const onPointer = vi.fn((event: Event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      return document.activeElement
+    })
+    host.addEventListener('pointerdown', onPointer)
+
+    message.focus()
+    expect(message).toHaveFocus()
+    await fireEvent.pointerDown(canvas)
+
+    expect(onPointer).toHaveBeenCalledOnce()
+    expect(onPointer).toHaveReturnedWith(document.body)
+    expect(message).not.toHaveFocus()
+    expect(message).toHaveValue('Unsent draft')
+  })
+
+  it('leaves focus alone when pressing a control over the game', async () => {
+    render(StageFrame, {
+      props: { aspectRatio: 1.5, logBeside: true, canvasLabel: 'Environment' },
+      slots: { overlay: '<button>Start</button>' },
+    })
+    const start = screen.getByRole('button', { name: 'Start' })
+    start.focus()
+
+    await fireEvent.pointerDown(start)
+
+    expect(start).toHaveFocus()
+  })
+
   it('drives the native Fullscreen API through the toggle', async () => {
     mockFullscreen()
     const view = render(StageFrame, {
