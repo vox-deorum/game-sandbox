@@ -34,9 +34,35 @@ The takeaway is that an empty quota field keeps the deployment default, which th
 - Torch joins `deps-v1` in place, under the additive rule.
 - A deployment without GPUs builds the CPU-only torch wheel, which keeps the base image at about 1.7 GB instead of 9 GB. Enabling GPUs later means building the CUDA image.
 - GPU support covers NVIDIA only; there is no ROCm build.
-- Templates do not gain torch. The Skirmish at Crane Reach torch example is added separately by the owner.
+- Templates do not gain torch. The Skirmish at Crane Reach `imitation` example (below) is the one place a student project ships with it.
 - CPU, memory, and GPU are set per season.
 - `SANDBOX_GPU_SLOTS_PER_DEVICE` defaults to 1, so a device is exclusive unless the operator chooses to share it.
+
+## Imitation example
+
+`environments/skirmish_crane/examples/imitation/` is a published worked example (branch `examples/skirmish_crane/imitation`) in which a teacher agent's choices train a small PyTorch attention policy. It came from the course's imitation learning assignment and was adapted to the platform's example layout.
+
+- **Learner.** `agent.py`, `encoder.py`, and `imitation_model.py` form the submitted agent. It loads `imitation-policy.pt` beside it and plays on one CPU thread. `routes.py` supports the README's route-cost exercise and is unused until a student adds that feature.
+- **Experiment.** `imitation/` holds the offline collect, train, and evaluate scripts, run as `python -m imitation.<script>`. They write to `runs/`, which the example's `.gitignore` excludes. The learner never imports them.
+- **Stand-in teacher.** `teacher.py` and `blocks.py` are verbatim copies of the published Banner example's `agent.py` and `blocks.py`, so the branch runs before a student brings their own agent. The duplication is deliberate: compose overlays one example directory, and the copies need not track later Banner changes.
+- **Season.** `season.json` carries the Season 4 parameters Banner was built for. Under the default parameters Banner loses every seat-0 match against Naive, which makes a poor teacher.
+- **Torch pin.** `requirements.extra.txt` adds `torch==2.14.1`, the same pin [Getting Started](../docs/students/getting-started.md#optional-use-pytorch) asks for.
+- **Tests.** `tests/test_imitation.py` covers the model's padding and ordering invariance, checkpoint and record validation, mirrored observations, collector isolation, a full match by the shipped learner, and a two-seed collect and train run.
+
+Any change to the encoder's features, and so to its `VERSION`, needs `imitation-policy.pt` regenerated, or the shipped-learner test fails. From the repository root:
+
+```console
+uv run python scripts/compose.py skirmish_crane imitation
+cd build/examples/skirmish_crane/imitation
+uv venv .venv
+uv pip install --python .venv/Scripts/python.exe --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple --index-strategy unsafe-best-match -r requirements.txt -r requirements-dev.txt
+.venv/Scripts/python.exe -m imitation.experiment collect --episodes 10
+.venv/Scripts/python.exe -m imitation.train runs/demonstrations.jsonl
+```
+
+Then copy `imitation-policy.pt` back into the example directory and update the agreement figure quoted in its README. (On macOS or Linux the interpreter is `.venv/bin/python`.) The October 2026 model trained on 4,407 Season 4 decisions in about 40 seconds on a CPU, reached 86.9% tile agreement against a 9.6% random baseline, and won every evaluation match against Naive at under 1 ms per `act`.
+
+**CI.** An example whose `requirements.extra.txt` pins `torch` is a slow example. The `examples` job skips it, and the manually dispatched `examples-slow` job (`.github/workflows/examples-slow.yml`) installs CPU-only torch from the PyTorch wheel index, the same build the session image's cpu layer uses, and runs it. `ci.py all`, which the publish workflow's verify job runs, includes `examples-slow`, so a published slow example is always checked before release.
 
 ## Implementation choices for owner review
 

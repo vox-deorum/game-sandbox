@@ -141,7 +141,7 @@ def _template_spec(package_dir: Path, entry: Any) -> TemplateEnvironmentSpec:
     # These modules belong to individual examples, so they are checked where they ship instead of
     # being required of every composed tree for their environment.
     pyright_example_files = (
-        ("blocks.py",)
+        ("blocks.py", "teacher.py", "encoder.py", "imitation_model.py", "routes.py", "imitation/")
         if package_dir.name == "skirmish_crane"
         else ("routines.py", "routing.py", "dialogue.py")
         if package_dir.name == "three_branches"

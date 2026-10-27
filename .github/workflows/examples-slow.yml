@@ -1,0 +1,29 @@
+name: Slow examples
+
+# The examples whose requirements.extra.txt pins torch (today the Skirmish at Crane Reach imitation
+# example). Each installs CPU-only torch from the PyTorch wheel index, a large download, and its tests
+# train small models on the CPU, so the job is triggered by hand from the Actions tab (Run workflow)
+# after changing one of those examples, a template layer, or the harness. The template publish
+# workflow's verify job still runs it as part of `ci.py all`, so a published slow example is always
+# checked before release. Every other example stays in ci.yml's examples job.
+on:
+  workflow_dispatch:
+
+# Cancel a superseded manual run on the same ref.
+concurrency:
+  group: examples-slow-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LINK_MODE: copy
+
+jobs:
+  examples-slow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run python scripts/ci.py examples-slow

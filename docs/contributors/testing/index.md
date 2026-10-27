@@ -41,7 +41,7 @@ uv run python scripts/generate.py
 uv run python scripts/ci.py generated-code-fresh
 ```
 
-After changing a template layer, example, harness file, or shared template helper, run `uv run python scripts/ci.py examples` to compose and test every template.
+After changing a template layer, example, harness file, or shared template helper, run `uv run python scripts/ci.py examples` to compose and test every template. Add `examples-slow` when the change can reach a PyTorch example.
 
 ## CI job runner
 
@@ -52,7 +52,8 @@ Verification jobs expose `scripts/ci.py` entry points for local use. The Docs wo
 | `python` | Ruff, Pyright, pytest |
 | `typescript` | Biome, TypeScript checks, Vitest |
 | `generated-code-fresh` | Regenerate tracked outputs and fail on a diff |
-| `examples` | Compose every example source tree in a fresh environment and run pytest |
+| `examples` | Compose every example source tree in a fresh environment and run pytest, skipping the slow examples |
+| `examples-slow` | The same for the slow examples (those that pin `torch`), with CPU-only torch |
 | `docs` | `mkdocs build --strict` |
 | `publish-dry-run` | Build the local frontend once, stage runnable student repositories, and do not push |
 | `backend-integration` | Real Docker backend suite |
@@ -67,7 +68,7 @@ uv run python scripts/ci.py backend-integration
 uv run python scripts/ci.py frontend-e2e
 ```
 
-The last two require a running Docker daemon. The manually dispatched `compose-smoke` job additionally needs a Linux daemon, so run it from the Actions tab or under WSL.
+The last two require a running Docker daemon. The manually dispatched `compose-smoke` job additionally needs a Linux daemon, so run it from the Actions tab or under WSL. `examples-slow` is also manually dispatched in GitHub Actions, but `all` includes it, so the release gate checks it.
 
 ## Backend integration
 
@@ -113,6 +114,12 @@ uv run python scripts/ci.py examples
 ```
 
 CI requires at least one example per environment and tests each one in a fresh virtual environment.
+
+An example whose `requirements.extra.txt` pins `torch` is slow: the download is large, and its tests train small models. The `examples` job skips it, and the separate `examples-slow` job tests it with CPU-only torch from the PyTorch wheel index, the same build the session image installs on a deployment without GPUs. That job runs from the Actions tab and inside `all`:
+
+```console
+uv run python scripts/ci.py examples-slow
+```
 
 Run the publish dry run after changing release machinery. It verifies the publish-only browser bundle injection that ordinary composition intentionally omits:
 

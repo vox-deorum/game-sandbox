@@ -3,7 +3,7 @@
 Every GitHub Actions job is a single call to this script after dependency setup, so the
 workflow YAML carries triggers and caching but no logic, and a developer can reproduce
 any job with the same command (under WSL for Linux parity). The jobs map one-to-one to the
-five workflows under ``.github/workflows/``:
+six workflows under ``.github/workflows/``:
 
 ci.yml (runs on every push and pull request):
 - ``python``: ruff check, ruff format --check, pyright, pytest.
@@ -15,7 +15,12 @@ ci.yml (runs on every push and pull request):
 - ``generated-code-fresh``: regenerate, then fail if anything generated changed; also runs
   ``bump_template_version.py --check`` so the version touchpoints cannot silently drift.
 - ``examples``: compose every example, install it into a fresh venv, run its pytest; also
-  fail if any environment template layer ships no example.
+  fail if any environment template layer ships no example. Slow examples are skipped.
+
+examples-slow.yml (manually dispatched from the Actions tab):
+- ``examples-slow``: the same check for the slow examples, those whose ``requirements.extra.txt``
+  pins torch. It installs CPU-only torch from the PyTorch wheel index, a large download, and their
+  tests train small models on the CPU.
 
 e2e.yml (manually dispatched from the Actions tab, too Docker-heavy and slow for every push):
 - ``frontend-e2e``: the Docker-gated browser suite. Playwright drives Chromium against the real
@@ -42,12 +47,12 @@ docs.yml:
 - ``docs``: the strict ``mkdocs build`` that gates docs pull requests.
 
 template-publish.yml:
-- ``publish-dry-run``: compose and assemble the publish snapshots without pushing, the
-  ``verify`` job being the same ``examples`` job above.
+- ``publish-dry-run``: compose and assemble the publish snapshots without pushing. The
+  workflow's ``verify`` job runs ``all`` below, which includes both examples jobs.
 
-``all`` runs every non-Docker job above in order (ci.yml minus its Docker job, plus the docs
-build and the publish dry run), which is what a contributor runs before pushing a branch or
-cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration``, ``frontend-e2e``, and
+``all`` runs every non-Docker job above in order (ci.yml minus its Docker job, plus the slow
+examples, the docs build, and the publish dry run), which is what a contributor runs before pushing
+a branch or cutting a ``template-v<N>`` tag; the Docker-gated ``backend-integration``, ``frontend-e2e``, and
 ``compose-smoke`` jobs are run separately. ``check`` and ``test`` are narrower convenience aggregates wired to
 ``npm run check`` / ``npm run test``.
 """
@@ -75,6 +80,7 @@ from _paths import (
     REPO_ROOT,
     SCHEMA_DIR,
     SCHEMA_FILES,
+    env_examples_dir,
 )
 
 _NPM = "npm.cmd" if sys.platform == "win32" else "npm"
@@ -532,26 +538,38 @@ def job_generated_code_fresh() -> None:
     _run(["uv", "run", "python", "scripts/bump_template_version.py", "--check"])
 
 
-def job_examples() -> None:
+# The PyTorch CPU wheel index, the same one the session image's cpu platform layer installs from
+# (backend/images/session-base/deps-v1/requirements.platform.cpu.txt). A plain `torch==X` pin also
+# matches the index's `X+cpu` build, so slow examples install CPU-only torch without the CUDA
+# libraries PyPI's Linux wheel pulls in.
+_TORCH_CPU_INDEX = [
+    "--index-url",
+    "https://download.pytorch.org/whl/cpu",
+    "--extra-index-url",
+    "https://pypi.org/simple",
+    "--index-strategy",
+    "unsafe-best-match",
+]
+
+
+def _is_slow_example(env: str, name: str) -> bool:
+    """Return whether an example needs PyTorch, which puts it in the slow ``examples-slow`` tier.
+
+    The example's own ``requirements.extra.txt`` is the only registry, since the torch download and
+    the CPU training in its tests are what make it slow.
+    """
+    from compose import _requirement_name
+
+    extra = env_examples_dir(env) / name / "requirements.extra.txt"
+    if not extra.is_file():
+        return False
+    return any(_requirement_name(line) == "torch" for line in extra.read_text(encoding="utf-8").splitlines())
+
+
+def _check_examples(pairs: list[tuple[str, str]], *, torch_cpu: bool) -> None:
+    """Compose each example, install it into a fresh venv, run its pytest, and type-check it."""
     from _envs import discover_environments
-    from compose import compose_example, list_envs, list_examples
-
-    pairs = list_examples()
-    if not pairs:
-        print("no examples to compose")
-        return
-
-    # Every environment layer must ship at least one example: a worked strategy that reads the
-    # observation through the helper module, and the proof its env layer composes and runs end to
-    # end in a fresh virtualenv (the bare template ships a naive starting agent, not a worked one).
-    envs_with_examples = {env for env, _ in pairs}
-    missing = [env for env in list_envs() if env not in envs_with_examples]
-    if missing:
-        raise SystemExit(
-            f"environment template layer(s) {missing} ship no example; every env layer must "
-            f"have at least one colocated example under environments/<env>/examples/<name>/ "
-            f"to prove it composes."
-        )
+    from compose import compose_example
 
     specs = {env_id: discovered.spec for env_id, discovered in discover_environments().items()}
 
@@ -568,7 +586,8 @@ def job_examples() -> None:
         reqs = ["-r", str(out_dir / "requirements.txt")]
         if (out_dir / "requirements-dev.txt").exists():
             reqs += ["-r", str(out_dir / "requirements-dev.txt")]
-        _run(["uv", "pip", "install", "--python", str(python), *reqs])
+        index = _TORCH_CPU_INDEX if torch_cpu else []
+        _run(["uv", "pip", "install", "--python", str(python), *index, *reqs])
         _run([str(python), "-m", "pytest", "-q"], cwd=out_dir)
 
         # Type-check the composed sandbox modules a spec has opted in, catching drift between the
@@ -593,6 +612,45 @@ def job_examples() -> None:
             }
             (out_dir / "pyrightconfig.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
             _run(["uv", "run", "pyright", "-p", str(out_dir)])
+
+
+def job_examples() -> None:
+    from compose import list_envs, list_examples
+
+    pairs = list_examples()
+    if not pairs:
+        print("no examples to compose")
+        return
+
+    # Every environment layer must ship at least one example: a worked strategy that reads the
+    # observation through the helper module, and the proof its env layer composes and runs end to
+    # end in a fresh virtualenv (the bare template ships a naive starting agent, not a worked one).
+    # A slow example still counts, since examples-slow proves it composes.
+    envs_with_examples = {env for env, _ in pairs}
+    missing = [env for env in list_envs() if env not in envs_with_examples]
+    if missing:
+        raise SystemExit(
+            f"environment template layer(s) {missing} ship no example; every env layer must "
+            f"have at least one colocated example under environments/<env>/examples/<name>/ "
+            f"to prove it composes."
+        )
+
+    fast = [pair for pair in pairs if not _is_slow_example(*pair)]
+    skipped = [f"{env}/{name}" for env, name in pairs if _is_slow_example(env, name)]
+    if skipped:
+        print(f"skipping slow example(s) {skipped}; run `ci.py examples-slow` for them", flush=True)
+    _check_examples(fast, torch_cpu=False)
+
+
+def job_examples_slow() -> None:
+    """The PyTorch examples: CPU-only torch is a large download and their tests train small models."""
+    from compose import list_examples
+
+    slow = [pair for pair in list_examples() if _is_slow_example(*pair)]
+    if not slow:
+        print("no slow examples to compose")
+        return
+    _check_examples(slow, torch_cpu=True)
 
 
 def job_docs() -> None:
@@ -624,6 +682,7 @@ def job_all() -> None:
     job_typescript()
     job_generated_code_fresh()
     job_examples()
+    job_examples_slow()
     job_docs()
     job_publish_dry_run()
 
@@ -650,6 +709,7 @@ _JOBS = {
     "frontend-e2e": job_frontend_e2e,
     "generated-code-fresh": job_generated_code_fresh,
     "examples": job_examples,
+    "examples-slow": job_examples_slow,
     "docs": job_docs,
     "publish-dry-run": job_publish_dry_run,
     "all": job_all,

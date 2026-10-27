@@ -16,7 +16,7 @@ from .engine import Match, MatchConfig, Order
 from .env import CAPTURE_TARGET_BOUNDS, ROUND_CAP_BOUNDS, SEAT_PLAN_SPECS, default_action, make_env
 
 ENV_ID = "skirmish_crane"
-PUBLISHED_EXAMPLES = ("banner",)
+PUBLISHED_EXAMPLES = ("banner", "imitation")
 
 SKIRMISH_SEAT_PLANS = tuple(
     SeatPlan(key=key, title=title, seats=tuple(SeatDeclaration(players=players) for players in seats))
