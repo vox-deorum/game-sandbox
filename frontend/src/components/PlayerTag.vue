@@ -1,8 +1,7 @@
 <!--
-  A compact player id ("P7") wherever the host chrome names a player: chat rows, decision rows, and
-  the replay thread. When the mounted renderer reports an in-game name for the player, the id becomes a
-  tooltip trigger that shows that name, and hovering or focusing it asks the renderer to highlight the
-  player's figure. Without a name it is plain text, exactly as before.
+  A compact player id ("P7") wherever the host chrome names a player: chat rows and decision rows.
+  When the mounted renderer reports an in-game name for the player, the id becomes a tooltip trigger
+  that shows that name, and hovering or focusing it asks the renderer to highlight the player's figure. Without a name it is plain text, exactly as before.
 -->
 <script setup lang="ts">
 import { computed, onBeforeUnmount } from 'vue'

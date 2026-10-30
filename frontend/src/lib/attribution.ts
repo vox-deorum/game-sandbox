@@ -50,7 +50,7 @@ function blindAgentLabel(submissionId: string, anonymousNumbers?: Record<string,
  * anonymous viewer (`ctx.viewerId === undefined`) must never match a header entry that also carries no
  * `user` (schema-optional, absent on some agent players and on older recordings), `undefined ===
  * undefined` is not "the same person," so the exemption below fails closed rather than granting an
- * anonymous viewer somebody else's identity. Chat and the replay thread also use it to color the
+ * anonymous viewer somebody else's identity. The chat panel also uses it to color the
  * viewer's own sender labels.
  */
 export function isViewerOwned(player: Player, ctx: AttributionContext): boolean {

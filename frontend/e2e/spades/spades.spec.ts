@@ -414,14 +414,14 @@ test('Spades watchers see complete chat live and in replay', async ({
       }),
     ).toBeVisible()
 
-    // The replay merges decisions and chat into one "Game thread"; both messages rode tick 0, where the
-    // replay opens, so they show at once, interleaved with the tick's decision and still read-only.
-    const replayThread = page.getByRole('group', { name: 'Game thread' })
-    await expect(replayThread.getByText(BROADCAST)).toBeVisible()
-    await expect(replayThread.getByText(TARGETED)).toBeVisible()
-    await expect(replayThread.getByText('broadcast')).toBeVisible()
-    await expect(replayThread.getByText('to P2')).toBeVisible()
-    await expect(replayThread.getByRole('textbox')).toHaveCount(0)
+    // Both messages rode tick 0, where the replay opens, so the replay's chat log shows them at once,
+    // still read-only.
+    const replayChat = page.getByRole('group', { name: 'Chat log' })
+    await expect(replayChat.getByText(BROADCAST)).toBeVisible()
+    await expect(replayChat.getByText(TARGETED)).toBeVisible()
+    await expect(replayChat.getByText('broadcast')).toBeVisible()
+    await expect(replayChat.getByText('to P2')).toBeVisible()
+    await expect(replayChat.getByRole('textbox')).toHaveCount(0)
 
     // Navigate directly to the now-ended session page (not the replay viewer above): SessionPage's
     // hydrateRecording path builds the chat log straight from the parsed recording rather than the live

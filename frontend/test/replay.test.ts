@@ -1,5 +1,5 @@
 import type { StepState } from '@game-sandbox/schema'
-import { fireEvent, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { RendererContext } from '../src/renderers/types.js'
@@ -1135,6 +1135,24 @@ describe('ReplayPage', () => {
     expect(screen.getByText('cover the king')).toBeInTheDocument()
     // The targeted line names its recipient by seat, so a same-labelled roster stays unambiguous.
     expect(badgeTexts(view.container)).toContain('to P3')
+
+    // Chat and decisions stay apart, as on the live page: the messages fill the chat log alone, and the
+    // decisions live in their own disclosure below the stage.
+    const chat = screen.getByRole('group', { name: 'Chat log' })
+    expect(within(chat).getByText('cover the king')).toBeInTheDocument()
+    expect(chat.querySelector('.decision-log')).toBeNull()
+    const decisionDisclosure = screen
+      .getByText('Decision log', { selector: 'summary' })
+      .closest('details')
+    expect(decisionDisclosure?.querySelector('.decision-log')).not.toBeNull()
+    expect(decisionDisclosure?.querySelector('.chat-panel')).toBeNull()
+
+    // Space on the focused disclosure summary belongs to the disclosure, not the stage transport.
+    await fireEvent.keyDown(stage, { key: 'Home' })
+    const decisionSummary = screen.getByText('Decision log', { selector: 'summary' })
+    await fireEvent.keyDown(decisionSummary, { key: ' ' })
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(drawn.at(-1)?.tick).toBe(0)
 
     // Home empties it again, and a replay never offers a composer.
     await fireEvent.keyDown(stage, { key: 'Home' })

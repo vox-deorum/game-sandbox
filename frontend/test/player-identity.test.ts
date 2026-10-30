@@ -1,7 +1,7 @@
 // The player identity feature (see plans/player-identity.md): the renderer-supplied player profiles
 // (in-game names and teams) and highlight that flow through usePlayerIdentity into PlayerTag, the
-// shared senderIdentity tone and label helper, the recipient badge, and the chat and thread surfaces
-// that consume both.
+// shared senderIdentity tone and label helper, the recipient badge, and the chat and decision-log
+// surfaces that consume both.
 import type { RecordingHeader, StepState } from '@game-sandbox/schema'
 import type { EnvironmentMeta } from '@game-sandbox/schema/environment'
 import { mount } from '@vue/test-utils'
@@ -10,7 +10,6 @@ import { defineComponent, h, nextTick, ref, shallowRef, type VNode } from 'vue'
 
 import ChatPanel from '../src/components/ChatPanel.vue'
 import DecisionLog from '../src/components/DecisionLog.vue'
-import GameThread from '../src/components/GameThread.vue'
 import PlayerTag from '../src/components/PlayerTag.vue'
 import { providePlayerIdentity, sharedHighlight } from '../src/composables/usePlayerIdentity.js'
 import { useRendererMount } from '../src/composables/useRendererMount.js'
@@ -290,47 +289,10 @@ describe('ChatPanel with a renderer identity', () => {
   })
 })
 
-describe('GameThread with a renderer identity', () => {
-  it("names message senders and colors the viewer's own and allied rows", () => {
-    const profiles = {
-      player_0: { team: 'red' },
-      player_1: { name: 'S0_footman_1', team: 'blue' },
-      player_2: { team: 'red' },
-    }
-    const { wrapper } = mountInsideProvider(profiles, () =>
-      h(GameThread, {
-        decisions: [
-          { tick: 1, player: 'player_1', action: 'move' },
-          { tick: 2, player: 'player_2', action: 'wait' },
-        ],
-        chat: [
-          { tick: 1, from: 'player_1', to: null, text: 'the well is dry' },
-          { tick: 2, from: 'player_2', to: 'player_1', text: 'try the mill' },
-          { tick: 2, from: 'player_0', to: 'player_2', text: 'on my way' },
-        ],
-        currentTick: 2,
-        players: PLAYERS,
-        viewerPlayers: ['player_2'],
-      }),
-    )
-
-    const from = wrapper.findAll('.thread-from')
-    expect(from[0]?.text()).toBe('S0_footman_1')
-    expect(from[1]?.text()).toBe('dev')
-    expect(from[0]?.classes()).toContain('thread-from--other')
-    expect(from[1]?.classes()).toContain('thread-from--own')
-    // player_0 shares the viewer's red team, so it reads as an ally.
-    expect(from[2]?.classes()).toContain('thread-from--ally')
-  })
-})
-
 describe('decision rows with a renderer identity', () => {
-  it('turns the GameThread and DecisionLog player cells into named tags', () => {
+  it('turns the DecisionLog player cells into named tags', () => {
     const profiles = { player_1: { name: 'S0_footman_1' } }
     const decisions = [{ tick: 1, player: 'player_1', action: 'move' }]
-    const thread = mountInsideProvider(profiles, () => h(GameThread, { decisions, chat: [] }))
-    expect(thread.wrapper.get('.thread-item--decision .player-tag button').text()).toBe('P1')
-
     const log = mountInsideProvider(profiles, () => h(DecisionLog, { entries: decisions }))
     expect(log.wrapper.get('.player-col .player-tag button').text()).toBe('P1')
   })

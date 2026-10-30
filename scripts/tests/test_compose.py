@@ -52,7 +52,7 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "sandbox" / "builtins" / "naive" / "manifest.json").is_file()
 
 
-@pytest.mark.parametrize("env", ["flappy_bird", "hearts", "skirmish_crane", "spades"])
+@pytest.mark.parametrize("env", list_envs())
 def test_composed_template_loads_every_declared_builtin(env: str):
     out = compose_template(env)
     builtin_root = out / "sandbox" / "builtins"

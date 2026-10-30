@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from '@testing-library/vue'
+import { fireEvent, render, screen, waitFor } from '@testing-library/vue'
 import { describe, expect, it } from 'vitest'
 
 import ChatPanel from '../../src/components/ChatPanel.vue'
 import type { ChatEntry } from '../../src/lib/chat.js'
 import { badgeTexts } from '../helpers/render.js'
+import { stubScrolling } from '../helpers/scroll.js'
 
 // A four-player Spades attribution map: two plain agents, the viewer's human player, and a submitted
 // agent whose ownership a blind viewer must not see.
@@ -215,6 +216,37 @@ describe('ChatPanel', () => {
     expect(screen.getByRole('option', { name: 'P1' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: 'P0' })).toBeNull()
   })
+
+  it('mounts only the messages near the viewport of a long log and follows the latest one', async () => {
+    const restore = stubScrolling()
+    try {
+      const message = (tick: number): ChatEntry => ({
+        tick,
+        from: 'player_0',
+        to: null,
+        text: `message ${tick}`,
+      })
+      const entries = Array.from({ length: 5000 }, (_, tick) => message(tick))
+      const rendered = (container: Element) => container.querySelectorAll('li.chat-entry')
+
+      // A replay seek reveals a long transcript at once: the log jumps to the latest message and mounts
+      // a bounded window, with spacers standing in for the rest.
+      const seek = render(ChatPanel, { props: { entries: entries.slice(0, 3), players: PLAYERS } })
+      await seek.rerender({ entries })
+      await waitFor(() => expect(screen.getByText('message 4999')).toBeInTheDocument())
+      expect(rendered(seek.container).length).toBeLessThan(100)
+      expect(seek.container.querySelectorAll('li.virtual-spacer')).toHaveLength(2)
+      expect(screen.queryByText('message 0')).toBeNull()
+      seek.unmount()
+
+      // A log that mounts already long (a disclosure rendered after the load) starts at its end too.
+      const mounted = render(ChatPanel, { props: { entries, players: PLAYERS } })
+      await waitFor(() => expect(screen.getByText('message 4999')).toBeInTheDocument())
+      expect(rendered(mounted.container).length).toBeLessThan(100)
+    } finally {
+      restore()
+    }
+  })
 })
 
 // Three Branches human play uses player_0 as the designated sender and compact player labels in chat.
@@ -318,7 +350,8 @@ describe('ChatPanel — Three Branches human play (step 6)', () => {
   it("renders the visitor's own pre-filtered feed, badging every line by its recipient", () => {
     // The server has already filtered this list to lines the visitor session is entitled to: broadcasts,
     // and lines to or from player_0. An npc-to-npc line is a watcher/replay-only concern and never
-    // reaches this list at all (see the GameThread coverage in gamethread.test.ts).
+    // reaches this list at all (see the replay case in replay.test.ts, "shows chat messages at or
+    // before the transport position, including targeted ones").
     const entries: ChatEntry[] = [
       { tick: 10, from: 'player_1', to: null, text: 'the well is dry' },
       { tick: 11, from: 'player_0', to: 'player_2', text: 'have you seen the miller?' },

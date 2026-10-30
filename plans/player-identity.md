@@ -1,6 +1,6 @@
 # Player Identity
 
-Status: complete and current. Crane Reach, Three Branches, and Spades ship the renderer hook, and the chat panel, the replay thread, and the decision log read it. The seat and attribution strips keep plain compact ids.
+Status: complete and current. Crane Reach, Three Branches, and Spades ship the renderer hook, and the chat panel and the decision log read it. The seat and attribution strips keep plain compact ids.
 
 ## Goal
 
@@ -14,7 +14,7 @@ The fix is one general mechanism with a per-game implementation:
 
 ## Mechanism
 
-The chat panel and the replay thread read like this:
+The chat panel reads like this:
 
 ```text
 Crane Reach, viewer controls P0 (side red)
@@ -40,7 +40,7 @@ Purity and the attribution rule apply to both profile fields: neither may identi
 
 `useRendererMount` recomputes the profiles from every relayed state and replaces the map only when some player's name or team changes, so rows that read the profiles do not recompute on every tick of a game whose profiles are fixed. It then provides the profiles, together with the highlight, to the page's chrome through `providePlayerIdentity` (`frontend/src/composables/usePlayerIdentity.ts`). Every page that mounts a renderer (session, replay, local play) gets the support with no page edits. Outside a provider, an isolated component or a jsdom test sees empty profiles and a highlight that does nothing.
 
-`PlayerTag` (`frontend/src/components/PlayerTag.vue`) renders the compact id wherever the chrome names a player: the sender id and the recipient id inside a badge of a `ChatPanel` row, the message, decision, and setup rows of `GameThread`, and the player cells of `DecisionLog`. When the renderer reports a name for that player, the id is a `UiTooltip` trigger showing it, and hovering or focusing the id highlights the player in the game frame. Hover and focus hold the highlight independently, so the pointer leaving a keyboard-focused id keeps it, and it clears only once the id is neither hovered nor focused, or the row unmounts. Without a name it is plain text.
+`PlayerTag` (`frontend/src/components/PlayerTag.vue`) renders the compact id wherever the chrome names a player: the sender id and the recipient id inside a badge of a `ChatPanel` row, and the player cells of `DecisionLog`. When the renderer reports a name for that player, the id is a `UiTooltip` trigger showing it, and hovering or focusing the id highlights the player in the game frame. Hover and focus hold the highlight independently, so the pointer leaving a keyboard-focused id keeps it, and it clears only once the id is neither hovered nor focused, or the row unmounts. Without a name it is plain text.
 
 The renderer has one highlight and the page has many tags, so `sharedHighlight` in `usePlayerIdentity.ts` arbitrates between them. Each tag requests a player under its own source, the latest request wins, and withdrawing one falls back to the newest request still standing. Hovering a second id while the first stays focused therefore moves the highlight to the hovered player and back again, and one tag can never clear another's highlight.
 
@@ -77,15 +77,15 @@ In `environments/spades/renderer/`, the profiles carry teams only: `player_0` an
 ## Tests
 
 - The jsdom player-identity suite covers `PlayerTag` (plain text without a name; the tooltip and the highlight calls on hover and focus, cleared on leave, blur, and unmount; a focused id keeping its highlight when the pointer leaves it), `sharedHighlight` (the latest request wins, withdrawing falls back to the newest one standing, and a tag that holds nothing never clears another's), the `senderIdentity` tone cases (in-game name preferred, attribution label as fallback, own through live control or header attribution and failing closed for an anonymous viewer, ally only beside one of the viewer's own players' teams, and no own or ally senders at all for a spectator or a replay of someone else's game), and the `messageBadge` recipient cases (`broadcast`, `to you`, `to P#`, and `to you` through header attribution on a replay).
-- The chatpanel, gamethread, session, and decision-log suites read those helpers on the painted rows: every row badges by recipient, the `to P#` badge's compact id is a `PlayerTag` carrying the same tooltip and highlight as the sender's, decision-row and log player cells stay named tags, and `useRendererMount` replaces profiles only when a name or team changes and forwards the highlight. The session suite keeps the ended-session case where the owner's own senders stay colored and lines addressed to them stay badged `to you` after control drops.
+- The chatpanel, session, and decision-log suites read those helpers on the painted rows: every row badges by recipient, the `to P#` badge's compact id is a `PlayerTag` carrying the same tooltip and highlight as the sender's, decision-row and log player cells stay named tags, and `useRendererMount` replaces profiles only when a name or team changes and forwards the highlight. The session suite keeps the ended-session case where the owner's own senders stay colored and lines addressed to them stay badged `to you` after control drops.
 - Renderer tests cover Crane Reach's roster profiles over the whole roster, alive or dead (every slot named by its seat-prefixed unit id and teamed by its side), its focus priority under pointer hover, the fog and dead-unit drop, a held request taking the focus once the fog reveals its unit, dismissal clearing the focus, and the `· P#` chip title; Spades' partnership check (`player_0` paired with `player_2`, `player_1` with `player_3`, and no names reported); and Three Branches' highlighted plate stroke and its full opacity at low zoom. Three Branches' profiles echo the header's expected ids and have no dedicated test, since no test mounts that renderer.
-- The browser suite's Crane Reach journey asserts the chip title as `S0_…` or `S1_…` followed by ` · P<n>`. The Spades journey asserts the recipient badges on the human's exchanged lines, on the live panel and in the merged replay thread. The hover-to-highlight wiring needs no new journey because jsdom covers it.
+- The browser suite's Crane Reach journey asserts the chip title as `S0_…` or `S1_…` followed by ` · P<n>`. The Spades journey asserts the recipient badges on the human's exchanged lines, on the live panel and in the replay's chat log. The hover-to-highlight wiring needs no new journey because jsdom covers it.
 
 ## Files
 
 - `frontend/src/renderers/types.ts` declares the `playerProfiles` and `highlightPlayer` hooks and the `PlayerProfile` shape.
 - `frontend/src/composables/useRendererMount.ts` and `frontend/src/composables/usePlayerIdentity.ts` carry the profiles and the highlight from the renderer to the chrome.
-- `frontend/src/components/PlayerTag.vue`, `ChatPanel.vue`, `GameThread.vue`, and `DecisionLog.vue` render the surfaces.
+- `frontend/src/components/PlayerTag.vue`, `ChatPanel.vue`, and `DecisionLog.vue` render the surfaces.
 - `frontend/src/lib/chat.ts` and `frontend/src/lib/attribution.ts` hold the shared sender label, tone, and recipient badge rules.
 - `frontend/src/styles/tokens.css` defines `--color-ally`, and `frontend/src/pages/StyleguidePage.vue` shows the token on `/styleguide`.
 - The environment renderers under `environments/` implement the hook: `skirmish_crane/renderer/`, `three_branches/renderer/`, and `spades/renderer/`.

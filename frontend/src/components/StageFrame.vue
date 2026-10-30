@@ -217,8 +217,7 @@ onBeforeUnmount(() => {
 .stage-canvas.controls-idle .fullscreen-toggle:focus-visible { opacity: 1; pointer-events: auto; color: var(--color-text); }
 .stage.beside .stage-log-body { position: relative; flex: 1; min-height: 0; }
 .stage.beside .stage-log-body :deep(.decision-log),
-.stage.beside .stage-log-body :deep(.chat-panel),
-.stage.beside .stage-log-body :deep(.game-thread) { position: absolute; inset: 0; }
+.stage.beside .stage-log-body :deep(.chat-panel) { position: absolute; inset: 0; }
 .stage-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-3); padding: var(--space-6) 0; color: var(--color-text-muted); font-size: var(--text-md); }
 .overlay-spinner { width: 2rem; height: 2rem; border-radius: 50%; border: 3px solid var(--color-border); border-top-color: var(--color-accent); animation: overlay-spin var(--motion-spinner) linear infinite; }
 @keyframes overlay-spin { to { transform: rotate(360deg); } }
@@ -228,8 +227,7 @@ onBeforeUnmount(() => {
 .stage.below.landscape .below-slots :deep(.stage-log-below) { max-width: 100%; }
 .below-slots :deep(.stage-log-below summary) { cursor: pointer; padding: var(--space-2) 0; font-family: var(--font-heading); font-size: var(--text-md); }
 .below-slots :deep(.stage-log-below .decision-log) { max-height: 12rem; }
-.below-slots :deep(.stage-chat-below .chat-panel),
-.below-slots :deep(.stage-thread-below .game-thread) { max-height: 16rem; }
+.below-slots :deep(.stage-chat-below .chat-panel) { max-height: 16rem; }
 @media (max-width: 768px) {
   .stage.beside { grid-template-columns: minmax(0, 1fr); justify-items: center; }
 }

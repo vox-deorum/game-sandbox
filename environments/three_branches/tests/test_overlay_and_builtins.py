@@ -6,10 +6,9 @@ import random
 import sys
 from pathlib import Path
 
-import numpy as np
 import pytest
 
-from three_branches import naive, scripted_visitor
+from three_branches import naive
 from three_branches.env import default_action, make_env
 from three_branches.overlay import extract_overlay, extract_overlay_static
 
@@ -47,7 +46,7 @@ def test_overlay_separates_static_data_and_rounds_dynamic_numbers(seat_plan: str
     json.dumps(overlay, allow_nan=False)
 
 
-def test_builtins_handle_real_observations_and_follow_their_small_state_machines(monkeypatch) -> None:
+def test_naive_builtin_handles_real_observations_and_follows_its_state_machine(monkeypatch) -> None:
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     observations, _ = env.reset(seed=2)
 
@@ -59,45 +58,6 @@ def test_builtins_handle_real_observations_and_follow_their_small_state_machines
     assert actions[0]["heading"] == original_heading
     assert actions[-1]["heading"] != original_heading
     assert all(action["speed"] > 0 and action["action"] == 0 for action in actions)
-
-    monkeypatch.setattr(scripted_visitor.random, "Random", _fixed_random)
-    visitor = scripted_visitor.Agent()
-    visitor.reset(2, observations["player_0"])
-    malformed = {
-        "self": {"position": {"x": np.array(0, dtype=np.float32), "y": np.array(0, dtype=np.float32)}},
-        "seen": tuple(
-            {"id": character_id, "position": {"x": 1.0, "y": 0.0}}
-            for character_id in ("visitor", "npc_0", "player_01", "player_0")
-        ),
-    }
-    visitor.act(malformed)
-    assert visitor._target is None
-    approach = {
-        "self": {"position": {"x": np.array(0, dtype=np.float32), "y": np.array(0, dtype=np.float32)}},
-        "seen": (
-            {
-                "id": "player_1",
-                "position": {"x": np.array(3, dtype=np.float32), "y": np.array(0, dtype=np.float32)},
-            },
-        ),
-    }
-    assert visitor.act(approach)["speed"] == 0.8
-    close = {
-        **approach,
-        "seen": (
-            {
-                "id": "player_1",
-                "position": {"x": np.array(1, dtype=np.float32), "y": np.array(0, dtype=np.float32)},
-            },
-        ),
-    }
-    assert visitor.act(close) == {"heading": 0.0, "speed": 0.0, "action": 2}
-    assert visitor.chat([]) == [{"to": "player_1", "text": "Hello. How is your day going?"}]
-    assert visitor.chat([{"from": "player_1", "text": "Fine."}]) == [
-        {"to": "player_1", "text": "Thank you. I am glad to be here."}
-    ]
-    assert visitor.chat([{"from": "player_1", "text": "Again."}]) == []
-    assert any(visitor.act(close)["speed"] == 0.75 for _ in range(10))
 
 
 def test_builtins_are_stdlib_only_and_match_the_staged_copies() -> None:

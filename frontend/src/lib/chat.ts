@@ -1,6 +1,6 @@
 /**
- * The chat message shape and the pure helpers shared by every surface that renders messages: the live
- * ChatPanel, the merged replay GameThread, and SessionPage's dedup of the reconnect-replayed state
+ * The chat message shape and the pure helpers shared by every surface that renders messages: the
+ * ChatPanel on the live and replay pages, and SessionPage's dedup of the reconnect-replayed state
  * stream. Message identity comes from the shared schema helper, while badge policy stays here.
  */
 import type { RecordingHeader } from '@game-sandbox/schema'
@@ -22,8 +22,8 @@ export type MessageBadge =
   | { variant: 'neutral'; kind: 'to-player'; playerId: string }
 
 /**
- * The live list keys, merged thread keys, and SessionPage reconnect dedup use the same schema-owned
- * message identity as environment renderers.
+ * The live list keys and SessionPage reconnect dedup use the same schema-owned message identity as
+ * environment renderers.
  */
 export { messageKey }
 

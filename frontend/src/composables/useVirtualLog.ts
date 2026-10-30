@@ -1,6 +1,7 @@
 /**
- * Render a scrolling log and keep its active row in view. Shared by DecisionLog and GameThread, whose
- * active row is the latest tick on a live log and the scrubbed tick on a replay.
+ * Render a scrolling log and keep its active row in view. DecisionLog uses it, with the latest tick on
+ * a live log and the scrubbed tick on a replay as the active row. ChatPanel uses it with no active row,
+ * so its log follows the latest message.
  *
  * A long game logs thousands of rows (a Three Branches day is over 7,000 decisions), and mounting every
  * row with its player tag makes loading heavy and scrubbing slow. Past VIRTUAL_LOG_THRESHOLD rows the
@@ -91,34 +92,36 @@ export function useVirtualLog<T>({
     }
   }
 
-  watch(
-    [() => items().length, activeIndex, leadingRows, virtual],
-    ([count, index]) => {
-      const el = scroller.value
-      if (el === null) {
-        return
-      }
-      if (!virtual.value) {
-        // Every row exists, so center the marked one directly (best-effort: jsdom has no layout).
-        const active = el.querySelector<HTMLElement>('[data-active="true"]')
-        el.scrollTop = active === null ? el.scrollHeight : active.offsetTop - el.clientHeight / 2
-        return
-      }
-      if (listStart.value !== null) {
-        scrollMargin.value = Math.round(
-          listStart.value.getBoundingClientRect().top -
-            el.getBoundingClientRect().top +
-            el.scrollTop,
-        )
-      }
-      if (index < 0) {
-        virtualizer.value.scrollToIndex(count - 1, { align: 'end' })
-      } else {
-        virtualizer.value.scrollToIndex(index, { align: 'center' })
-      }
-    },
-    { flush: 'post' },
-  )
+  // Keep the active row (or, with none, the end) in view: once the scroll container mounts, with rows
+  // already in it, and whenever the rows or the active row change.
+  function follow(): void {
+    const count = items().length
+    const index = activeIndex()
+    const el = scroller.value
+    if (el === null) {
+      return
+    }
+    if (!virtual.value) {
+      // Every row exists, so center the marked one directly (best-effort: jsdom has no layout).
+      const active = el.querySelector<HTMLElement>('[data-active="true"]')
+      el.scrollTop = active === null ? el.scrollHeight : active.offsetTop - el.clientHeight / 2
+      return
+    }
+    if (listStart.value !== null) {
+      scrollMargin.value = Math.round(
+        listStart.value.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop,
+      )
+    }
+    if (index < 0) {
+      virtualizer.value.scrollToIndex(count - 1, { align: 'end' })
+    } else {
+      virtualizer.value.scrollToIndex(index, { align: 'center' })
+    }
+  }
+
+  watch([scroller, () => items().length, activeIndex, leadingRows, virtual], follow, {
+    flush: 'post',
+  })
 
   return { scroller, listStart, rows, padding, measure, virtual }
 }

@@ -1,9 +1,9 @@
 <!--
   The replay viewer: load a recording by URL, then play, pause, step, and scrub it through the same
   renderer live play uses, sharing the session page's pieces (the renderer mount, the decision log, the
-  run metadata, and the pin toggle). The recording is fetched as JSONL and parsed in the browser (the
-  schema package's Ajv reader is Node-only); a header version this viewer does not understand becomes a
-  friendly "needs a newer viewer" message.
+  chat panel, the run metadata, and the pin toggle). The recording is fetched as JSONL and parsed in the
+  browser (the schema package's Ajv reader is Node-only); a header version this viewer does not
+  understand becomes a friendly "needs a newer viewer" message.
 
   The stage is draw-only by construction: the renderer mounts with no sendAction and no controlled
   players. The transport is fully keyboard operable from the stage region (space toggles play, the arrows
@@ -29,10 +29,10 @@ import {
   type RecordingSummary,
   watchAgentNumbers,
 } from '../api/client.js'
+import ChatPanel from '../components/ChatPanel.vue'
 import DecisionLog from '../components/DecisionLog.vue'
 import ExperimentTabs from '../components/ExperimentTabs.vue'
 import GameOverCard from '../components/GameOverCard.vue'
-import GameThread from '../components/GameThread.vue'
 import ReplayTransport from '../components/ReplayTransport.vue'
 import SeatAttribution from '../components/SeatAttribution.vue'
 import RunEndCause from '../components/RunEndCause.vue'
@@ -151,14 +151,13 @@ const attributionState = computed(() =>
 )
 const blindAttribution = computed(() => presentsMasked(attributionState.value))
 
-// The panel mounts only for a recording that actually carries messages (a messaging session); it is
-// read-only, with no session row to consult. It shows the entries whose tick is at or before the
+// The chat panel mounts only for a recording that actually carries messages (a messaging session); it
+// is read-only, with no session row to consult. It shows the entries whose tick is at or before the
 // transport position, matching the decision log's current-tick highlight. Targeted messages a
 // live spectator never saw are shown here on purpose; that is the recording contract.
 const hasChat = computed(() => chatLog.value.length > 0)
 // The log is in tick order, so the visible messages are a prefix of it. Counting them separately means
-// the sliced list (and the thread woven from it) changes only when a message crosses the scrubber,
-// not on every tick.
+// the sliced list changes only when a message crosses the scrubber, not on every tick.
 const visibleChatCount = computed(() => {
   const tick = replayState.value.tick
   if (tick === null) return 0
@@ -176,6 +175,24 @@ const visibleChatCount = computed(() => {
   return low
 })
 const visibleChat = computed<ChatEntry[]>(() => chatLog.value.slice(0, visibleChatCount.value))
+
+// The chat panel and decision log each render in two places (beside or below the stage), so their
+// bindings live here once.
+const chatProps = computed(() => ({
+  players: header.value?.players,
+  blind: blindAttribution.value,
+  masked: viewerMasked.value,
+  viewerId: viewerId.value,
+  anonymousNumbers: anonymousNumbers.value,
+}))
+const decisionLogProps = computed(() => ({
+  entries: decisions.value,
+  currentTick: replayState.value.tick,
+  llmCalls: showDecisionLlmCost.value ? tickLlmCalls.value : undefined,
+  setupLlmCalls: showDecisionLlmCost.value ? setupLlmCalls.value : undefined,
+  llmUnavailable: showDecisionLlmCost.value && llmTelemetryUnavailable.value,
+  llmPending: showDecisionLlmCost.value && llmPending.value,
+}))
 
 // The decision log sits beside a portrait canvas and below a landscape one until the viewport is wide
 // enough to hold both (the same rule as live; see useStageLayout).
@@ -240,10 +257,12 @@ const metadataItems = computed(() => [
   { label: 'Created', value: formatDate(listingEntry.value?.created_at) },
 ])
 
-// A key pressed on a control inside the stage (the fullscreen toggle or the floating transport bar)
-// belongs to that control's own handler, not the stage transport: buttons and the scrubber thumb
-// manage their own Space/Arrow presses. Only the stage region itself owns the transport keys.
-const STAGE_INTERACTIVE_SELECTOR = 'button, input, textarea, select, [role="button"], [role="slider"]'
+// A key pressed on a control inside the stage (the fullscreen toggle, the floating transport bar, or a
+// log disclosure's summary) belongs to that control's own handler, not the stage transport: buttons,
+// summaries, and the scrubber thumb manage their own Space/Arrow presses. Only the stage region itself
+// owns the transport keys.
+const STAGE_INTERACTIVE_SELECTOR =
+  'button, input, textarea, select, summary, [role="button"], [role="slider"]'
 
 // While the game-over card is up it owns the keyboard, so the transport stands down: a stray Space
 // shouldn't restart playback behind the card. Escape from the stage still dismisses it (the card's own
@@ -459,67 +478,25 @@ onMounted(async () => {
       <template #fullscreen-controls>
         <ReplayTransport v-if="transport !== null" :state="replayState" :transport="transport" />
       </template>
-      <!-- A replay scrubs the whole game, so the decision log and chat merge into one thread: every
-           tick's decision (the whole game, ahead-of-scrubber ticks dimmed) with its messages woven in
-           as the scrubber reveals them. Without messaging there is nothing to merge, so the decision
-           log keeps its table. -->
+      <!-- The same split as the live session: when the recording carries messages the chat takes the
+           whole column and the decision log drops below the stage as a collapsible disclosure;
+           without messages the decision log keeps the column. -->
       <template #beside-log>
-        <GameThread
-          v-if="hasChat"
-          :decisions="decisions"
-          :chat="visibleChat"
-          :current-tick="replayState.tick"
-          :players="header?.players"
-          :blind="blindAttribution"
-          :masked="viewerMasked"
-          :viewer-id="viewerId"
-          :anonymous-numbers="anonymousNumbers"
-          :llm-calls="tickLlmCalls"
-          :setup-llm-calls="setupLlmCalls"
-          :llm-unavailable="llmTelemetryUnavailable"
-          :llm-pending="llmPending"
-        />
-        <DecisionLog
-          v-else
-          :entries="decisions"
-          :current-tick="replayState.tick"
-          :llm-calls="showDecisionLlmCost ? tickLlmCalls : undefined"
-          :setup-llm-calls="showDecisionLlmCost ? setupLlmCalls : undefined"
-          :llm-unavailable="showDecisionLlmCost && llmTelemetryUnavailable"
-          :llm-pending="showDecisionLlmCost && llmPending"
-        />
+        <ChatPanel v-if="hasChat" :entries="visibleChat" v-bind="chatProps" />
+        <DecisionLog v-else v-bind="decisionLogProps" />
       </template>
       <template #below-log>
-        <details
-          v-if="!logBeside && hasChat"
-          class="stage-log-below stage-thread-below"
-        >
-          <summary>Game thread</summary>
-          <GameThread
-            :decisions="decisions"
-            :chat="visibleChat"
-            :current-tick="replayState.tick"
-            :players="header?.players"
-            :blind="blindAttribution"
-            :masked="viewerMasked"
-            :viewer-id="viewerId"
-            :anonymous-numbers="anonymousNumbers"
-            :llm-calls="tickLlmCalls"
-            :setup-llm-calls="setupLlmCalls"
-            :llm-unavailable="llmTelemetryUnavailable"
-            :llm-pending="llmPending"
-          />
-        </details>
-        <details v-else-if="!logBeside" class="stage-log-below">
+        <details v-if="logBeside && hasChat" class="stage-log-below stage-decision-below">
           <summary>Decision log</summary>
-          <DecisionLog
-            :entries="decisions"
-            :current-tick="replayState.tick"
-            :llm-calls="showDecisionLlmCost ? tickLlmCalls : undefined"
-            :setup-llm-calls="showDecisionLlmCost ? setupLlmCalls : undefined"
-            :llm-unavailable="showDecisionLlmCost && llmTelemetryUnavailable"
-            :llm-pending="showDecisionLlmCost && llmPending"
-          />
+          <DecisionLog v-bind="decisionLogProps" />
+        </details>
+        <details v-if="!logBeside" class="stage-log-below">
+          <summary>Decision log</summary>
+          <DecisionLog v-bind="decisionLogProps" />
+        </details>
+        <details v-if="!logBeside && hasChat" class="stage-log-below stage-chat-below">
+          <summary>Chat</summary>
+          <ChatPanel :entries="visibleChat" v-bind="chatProps" />
         </details>
       </template>
     </StageFrame>

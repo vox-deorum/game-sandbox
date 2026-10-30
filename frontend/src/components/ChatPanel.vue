@@ -15,6 +15,9 @@
   The sender's compact player id is a `PlayerTag` that names and highlights the player in the game
   frame.
 
+  A long game can carry thousands of messages, so past the shared threshold the list mounts only the
+  rows near the viewport, with spacers standing in for the rest (see useVirtualLog).
+
   When sendable, the composer counts the draft in Unicode code points through the same shared counter
   the relay's cap pre-gate uses, so the browser can never disagree with the harness about what fits.
 -->
@@ -25,6 +28,7 @@ import { computed, ref, useId, watch } from 'vue'
 
 import type { LiveChatPolicy } from '../composables/useLiveChat.js'
 import { usePlayerIdentity } from '../composables/usePlayerIdentity.js'
+import { useVirtualLog } from '../composables/useVirtualLog.js'
 import { type ChatEntry, messageBadge, messageKey, senderIdentity } from '../lib/chat.js'
 import { formatPlayer } from '../lib/format.js'
 import PlayerTag from './PlayerTag.vue'
@@ -80,9 +84,9 @@ const attributionCtx = computed(() => ({
 const identity = usePlayerIdentity()
 
 // Decorate once so the template reads each derived field without recomputing per binding. Identity and
-// the badge come from the shared chat helpers, so this panel and the merged replay thread key and badge
-// a message identically. The player (the compact player id) rides alongside the sender label, so a
-// roster of same-labelled agents (three "Naive agent" players in a default Spades table) stays legible.
+// the badge come from the shared chat helpers, which key and badge a message the same way everywhere.
+// The player (the compact player id) rides alongside the sender label, so a roster of same-labelled
+// agents (three "Naive agent" players in a default Spades table) stays legible.
 const rows = computed(() =>
   props.entries.map((entry) => ({
     key: messageKey(entry),
@@ -162,26 +166,34 @@ watch(
   { immediate: true },
 )
 
-// Follow the latest message. Best-effort — jsdom has no layout so this is a no-op there, but it never
-// throws (mirrors DecisionLog's scroll-follow).
-const scroller = ref<HTMLElement | null>(null)
-watch(
-  () => props.entries.length,
-  () => {
-    const el = scroller.value
-    if (el !== null) {
-      el.scrollTop = el.scrollHeight
-    }
-  },
-  { flush: 'post' },
-)
+// Follow the latest message: a chat log has no active row, so the shared log scroll keeps its end in view.
+const { scroller, listStart, rows: visibleRows, padding, measure, virtual } = useVirtualLog({
+  items: () => rows.value,
+  key: (row) => row.key,
+  activeIndex: () => -1,
+  leadingRows: () => 0,
+  estimateSize: () => 56,
+})
 </script>
 
 <template>
   <div class="chat-panel" :aria-label="sendable ? 'Chat' : 'Chat log'" role="group">
     <div class="chat-scroll" ref="scroller">
       <ul v-if="rows.length > 0" class="chat-list">
-        <li v-for="row in rows" :key="row.key" class="chat-entry">
+        <li
+          v-if="virtual"
+          ref="listStart"
+          class="virtual-spacer"
+          aria-hidden="true"
+          :style="{ height: `${padding.top}px` }"
+        />
+        <li
+          v-for="{ index, item: row } in visibleRows"
+          :key="row.key"
+          :ref="measure"
+          :data-index="index"
+          class="chat-entry"
+        >
           <div class="chat-meta">
             <PlayerTag class="chat-player" :player-id="row.from" />
             <span class="chat-from" :class="`chat-from--${row.sender.tone}`">{{ row.sender.label }}</span>
@@ -194,6 +206,12 @@ watch(
           </div>
           <p class="chat-text">{{ row.text }}</p>
         </li>
+        <li
+          v-if="virtual"
+          class="virtual-spacer"
+          aria-hidden="true"
+          :style="{ height: `${padding.bottom}px` }"
+        />
       </ul>
       <p v-else class="chat-empty">No messages yet.</p>
     </div>
@@ -251,7 +269,10 @@ watch(
   border-top: 1px solid var(--color-border);
 }
 
-.chat-entry:first-child {
+/* The first row has no rule above it. In a long log the top spacer leads the list, so the first row is
+   the one right after an empty spacer. */
+.chat-entry:first-child,
+.virtual-spacer:first-child + .chat-entry[data-index='0'] {
   border-top: none;
 }
 

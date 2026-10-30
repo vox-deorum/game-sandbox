@@ -1,7 +1,7 @@
 /**
  * How the host chrome reaches the mounted renderer's player identity: the player profiles it reports
  * (in-game names and teams) and its view-only highlight. `useRendererMount` provides it, so every page
- * that mounts a renderer gets it, and the chat panel, the decision log, and the replay thread inject it
+ * that mounts a renderer gets it, and the chat panel and the decision log inject it
  * through `PlayerTag` and the shared sender label. Outside a provider (an isolated component or a jsdom
  * test) the identity is empty: no profiles and a highlight that does nothing.
  */

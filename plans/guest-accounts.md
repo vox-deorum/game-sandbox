@@ -28,7 +28,7 @@ The same name masking now applies to visitors who are not signed in: real user n
 - frontend/src/components/ui/UiToast.vue, frontend/src/components/AppShell.vue
 - frontend/src/lib/anonymity.ts, frontend/src/lib/attribution.ts
 - frontend/src/pages/EnvironmentPage.vue, frontend/src/components/WatchAgentPicker.vue, frontend/src/components/SessionRatings.vue, frontend/src/pages/AgentProfilePage.vue, frontend/src/components/SubmitAgentForm.vue
-- frontend/src/components/LeaderboardBoards.vue, frontend/src/components/GamesTable.vue, frontend/src/pages/ReplaysPage.vue, frontend/src/pages/ReplayPage.vue, frontend/src/pages/SessionPage.vue, frontend/src/components/PlayerAttribution.vue, SeatAttribution.vue, GameOverCard.vue, ChatPanel.vue, GameThread.vue
+- frontend/src/components/LeaderboardBoards.vue, frontend/src/components/GamesTable.vue, frontend/src/pages/ReplaysPage.vue, frontend/src/pages/ReplayPage.vue, frontend/src/pages/SessionPage.vue, frontend/src/components/PlayerAttribution.vue, SeatAttribution.vue, GameOverCard.vue, ChatPanel.vue
 - frontend/src/components/admin/CreateUserDialog.vue, frontend/src/pages/UsersAdminPage.vue, frontend/src/components/admin/UsersTable.vue
 - frontend/src/pages/StyleguidePage.vue, backend and frontend tests
 - docs/specs/identity.md, docs/specs/frontend.md
