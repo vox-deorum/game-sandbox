@@ -22,7 +22,11 @@ Every plan has `seat_0`, the cast, and `seat_1`, the visitor.
 
 The visitor is identified by `id == "player_0"`. Canonical ids match `player_(0|[1-9][0-9]*)`; leading-zero and legacy aliases are invalid. No observation carries a visitor flag.
 
-The cast seat accepts one submission and constructs a separate instance for every NPC. The visitor seat is restricted to `scripted_visitor`; a human plays its `player_0` in live sessions and the builtin plays it in automated runs. The builtins are `naive` (Naive), the cast baseline, and `scripted_visitor` (Scripted visitor), which wanders, approaches NPCs, and offers canned lines. Seat order does not change the game.
+The cast seat accepts one submission and constructs a separate instance for every NPC. The visitor seat is restricted to `scripted_visitor`; a human plays its `player_0` in live sessions and the builtin plays it in automated runs. The builtins are `naive` (Naive), the cast baseline, and `scripted_visitor` (Scripted visitor), the visitor baseline. Seat order does not change the game.
+
+`scripted_visitor` makes short outings in one of three modes: activities, sightseeing, and social visits. It starts with a uniformly chosen mode and occasionally switches during the day. Activities choose uniformly among available board, bench, pump, and shrine destinations, then choose a place with a preference for nearby and less recently visited stops. The visitor uses only its intended prop after checking reach, visibility, and availability. Sightseeing visits market stalls, public landmarks, or the outside of the inn and shed, then pauses to look around. Social visits approach a seen or heard villager, wave, offer one canned greeting, linger, and send at most one reply while the same person remains in hearing range. When no villager is available, a social outing visits a sightseeing destination instead.
+
+Travel to every destination has a deadline, and a visit that has begun runs to its own end. The visitor chooses among 16 headings with a short swept-body clearance check, a preference for roads and paths, and a small memory of recently crossed cells. It tries a brief escape turn after stalled movement and abandons a destination after sustained lack of progress. It stays outdoors and has no route graph, path queue, or global search, so it can abandon destinations across a difficult channel or wall. If a push leaves it on doorway or interior ground, it may cross that ground to get back outdoors. If there is no suitable destination, it tries a short stroll or turns in place before retrying. Random choices happen at destination, mode, steering, and visit decisions, while the destination remains stable between them.
 
 ## Gameplay parameters
 
@@ -48,7 +52,7 @@ Each row is a declared `META.presets` entry, available in web dialogs and throug
 
 ## Match flow
 
-`reset(seed)` supplies the session seed and first observation through `reset(seed, observation)`. The seed generates the village, and a reset with no seed builds the default village. The engine draws no randomness. Shipped production builtins use fresh entropy, so repeated live builtin sessions with the same seed need not match. A cast agent that needs a character-specific stream may use `me.rng(observation, session_seed)` during reset and perform layout work there rather than inside a decision.
+`reset(seed)` supplies the session seed and first observation through `reset(seed, observation)`. The seed generates the village, and a reset with no seed builds the default village. The engine draws no randomness. The shipped builtins ignore the session seed: each builtin constructs a fresh `random.Random()` from system entropy on every reset, so repeated automated sessions on the same seed share a village but not a visitor day. A cast agent that needs a character-specific stream may use `me.rng(observation, session_seed)` during reset and perform layout work there rather than inside a decision.
 
 Characters begin in the [ruleset's initial poses](ruleset.md#characters). Props begin unheld in their start state. A fixed layout and action sequence replay identically on the same build.
 
@@ -204,11 +208,11 @@ The implementation includes the factory, default action, overlay extractor, regi
 
 `layout.line_of_sight` walks the ground grid and only wall cells block it. `can_step` checks a straight static-map step against impassable ground, catalog prop and scenery shapes, and the boundary, ignoring characters. `walkable` checks whether a body can stand at a point. Both use the engine's grid and catalog shapes.
 
-No helper chooses a behavioral destination or companion. `props.usable` mirrors the engine's pre-action prop candidate, but no controller or pathfinder is published. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. The `neighbor` worked example, Season 5's starter template, owns routing.
+No helper chooses a behavioral destination or companion. `props.usable` mirrors the engine's pre-action prop candidate, but no controller or pathfinder is published. The scripted visitor's outdoor steering is local and collision-aware, not a pathfinder, and its destinations remain its own choice. `observation["village"]` supplies the complete static map, and `walkable`, `can_step`, and `ground_at` provide a route planner's node test, edge test, and edge cost. The `neighbor` worked example, Season 5's starter template, owns routing.
 
 `me.rng` seeds `random.Random` through a stable hash of session seed and player id. The same pair yields the same stream, different ids yield different streams, and streams are stable across runs. `people.is_visitor` accepts only `player_0`; `people.is_npc` accepts canonical positive-number player ids and does not imply current roster membership.
 
-Helpers are pin-tested against the engine or data contract, including isolation between agents and the internal snapshot. The Stage 2 suite uses six contract-focused modules for data and math, layout and physics, engine behavior, environment and chat, overlays and builtins, and complete-day replay. Renderer tests cover direct seeks and human controls once the production renderer lands. Course materials link students to public platform documentation, not internal specifications.
+Helpers are pin-tested against the engine or data contract, including isolation between agents and the internal snapshot. The Stage 2 suite covers data and math, layout and physics, engine behavior, environment and chat, overlays and builtin packaging, visitor behavior, and complete-day replay. Visitor scenarios use controlled entropy to exercise outing choices, local steering, recovery, actual prop use and release, and greeting with one reply. Renderer tests cover direct seeks and human controls once the production renderer lands. Course materials link students to public platform documentation, not internal specifications.
 
 ## Conformance notes
 

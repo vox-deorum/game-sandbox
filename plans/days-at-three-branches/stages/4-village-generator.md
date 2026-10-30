@@ -30,7 +30,7 @@ A prop carries its catalog rectangle turned to its facing, so an east or west fa
 
 ### Determinism
 
-The labelled stream remains separate from the scripted visitor's `random.Random(seed)`. Draw order is fixed per code version. Same-build output is exact; committed recordings replay rather than re-simulate.
+The village draws from the labelled stream, so the same seed and build produce the same map. The scripted visitor ignores it: on every reset the builtin constructs a fresh `random.Random()` from system entropy, so a seed reproduces the village but not the visitor's outings. Draw order is fixed per code version. Committed recordings replay rather than re-simulate.
 
 ## Construction and redraws
 
@@ -120,7 +120,9 @@ During a gate, tuning consists of local code and configuration work plus browser
 
 The pinned full-fidelity batch is `0, 1, 2, 3, 5, 7, 11, 17`; 0 is the reset default and 17 the conformance seed. The owner browses it in local watch sessions and blesses one course default seed. Mechanical close work may use a provisional batch seed and re-runs once blessing occurs. The blessed seed is `test_budget`'s seed and the fixture script's `SEED`, and is recorded here. Later season configuration pins that same blessed seed for each season.
 
-At step close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines, replay identity, and cadence. Revalidate the scripted visitor across the batch for a full unstalled day and per-game reset budget. Rerun the fixture script at the blessed seed, name it in step 3, run the full browser suite, and report every batch seed's generation-and-validation reset time.
+At step close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines, replay identity, and cadence. Revalidate the purposeful scripted visitor across the batch with its behavior tests, moving full-day replay, and timing measurements. Rerun the fixture script at the blessed seed, name it in step 3, run the full browser suite, and report every batch seed's generation-and-validation reset time.
+
+The visitor implementation check ran 1200 ticks for each pinned seed and both cast sizes, with stationary villagers and controlled test entropy. All 16 runs kept the visitor body clear and had no commanded movement below 0.05 metres. Travel ranged from 452 to 631 metres per day. Visitor reset, excluding village generation, took 0.74 to 1.53 milliseconds; per-run decision-time 95th percentiles ranged from 0.151 to 0.244 milliseconds. These are local measurements, not timing assertions or a guarantee of reaching every landmark. Local steering can abandon difficult destinations.
 
 ## Tests
 
@@ -132,6 +134,7 @@ At step close, re-measure `test_budget` at the blessed seed for 1201 JSONL lines
 - Verify reserved sites, margins, painting, floor props and open doorways, paths, non-overlapping final ledger, independently found prop witnesses, and connectivity from the published layout.
 - Verify same-seed equality, batch-seed divergence, redraw-cap non-exhaustion, `village` observation equality, and frame-derived conversion, margin, and width arithmetic. Lantern and pine skips do not redraw land, road, or buildings.
 - Report reset time for every batch seed. Do not assert a timing threshold.
+- Visitor tests cover purposeful destination draws, outdoor local steering without pathfinding, bounded outings and recovery, harmless prop use and release, and one greeting with at most one reply. Full-day harness runs use a moving visitor in both cast sizes and replay the captured actions exactly. Report visitor reset and decision times separately from village generation, without a timing threshold assertion.
 
 Per gate close, regenerate the fixture. At final close, re-measure `test_budget` at the blessed seed.
 
@@ -143,4 +146,4 @@ Per gate close, regenerate the fixture. At final close, re-measure `test_budget`
 
 ## Done when
 
-Any seed builds a valid village under the village guarantees, with connectivity asserted by the guarantee suite over the pinned batch; both dated owner sign-offs are recorded here; guarantee and conformance suites are green across the full batch; the blessed-seed day replays identically; regenerated fixtures keep renderer and e2e suites green; and the owner has blessed the course default seed.
+Any seed builds a valid village under the village guarantees, with connectivity asserted by the guarantee suite over the pinned batch; both dated owner sign-offs are recorded here; guarantee and conformance suites are green across the full batch; the blessed-seed recording replays identically; regenerated fixtures keep renderer and e2e suites green; and the owner has blessed the course default seed.

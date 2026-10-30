@@ -13,12 +13,14 @@ Part of [the plan](../README.md). This step ships the Three Branches Python engi
 - Pymunk owns collision. Characters have mass 1, infinite moment, zero friction, and zero restitution. A zero-speed character is kinematic for the tick. The selected substep count is the smallest one that passes the no-tunnelling check, and the space states its contact correction rate for that substep so separation cannot carry a body further than a command could.
 - The engine resolves each parallel tick from one pre-tick state: command degradation, expression and prop selection, simultaneous movement, prop transitions, time advance, then perception. Selection names the tick's one user per prop, in roster order with the visitor first, and that single record drives the transitions.
 - `env.py` alone imports Gymnasium, PettingZoo, and NumPy. It builds spaces once from the rules and catalog, dresses the perceptions the engine returns rather than recomputing them, implements both seat plans, rewards, termination, chat hooks, and overlay extraction. Each observation gets its own mappings, so no player can reach another's; the ground rows are immutable strings and are shared.
-- `naive` and `scripted_visitor` are stdlib-only state machines. Production runs use fresh entropy. Their recorded actions remain an exact replay source with a fixed layout on the same build.
+- `naive` and `scripted_visitor` are stdlib-only state machines. Production runs use fresh entropy, so the session seed selects the village but does not seed either builtin. Their recorded actions remain an exact replay source with a fixed layout on the same build.
+- `scripted_visitor` starts with a uniformly chosen activities, sightseeing, or social mode and occasionally switches during an outing. It chooses a destination category uniformly and a place probabilistically, favoring nearby places and downweighting recent visits. Cancelling travel does not count as a visit. Activities use only the intended board, bench, pump, or shrine. Sightseeing pauses at public landmarks or outside the inn and shed. Social visits keep one seen or heard villager as their target, wave, greet once, linger, and reply at most once while in hearing range. Without a villager, social outings choose sightseeing destinations. Travel has a deadline and a progress limit, while a visit that has begun runs to its own end. Sixteen local steering candidates check swept-body clearance against outdoor ground and a static spatial index, with no pathfinding. Failed movement triggers a brief escape turn with a shorter preview before an unreachable destination is abandoned. Existing contact overlap permits only outward movement, so float32 observation rounding does not trap the visitor against a solid. A visitor pushed onto doorway or interior ground may cross passable ground until it is outdoors again.
+- The standalone visitor ships exact copies of `rules.json` and `catalog.json` beside its staged `agent.py`, so its local collision and prop-selection queries use the canonical dimensions. Composition and the session image copy these assets with the builtin.
 - Registration includes a neutral temporary renderer that displays only the environment title and tick, a placeholder thumbnail, a stand-still raw-observation template, the internal `sweeper` example, canonical guide, Docker smoke coverage, and compose inventory. Step 3 replaces the renderer and step 7 replaces the student stubs.
 
 ## Lean tests
 
-Keep six contract-focused modules. Do not add suites for private helpers, literal fixture coordinates, every malformed-field permutation, repeated space containment, or framework behavior already covered elsewhere.
+Keep contract-focused modules. The visitor's behavior scenarios have their own module because they exercise outings against the engine. Do not add suites for private helpers, literal fixture coordinates, every malformed-field permutation, repeated space containment, or framework behavior already covered elsewhere.
 
 | Module | Coverage |
 | --- | --- |
@@ -26,8 +28,9 @@ Keep six contract-focused modules. Do not add suites for private helpers, litera
 | `test_layout_and_physics.py` | Fixture guarantees, shapes, clearance, wall and corner sliding, pushing, zero-speed immobility, boundaries, and no tunnelling. Tests place characters through `Day.place`. |
 | `test_engine.py` | One table-driven case per transition, contention, perception, doors, bell, phases, and tick order. |
 | `test_environment_and_chat.py` | Plans, spaces, canonical player ids, defaults, invalid actions, terminal rewards, recipient policy, and message timing. |
-| `test_overlay_and_builtins.py` | Overlay shape and rounding, builtin behavior with controlled test entropy, stdlib-only imports, and staged byte equality. |
-| `test_full_day.py` | One cast_5 and one cast_10 day, observation containment, size report, budget compliance, and replay from captured actions. |
+| `test_overlay_and_builtins.py` | Overlay shape and rounding, the naive baseline, stdlib-only imports, and staged byte equality of both agents and the visitor's JSON sidecars. |
+| `test_scripted_visitor.py` | Visitor outing choices and persistence, local steering and recovery, actual prop use and release, greeting and one reply, reset behavior, and loading the staged copy standalone. |
+| `test_full_day.py` | One cast_5 and one cast_10 day with a moving visitor, observation containment, size report, budget compliance, and replay from captured actions. |
 
 Run Ruff, Python and TypeScript CI, generated-code checks, examples, documentation checks, Docker integration, shared conformance, and the complete browser suite before handoff.
 

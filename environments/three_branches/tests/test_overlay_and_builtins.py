@@ -12,12 +12,6 @@ from three_branches import naive
 from three_branches.env import default_action, make_env
 from three_branches.overlay import extract_overlay, extract_overlay_static
 
-_RANDOM = random.Random
-
-
-def _fixed_random() -> random.Random:
-    return _RANDOM(7)
-
 
 @pytest.mark.parametrize(("seat_plan", "cast_size"), [("cast_5", 5), ("cast_10", 10)])
 def test_overlay_separates_static_data_and_rounds_dynamic_numbers(seat_plan: str, cast_size: int) -> None:
@@ -47,10 +41,9 @@ def test_overlay_separates_static_data_and_rounds_dynamic_numbers(seat_plan: str
 
 
 def test_naive_builtin_handles_real_observations_and_follows_its_state_machine(monkeypatch) -> None:
+    monkeypatch.setattr(naive, "_new_rng", lambda: random.Random(7))
     env = make_env({"seat_plan": "cast_5", "daynight": False})
     observations, _ = env.reset(seed=2)
-
-    monkeypatch.setattr(naive.random, "Random", _fixed_random)
     walker = naive.Agent()
     walker.reset(2, observations["player_1"])
     original_heading = walker._heading
@@ -80,6 +73,9 @@ def test_builtins_are_stdlib_only_and_match_the_staged_copies() -> None:
         }
         assert roots <= sys.stdlib_module_names
         assert source.read_bytes() == (staged / name / "agent.py").read_bytes()
+    # The visitor reads the canonical rules and catalog from sidecars beside its staged agent.
+    for name in ("rules.json", "catalog.json"):
+        assert (package / name).read_bytes() == (staged / "scripted_visitor" / name).read_bytes()
 
     # The environment's default remains a valid fallback independently of either builtin.
     env = make_env({"seat_plan": "cast_5", "daynight": False})

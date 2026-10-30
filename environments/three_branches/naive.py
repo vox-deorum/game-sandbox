@@ -6,6 +6,8 @@ import random
 from collections.abc import Mapping
 from typing import Any, cast
 
+_new_rng = random.Random
+
 
 def _heading(value: object) -> float:
     """Read Python and scalar-array numbers without importing a numeric package."""
@@ -28,7 +30,7 @@ class Agent:
     def reset(self, seed: object, observation: object) -> None:
         """Start a fresh walk. Builtins deliberately do not use the session seed."""
         del seed
-        self._rng = random.Random()
+        self._rng = _new_rng()
         self._heading = _heading(_self_record(observation).get("heading"))
         self._remaining = self._rng.randint(24, 48)
         self._stalls = 0
