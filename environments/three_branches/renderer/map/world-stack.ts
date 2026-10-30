@@ -62,7 +62,10 @@ export function createWorldArtStack(mapView: MapLayerView): WorldArtStack {
   const annotations = new Container({ label: 'annotations' })
   const collision = new Container({ label: 'collision' })
   const worldArt = new Container({ label: 'world-art' })
-  const root = new Container({ label: 'world-root' })
+  // The world root and the static terrain views are Pixi render groups. Camera moves then change
+  // one GPU transform instead of re-packing every batched vertex, and a redraw in a dynamic layer
+  // rebuilds only its own draw instructions rather than re-batching the whole terrain.
+  const root = new Container({ label: 'world-root', isRenderGroup: true })
 
   const gradeFilter = createGradeFilter()
   let graded = false

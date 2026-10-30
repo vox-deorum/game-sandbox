@@ -47,6 +47,13 @@ interface CharacterNode {
   root: Container
   fallback: Graphics
   farMark: Graphics
+  /**
+   * What the fallback and far-mark geometry were last painted from. Their shapes rarely change and
+   * only their rotation follows the frame, while every Graphics redraw makes Pixi rebuild its
+   * render group, so they repaint only when these keys change.
+   */
+  fallbackKey: string
+  farMarkKey: string
   shadow: Sprite | null
   rotor: Container | null
   gait: Container | null
@@ -136,6 +143,8 @@ function createNode(id: string): CharacterNode {
     root,
     fallback,
     farMark,
+    fallbackKey: '',
+    farMarkKey: '',
     shadow: null,
     rotor: null,
     gait: null,
@@ -191,7 +200,7 @@ function drawCharacter(
   if (art === null) {
     node.fallback.visible = true
     node.farMark.visible = false
-    drawFallback(node.fallback, character, rotation)
+    drawFallback(node, character, rotation)
     return
   }
 
@@ -200,7 +209,7 @@ function drawCharacter(
   const set = requiredSet(art.sets, style.set.id)
   const farView = zoom < fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor
   node.farMark.visible = farView
-  drawFarMark(node.farMark, character.radius, style.farMarkTint, rotation)
+  drawFarMark(node, character.radius, style.farMarkTint, rotation)
   const shadow = requiredPart(node.shadow, 'shadow')
   const rotor = requiredPart(node.rotor, 'rotor')
   shadow.visible = !farView
@@ -248,32 +257,42 @@ function registerArm(sprite: Sprite, arm: CharacterCastSet['leftArm'], travelPix
   )
 }
 
-function drawFallback(fallback: Graphics, character: CharacterDrawable, rotation: number): void {
-  fallback.clear()
-  fallback
-    .circle(0, 0, character.radius)
-    .fill(character.fill)
-    .stroke({ color: PALETTE.backdrop, width: 2 })
-    .moveTo(0, 0)
-    .lineTo(0, character.radius * 1.8)
-    .stroke({ color: PALETTE.backdrop, width: 2 })
+function drawFallback(node: CharacterNode, character: CharacterDrawable, rotation: number): void {
+  const fallback = node.fallback
+  const key = `${character.radius}|${character.fill}`
+  if (node.fallbackKey !== key) {
+    node.fallbackKey = key
+    fallback.clear()
+    fallback
+      .circle(0, 0, character.radius)
+      .fill(character.fill)
+      .stroke({ color: PALETTE.backdrop, width: 2 })
+      .moveTo(0, 0)
+      .lineTo(0, character.radius * 1.8)
+      .stroke({ color: PALETTE.backdrop, width: 2 })
+  }
   fallback.rotation = rotation
 }
 
 function drawFarMark(
-  mark: Graphics,
+  node: CharacterNode,
   radius: number,
   tint: keyof typeof HEARTHSIDE_STYLE.palette,
   rotation: number,
 ): void {
-  mark.clear()
-  mark
-    .circle(0, 0, radius)
-    .fill(HEARTHSIDE_STYLE.palette[tint])
-    .stroke({ color: HEARTHSIDE_STYLE.palette.backdrop, width: 1.5 })
-    .moveTo(0, 0)
-    .lineTo(0, radius * 1.8)
-    .stroke({ color: HEARTHSIDE_STYLE.palette.bone, width: 1.5 })
+  const mark = node.farMark
+  const key = `${radius}|${tint}`
+  if (node.farMarkKey !== key) {
+    node.farMarkKey = key
+    mark.clear()
+    mark
+      .circle(0, 0, radius)
+      .fill(HEARTHSIDE_STYLE.palette[tint])
+      .stroke({ color: HEARTHSIDE_STYLE.palette.backdrop, width: 1.5 })
+      .moveTo(0, 0)
+      .lineTo(0, radius * 1.8)
+      .stroke({ color: HEARTHSIDE_STYLE.palette.bone, width: 1.5 })
+  }
   mark.rotation = rotation
 }
 

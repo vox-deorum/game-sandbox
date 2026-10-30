@@ -66,8 +66,9 @@ function materialLayerAlpha(material: SurfaceMaterial): number {
 export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
   if (art === undefined) return drawFallbackMap(scene)
   const cellSize = THREE_BRANCHES_PRESENTATION.unitsPerMetre * scene.village.size.cellSize
-  const naturalView = new Container()
-  const architectureView = new Container()
+  // Each static view is its own render group, so dynamic redraws never re-batch the terrain.
+  const naturalView = new Container({ isRenderGroup: true })
+  const architectureView = new Container({ isRenderGroup: true })
   const grounds: GroundView[] = []
   const graphics: Graphics[] = []
   const owned: { destroy(): void }[] = []
@@ -78,11 +79,6 @@ export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
   const addNatural = (graphic: Graphics, label: string): void => {
     graphic.label = label
     naturalView.addChild(graphic)
-    graphics.push(graphic)
-  }
-  const addArchitecture = (graphic: Graphics, label: string): void => {
-    graphic.label = label
-    architectureView.addChild(graphic)
     graphics.push(graphic)
   }
 
@@ -974,8 +970,8 @@ function drawFallbackMap(scene: StaticScene): MapLayerView {
     tileset,
     { cellSize },
   )
-  const naturalView = new Container()
-  const architectureView = new Container()
+  const naturalView = new Container({ isRenderGroup: true })
+  const architectureView = new Container({ isRenderGroup: true })
   naturalView.addChild(naturalGround.view)
   architectureView.addChild(architectureGround.view)
   return ownedMapLayerView(
@@ -998,6 +994,8 @@ export function drawUpperWalls(layer: Container, scene: StaticScene, art: Terrai
       variant: art.upperWallVariant,
     },
   )
+  // Like the map views, the static upper walls are a render group of their own.
+  ground.view.enableRenderGroup()
   layer.addChild(ground.view)
   return ground
 }

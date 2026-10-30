@@ -1,4 +1,5 @@
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { setTextResolution } from '@renderers/base/pixi-helpers.js'
 import { type Container, Graphics, type Text } from 'pixi.js'
 
 import {
@@ -92,27 +93,36 @@ export function createChrome(layer: Container, createText: RendererTextFactory):
   recenter.label.text = 'Recenter'
 
   const collision = plate(layer, createText, COLLISION_TOGGLE_RECT)
+  // The bell icon and the collision plate repaint only when their state changes, since every
+  // Graphics redraw makes Pixi rebuild the stage's draw instructions.
+  let paintedBell: string | null = null
+  let paintedCollision = false
 
   return {
     update(scene, fallbackTick, collisionVisible, resolution) {
       status.text = statusText(scene, fallbackTick)
-      status.resolution = resolution
+      setTextResolution(status, resolution)
 
       const word = bellText(scene)
       bellIcon.visible = word !== null
       bell.visible = word !== null
       if (word !== null) {
-        drawBellIcon(bellIcon, word === 'rings' ? PALETTE.gilt : PALETTE.ink)
+        if (word !== paintedBell)
+          drawBellIcon(bellIcon, word === 'rings' ? PALETTE.gilt : PALETTE.ink)
+        paintedBell = word
         bell.text = word
-        bell.resolution = resolution
+        setTextResolution(bell, resolution)
       }
 
-      recenter.label.resolution = resolution
+      setTextResolution(recenter.label, resolution)
 
       collision.label.text = collisionText(collisionVisible)
       collision.label.style.fill = collisionVisible ? PALETTE.ink : PALETTE.bone
-      collision.label.resolution = resolution
-      paintPlate(collision.panel, COLLISION_TOGGLE_RECT, collisionVisible)
+      setTextResolution(collision.label, resolution)
+      if (collisionVisible !== paintedCollision) {
+        paintPlate(collision.panel, COLLISION_TOGGLE_RECT, collisionVisible)
+        paintedCollision = collisionVisible
+      }
     },
   }
 }

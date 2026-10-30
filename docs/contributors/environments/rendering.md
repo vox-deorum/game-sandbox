@@ -56,6 +56,12 @@ A renderer may animate between states without weakening determinism. The static 
 
 Split what redraws every frame from what redraws on interaction. Resolve data that changes only on a click, such as tile lookups and baked text, when it changes, and rebuild per frame only the marks that actually move. Two known deviations exist today and are the first places to look if a profile shows frame cost: the cards move-clock chip re-bakes its label every frame, and the Crane Reach order pulse rebuilds its tile lookup every frame.
 
+PixiJS rebuilds draw instructions one render group at a time. A large world needs a few habits to keep that rebuild small:
+
+- Make a camera-moved world root a render group (`isRenderGroup: true`), so panning changes one GPU transform instead of re-packing every vertex below it. Put any clipping mask on a plain wrapper around that root, not on the render group itself. Pixi clips away everything inside a masked render group that has no stencil mask of its own.
+- Give large static layers, such as packed tile ground, a render group of their own, so a redraw elsewhere never re-batches them.
+- Redrawing a small `Graphics` or touching a `Text` marks its whole render group for a rebuild. Assigning `Text.resolution` counts even when the value is unchanged, so use `setTextResolution` from `@renderers/base/pixi-helpers.js`, and repaint a `Graphics` only when its shape changes. Days at Three Branches follows all three.
+
 ## Input and semantic data
 
 Input is enabled only for controlled players with a `sendAction` callback. Spectators and replay viewers mount draw-only renderers.

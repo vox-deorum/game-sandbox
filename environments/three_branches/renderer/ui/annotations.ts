@@ -1,6 +1,7 @@
 import { codePointLength } from '@game-sandbox/schema/text'
 import { stableHashParts } from '@renderers/base/math.js'
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { setTextResolution } from '@renderers/base/pixi-helpers.js'
 import { Container, Graphics, Sprite, type Text, Texture } from 'pixi.js'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
@@ -71,7 +72,11 @@ interface ExpressionChip {
   elapsedMs: number
 }
 
-/** The fused plate, pictogram, and bubble display objects retained for one character. */
+/**
+ * The fused plate, pictogram, and bubble display objects retained for one character. The two keys
+ * record what the plate and bubble geometry were last painted from, so a redraw with the same
+ * inputs leaves the Graphics alone. Every Graphics redraw makes Pixi rebuild its render group.
+ */
 interface CharacterNode {
   readonly root: Container
   readonly plate: Graphics
@@ -81,6 +86,8 @@ interface CharacterNode {
   readonly bubble: Container
   readonly bubbleBackground: Graphics
   readonly bubbleLabel: Text
+  plateKey: string
+  bubbleKey: string
 }
 
 // Screen-space layout, in the constant units each character node's `1 / zoom` scale exposes to it.
@@ -468,6 +475,8 @@ function createCharacterNode(
     bubble,
     bubbleBackground,
     bubbleLabel,
+    plateKey: '',
+    bubbleKey: '',
   }
 }
 
@@ -488,31 +497,35 @@ function drawPlate(
   highlighted: boolean,
 ): number {
   node.plateLabel.text = character.id
-  node.plateLabel.resolution = resolution
-  const accent =
-    character.id === 'player_0' ? HEARTHSIDE_STYLE.palette.cinnabar : HEARTHSIDE_STYLE.palette.ink
+  setTextResolution(node.plateLabel, resolution)
   const nameWidth = character.id.length * WORLD_LABEL.characterWidth + WORLD_LABEL.paddingX * 2
   const height = WORLD_LABEL.lineHeight + WORLD_LABEL.paddingY * 2
-  const left = -nameWidth / 2 - (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
-  const width = nameWidth + (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
-  node.plate.clear()
-  node.plate
-    .roundRect(left, bottomY - height, width, height, height / 2)
-    .fill(accent)
-    .stroke(
-      highlighted
-        ? { color: HEARTHSIDE_STYLE.palette.gilt, width: 2 }
-        : { color: HEARTHSIDE_STYLE.palette.backdrop, width: 1 },
-    )
-  if (expressionShown) {
-    const dividerX = -nameWidth / 2
+  const plateKey = `${character.id}|${bottomY}|${expressionShown}|${highlighted}`
+  if (node.plateKey !== plateKey) {
+    node.plateKey = plateKey
+    const accent =
+      character.id === 'player_0' ? HEARTHSIDE_STYLE.palette.cinnabar : HEARTHSIDE_STYLE.palette.ink
+    const left = -nameWidth / 2 - (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
+    const width = nameWidth + (expressionShown ? WORLD_LABEL.iconSlotWidth : 0)
+    node.plate.clear()
     node.plate
-      .moveTo(dividerX, bottomY - height + 3)
-      .lineTo(dividerX, bottomY - 3)
-      .stroke({
-        color: HEARTHSIDE_STYLE.palette.gilt,
-        width: 1,
-      })
+      .roundRect(left, bottomY - height, width, height, height / 2)
+      .fill(accent)
+      .stroke(
+        highlighted
+          ? { color: HEARTHSIDE_STYLE.palette.gilt, width: 2 }
+          : { color: HEARTHSIDE_STYLE.palette.backdrop, width: 1 },
+      )
+    if (expressionShown) {
+      const dividerX = -nameWidth / 2
+      node.plate
+        .moveTo(dividerX, bottomY - height + 3)
+        .lineTo(dividerX, bottomY - 3)
+        .stroke({
+          color: HEARTHSIDE_STYLE.palette.gilt,
+          width: 1,
+        })
+    }
   }
   node.plateLabel.position.set(0, bottomY - height / 2)
   node.expression.visible = expressionShown && art !== null
@@ -536,6 +549,10 @@ function drawBubble(
   bottomY: number,
   resolution: number,
 ): void {
+  setTextResolution(node.bubbleLabel, resolution)
+  const bubbleKey = `${line.text}|${line.addressee}|${bottomY}`
+  if (node.bubbleKey === bubbleKey) return
+  node.bubbleKey = bubbleKey
   const wrapped = wrapSpeech(
     line.text,
     BUBBLE_CHARS_PER_LINE,
@@ -544,7 +561,6 @@ function drawBubble(
   const tag = speechTag(line)
   const rows = tag === null ? wrapped : [...wrapped, `(${tag})`]
   node.bubbleLabel.text = rows.join('\n')
-  node.bubbleLabel.resolution = resolution
 
   const longestRow = rows.reduce((widest, row) => Math.max(widest, codePointLength(row)), 0)
   const width = longestRow * BUBBLE_CHAR_WIDTH + BUBBLE_PADDING_X * 2

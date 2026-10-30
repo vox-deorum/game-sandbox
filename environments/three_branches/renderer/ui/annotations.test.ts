@@ -1,5 +1,5 @@
 import { Container, Graphics, type Sprite, Text, Texture } from 'pixi.js'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording, testText } from '../core/test-helpers.js'
 import type { CharacterExpression, FrameScene, SpeechLine } from '../core/types.js'
@@ -198,6 +198,32 @@ describe('speechTag', () => {
 })
 
 describe('createAnnotationLayer', () => {
+  it('repaints plate and bubble geometry only when a redraw changes them', () => {
+    const layer = new Container()
+    const annotations = createAnnotationLayer(layer, testText)
+    const scene = fixtureScene()
+    annotations.deliver([speechLine({ key: 'k1', speaker: 'player_0' })])
+    annotations.reconcile(scene, 4, 2, 1)
+    const plate = plateOf(layer, 'player_0')
+    const root = plate.parent as Container
+    const bubbleBackground = descendant(root, 'annotation-bubble').children[0] as Graphics
+    const label = collectTextNodes(root).find((text) => text.text === 'player_0') as Text
+    const plateClear = vi.spyOn(plate, 'clear')
+    const bubbleClear = vi.spyOn(bubbleBackground, 'clear')
+    const labelUpdate = vi.spyOn(label, 'onViewUpdate')
+
+    // A frame redraw with the same inputs, such as a bubble aging, touches neither geometry nor text.
+    annotations.reconcile(scene, 4, 2, 1)
+    expect(plateClear).not.toHaveBeenCalled()
+    expect(bubbleClear).not.toHaveBeenCalled()
+    expect(labelUpdate).not.toHaveBeenCalled()
+
+    // A zoom change moves the plate's bottom edge, so both shapes repaint once.
+    annotations.reconcile(scene, 6, 2, 1)
+    expect(plateClear).toHaveBeenCalledTimes(1)
+    expect(bubbleClear).toHaveBeenCalledTimes(1)
+  })
+
   it('reconciles one node per character and removes a node whose character left the frame', () => {
     const layer = new Container()
     const annotations = createAnnotationLayer(layer, testText)

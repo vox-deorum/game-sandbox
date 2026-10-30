@@ -1,5 +1,5 @@
-import { Container, Text } from 'pixi.js'
-import { describe, expect, it } from 'vitest'
+import { Container, Graphics, Text } from 'pixi.js'
+import { describe, expect, it, vi } from 'vitest'
 import { THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording, openingState, testText } from '../core/test-helpers.js'
 import type { FrameScene } from '../core/types.js'
@@ -117,6 +117,25 @@ describe('Three Branches chrome strip', () => {
         COLLISION_TOGGLE_RECT.x + COLLISION_TOGGLE_RECT.width <= RECENTER_RECT.x
       expect(separated).toBe(true)
     })
+  })
+
+  it('leaves every label and plate untouched when a frame repeats, and repaints a toggled plate', () => {
+    const layer = new Container()
+    const chrome = createChrome(layer, testText)
+    const ringing = withBellState(frameScene, 'ringing')
+    chrome.update(ringing, 5, true, 2)
+    const labelUpdates = layer.children
+      .filter((child): child is Text => child instanceof Text)
+      .map((label) => vi.spyOn(label, 'onViewUpdate'))
+    const repaints = layer.children
+      .filter((child): child is Graphics => child instanceof Graphics)
+      .map((graphic) => vi.spyOn(graphic, 'clear'))
+
+    chrome.update(ringing, 5, true, 2)
+    for (const spy of [...labelUpdates, ...repaints]) expect(spy).not.toHaveBeenCalled()
+
+    chrome.update(ringing, 5, false, 2)
+    expect(repaints.filter((spy) => spy.mock.calls.length > 0)).toHaveLength(1)
   })
 
   it('builds the retained strip and updates it across frames without throwing', () => {

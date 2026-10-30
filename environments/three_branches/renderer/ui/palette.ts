@@ -4,6 +4,7 @@
  * fixed rectangles below, exactly as the chrome controls are.
  */
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { setTextResolution } from '@renderers/base/pixi-helpers.js'
 import { type Container, Graphics, Sprite, type Text, Texture } from 'pixi.js'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { titleFor } from '../map/scene.js'
@@ -225,9 +226,9 @@ function paintPlate(
     )
   plate.label.style.fill = active ? PALETTE.ink : PALETTE.bone
   plate.icon.tint = active ? PALETTE.ink : PALETTE.bone
-  plate.label.resolution = resolution
+  setTextResolution(plate.label, resolution)
   plate.hotkey.style.fill = active ? PALETTE.ink : PALETTE.bone
-  plate.hotkey.resolution = resolution
+  setTextResolution(plate.hotkey, resolution)
 }
 
 /** Return whether a point lies inside an inclusive axis-aligned rectangle. */

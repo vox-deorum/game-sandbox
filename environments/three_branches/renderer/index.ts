@@ -217,7 +217,11 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.characterLayer = this.world.characters
     this.upperLayer = this.world.upper
     this.worldRoot = this.world.root
-    this.worldRoot.mask = contentMask
+    // The content mask clips a plain wrapper rather than the world root itself: Pixi clips
+    // everything inside a masked render group that has no stencil mask of its own.
+    const worldClip = new Container({ label: 'world-clip' })
+    worldClip.addChild(this.worldRoot)
+    worldClip.mask = contentMask
     this.clouds = new TilingSprite({
       label: 'cloud-shadows',
       texture: cloudTexture(),
@@ -232,7 +236,7 @@ export class ThreeBranchesRenderer extends PixiRenderer {
     this.vignette = new Sprite({ label: 'vignette', texture: vignetteTexture() })
     this.vignette.position.set(0, THREE_BRANCHES_PRESENTATION.chromeHeight)
     this.vignette.setSize(CONTENT_SIZE.width, CONTENT_SIZE.height)
-    root.addChild(backdrop, contentMask, this.worldRoot, this.vignette, inputLayer, chromeLayer)
+    root.addChild(backdrop, contentMask, worldClip, this.vignette, inputLayer, chromeLayer)
     this.presentDayLight(0)
 
     this.buildingOutlines = drawBuildings(this.upperLayer, this.staticScene)

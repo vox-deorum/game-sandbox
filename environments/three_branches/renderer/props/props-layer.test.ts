@@ -1,8 +1,8 @@
-import { Container, Rectangle, Sprite, Texture } from 'pixi.js'
-import { describe, expect, it } from 'vitest'
+import { Container, type Graphics, Rectangle, Sprite, Texture } from 'pixi.js'
+import { describe, expect, it, vi } from 'vitest'
 
 import { THREE_BRANCHES_ASSET_CATALOG } from '../assets.js'
-import { HEARTHSIDE_STYLE, propVisualScale, sceneryVisualScale } from '../core/presentation.js'
+import { HEARTHSIDE_STYLE, sceneryVisualScale } from '../core/presentation.js'
 import type { FrameScene, StaticDrawable, StaticScene } from '../core/types.js'
 import { propEffectSpec } from '../effects/effects.js'
 import type { FrameGrid } from '../ui/tint.js'
@@ -240,6 +240,10 @@ describe('Three Branches prop art views', () => {
 
     props.reconcile(frame(scene, [[0.5, 0.5]]))
     expect(cutout.getLocalBounds()).toMatchObject({ x: 0, y: 0, width: 32, height: 32 })
+    // Moving within the same building keeps the cutout's geometry as it is.
+    const clear = vi.spyOn(cutout as Graphics, 'clear')
+    props.reconcile(frame(scene, [[0.6, 0.6]]))
+    expect(clear).not.toHaveBeenCalled()
     props.reconcile(frame(scene, [[3, 3]]))
     expect(cutout.getLocalBounds()).toMatchObject({ width: 0, height: 0 })
   })

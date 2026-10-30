@@ -46,6 +46,12 @@ One layered-ground call paints a configured fill base, a landscape overlay, and 
 
 Static display objects are built once. Props and characters reconcile by stable id, so a replay seek depends only on the delivered header and state. Delivered character positions and headings interpolate across the host's actual tick cadence. An unpaced live glide lasts the smoothed server step gap (`timing.started_at`) plus a margin of twice the smoothed arrival jitter, held between 30 and 100 ms, and prop effects advance with the scene on screen rather than the landed tick. Replay scrubs and explicit seeks still snap, and this state motion does not honor reduced-motion preferences. `worldRoot` contains the map, buildings, props, characters, and collision. Fixed chrome remains outside the camera transform.
 
+Redraws stay cheap because Pixi rebuilds draw instructions per render group:
+
+- `worldRoot` is a render group, so a camera move changes one GPU transform instead of re-packing every batched vertex. The content mask sits on a plain wrapper around it, because Pixi clips away everything inside a masked render group that has no stencil mask of its own.
+- The natural and architectural map views and the upper walls are render groups of their own, so the terrain is batched once and a redraw in a dynamic layer never re-batches it.
+- Retained text and Graphics change only when their inputs do. A text's resolution is assigned only when it differs, and plates, bubbles, far marks, chrome plates, and the pine cutout repaint only when their shape changes.
+
 The ordinary world art carries no text labels. The collision overlay ships off by default and supplies diagnostic object, state, character, and expression labels for watch, replay, and play. Its text resolution follows camera zoom. It derives impassable cells from ground passability, object shapes from the catalog, boundaries from the configured frame, and character circles from the configured body radius. Prop facing may add a visual direction marker. An east or west facing trades a prop rectangle's width and height, matching the environment, and every shape stays axis-aligned. The toggle never resets the camera. The layer paints only while shown, deferring stored shapes while hidden, so the hidden diagnostic costs nothing during play.
 
 Its plate is drawn in the chrome strip and clicked in the browser's own coordinates, the way the camera gestures are: the gestures accept only the content below the strip, and the strip answers the band above it. Nothing here depends on display-object hit testing.

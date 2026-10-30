@@ -1,5 +1,5 @@
-import { Container, Texture } from 'pixi.js'
-import { describe, expect, it } from 'vitest'
+import { Container, type Graphics, Texture } from 'pixi.js'
+import { describe, expect, it, vi } from 'vitest'
 import { HEARTHSIDE_STYLE, THREE_BRANCHES_PRESENTATION } from '../core/presentation.js'
 import { fixtureRecording } from '../core/test-helpers.js'
 import type { FrameScene } from '../core/types.js'
@@ -99,6 +99,33 @@ describe('Three Branches retained characters', () => {
     characters.reconcile(scene, threshold, fittedZoom, NOON)
     expect(descendant(visitor, 'character-far-mark').visible).toBe(false)
     expect(descendant(visitor, 'character-rotor').visible).toBe(true)
+  })
+
+  it('turns a far mark with its character without repainting its shape', () => {
+    const view = new Container()
+    const characters = createCharacterLayer(view)
+    const scene = fixtureScene()
+    const fittedZoom = 2
+    const farZoom = fittedZoom * THREE_BRANCHES_PRESENTATION.farMarkZoomFactor - 0.01
+    characters.install(characterArt())
+    characters.reconcile(scene, farZoom, fittedZoom, NOON)
+    const mark = descendant(
+      descendant(view, 'character:player_0'),
+      'character-far-mark',
+    ) as Graphics
+    const before = mark.rotation
+    const clear = vi.spyOn(mark, 'clear')
+
+    const turned: FrameScene = {
+      ...scene,
+      characters: scene.characters.map((character) => ({
+        ...character,
+        heading: character.heading + 90,
+      })),
+    }
+    characters.reconcile(turned, farZoom, fittedZoom, NOON)
+    expect(mark.rotation).not.toBe(before)
+    expect(clear).not.toHaveBeenCalled()
   })
 
   it('keeps the full-color base static while the gait moves the canonical arm pair', () => {

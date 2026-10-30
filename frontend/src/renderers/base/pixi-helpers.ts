@@ -1,5 +1,5 @@
 /** Small Pixi helpers shared by retained environment renderers. */
-import { Sprite, Texture } from 'pixi.js'
+import { Sprite, type Text, Texture } from 'pixi.js'
 
 /** A point shape accepted by Pixi polygon drawing and hit areas. */
 export interface RenderPoint {
@@ -17,6 +17,14 @@ export function centeredSprite(): Sprite {
   const sprite = new Sprite(Texture.EMPTY)
   sprite.anchor.set(0.5)
   return sprite
+}
+
+/**
+ * Set a text's bitmap resolution only when it differs. Pixi marks a text dirty on every resolution
+ * assignment, even an unchanged one, and a dirty text makes Pixi rebuild its whole render group.
+ */
+export function setTextResolution(text: Text, resolution: number): void {
+  if (text.resolution !== resolution) text.resolution = resolution
 }
 
 /** Apply an optional texture at a fixed size and hide the sprite while the texture is absent. */

@@ -1,4 +1,5 @@
 import type { RendererTextFactory } from '@renderers/base/PixiRenderer.js'
+import { setTextResolution } from '@renderers/base/pixi-helpers.js'
 import { Container, Graphics, Text } from 'pixi.js'
 
 import { PALETTE } from '../core/presentation.js'
@@ -130,7 +131,7 @@ function retainLabels(
     const node = existing[index]
     if (node instanceof Text) {
       if (node.text !== desired.value) node.text = desired.value
-      if (node.resolution !== resolution) node.resolution = resolution
+      setTextResolution(node, resolution)
       node.position.set(desired.x, desired.y)
     } else {
       layer.addChild(newLabel(desired.value, desired.x, desired.y, resolution, createText))

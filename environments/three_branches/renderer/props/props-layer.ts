@@ -111,6 +111,8 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   const pines = new Container({ label: 'pines' })
   const pineBuildingCutout = new Graphics({ label: 'pine-building-cutout' })
   pines.setMask({ mask: pineBuildingCutout, inverse: true })
+  // The occupied building ids the cutout was last drawn from, or null before the first draw.
+  let cutoutKey: string | null = null
 
   for (const item of scene.props) {
     const node = createPropNode(item)
@@ -164,7 +166,7 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
       }
     },
     reconcile(frame) {
-      syncPineBuildingCutout(pineBuildingCutout, frame)
+      cutoutKey = syncPineBuildingCutout(pineBuildingCutout, frame, cutoutKey)
       for (const node of nodes.values()) {
         applyState(node, frame.dynamic?.props[node.item.id] ?? start(starts, node.item.id))
       }
@@ -244,15 +246,26 @@ export function createPropLayer(layers: PropLayerTargets, scene: StaticScene): P
   }
 }
 
-/** Rebuild the retained inverse mask from semantic, snapped building occupancy. */
-function syncPineBuildingCutout(mask: Graphics, frame: FrameScene): void {
+/**
+ * Rebuild the retained inverse mask from semantic, snapped building occupancy, and return the
+ * occupancy key it now shows. The mask is redrawn only when occupancy differs from `drawnKey`, since
+ * every Graphics redraw makes Pixi rebuild its render group.
+ */
+function syncPineBuildingCutout(
+  mask: Graphics,
+  frame: FrameScene,
+  drawnKey: string | null,
+): string {
+  const occupied = frame.static.buildings.filter((building) => buildingOccupied(frame, building))
+  const key = occupied.map((building) => building.id).join(',')
+  if (key === drawnKey) return key
   mask.clear()
-  for (const building of frame.static.buildings) {
-    if (!buildingOccupied(frame, building)) continue
+  for (const building of occupied) {
     mask
       .rect(building.rect.x, building.rect.y, building.rect.width, building.rect.height)
       .fill(0xffffff)
   }
+  return key
 }
 
 function createSceneryNode(item: StaticDrawable): Container {

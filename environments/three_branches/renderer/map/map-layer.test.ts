@@ -16,6 +16,7 @@ import {
   bridgeDeckMask,
   componentPaths,
   drawMap,
+  drawUpperWalls,
   exactTerrainGrid,
   hatchGraphics,
   materialSurface,
@@ -615,3 +616,19 @@ function required<Value>(value: Value | null | undefined, message: string): Valu
   if (value === undefined || value === null) throw new Error(message)
   return value
 }
+
+describe('Three Branches static terrain render groups', () => {
+  // Each static view batches its terrain once in a render group of its own, so a redraw elsewhere
+  // in the world never re-batches the terrain.
+  it('makes both map views and the upper walls render groups, with art or without', () => {
+    const { scene, art } = sparseLayerFixture()
+    for (const view of [drawMap(scene, art), drawMap(scene)]) {
+      expect(view.naturalView.isRenderGroup).toBe(true)
+      expect(view.architectureView.isRenderGroup).toBe(true)
+      view.destroy()
+    }
+    const upper = drawUpperWalls(new Container(), scene, art)
+    expect(upper.view.isRenderGroup).toBe(true)
+    upper.destroy()
+  })
+})

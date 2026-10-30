@@ -15,6 +15,12 @@ function mapView(): MapLayerView {
 }
 
 describe('Three Branches world art stack', () => {
+  it('moves the camera as one render group transform', () => {
+    const stack = createWorldArtStack(mapView())
+    expect(stack.root.isRenderGroup).toBe(true)
+    stack.destroy()
+  })
+
   it('draws shared texture outlines below scenery and interactive props', () => {
     const stack = createWorldArtStack(mapView())
     const worldArt = stack.root.getChildByLabel('world-art') as Container
