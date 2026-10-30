@@ -211,7 +211,7 @@ onBeforeUnmount(() => {
 .fullscreen-toggle { position: absolute; top: var(--space-2); left: var(--space-2); z-index: 1; display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; border-radius: var(--radius-sm); background: transparent; color: var(--color-text-muted); opacity: 0.6; cursor: pointer; transition: opacity var(--motion-base) var(--ease-out); }
 .fullscreen-toggle:hover, .fullscreen-toggle:focus-visible { opacity: 1; color: var(--color-text); }
 .fullscreen-toggle:focus-visible { outline: 2px solid var(--color-focus-ring); }
-.fullscreen-controls { position: absolute; bottom: var(--space-3); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); background: var(--color-scrim); opacity: 1; transition: opacity var(--motion-base) var(--ease-out); }
+.fullscreen-controls { position: absolute; bottom: var(--space-3); left: var(--space-3); right: var(--space-3); margin-inline: auto; max-width: 48rem; display: flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-radius: var(--radius-lg); background: var(--color-scrim); opacity: 1; transition: opacity var(--motion-base) var(--ease-out); }
 .stage-canvas.controls-idle .fullscreen-toggle,
 .stage-canvas.controls-idle .fullscreen-controls { opacity: 0; pointer-events: none; }
 .stage-canvas.controls-idle .fullscreen-toggle:focus-visible { opacity: 1; pointer-events: auto; color: var(--color-text); }

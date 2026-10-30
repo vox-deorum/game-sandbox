@@ -161,6 +161,9 @@ test('play Flappy Bird live, pause/resume, stop, then replay and pin', async ({ 
   await expect(page.locator('.replay-controls')).toBeHidden()
   const bar = page.locator('.fullscreen-controls')
   await expect(bar).toBeVisible()
+  // The scrubber fills the bar rather than collapsing to a bare thumb.
+  const track = await bar.locator('.ui-slider-track').boundingBox()
+  expect(track?.width ?? 0).toBeGreaterThan(100)
   await bar.getByRole('button', { name: 'Step forward' }).click()
   await expect(page.getByRole('button', { name: 'Exit full screen' })).toBeVisible()
   await page.keyboard.press('Escape')
