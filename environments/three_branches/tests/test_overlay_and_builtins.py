@@ -73,9 +73,11 @@ def test_builtins_are_stdlib_only_and_match_the_staged_copies() -> None:
         }
         assert roots <= sys.stdlib_module_names
         assert source.read_bytes() == (staged / name / "agent.py").read_bytes()
-    # The visitor reads the canonical rules and catalog from sidecars beside its staged agent.
+    # The visitor reads the canonical rules and catalog from sidecars beside its staged agent. Biome
+    # owns their layout, so only the content must match.
     for name in ("rules.json", "catalog.json"):
-        assert (package / name).read_bytes() == (staged / "scripted_visitor" / name).read_bytes()
+        canonical = json.loads((package / name).read_text(encoding="utf-8"))
+        assert canonical == json.loads((staged / "scripted_visitor" / name).read_text(encoding="utf-8"))
 
     # The environment's default remains a valid fallback independently of either builtin.
     env = make_env({"seat_plan": "cast_5", "daynight": False})
