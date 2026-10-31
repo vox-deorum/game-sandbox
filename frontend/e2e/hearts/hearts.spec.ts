@@ -116,12 +116,16 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
 
     // Each owner submits one example strategy; submissions attach to this now-open season. Building runs
     // a real container per agent. Oracle is submitted below, after its development-access history closes.
-    // The current-season My Agents row is the first key surface. Its secret is read once from the
-    // real dialog and then used against the public OpenAI-compatible route.
+    // The current-season My Agents row shows the meter and leads to the LLM Playground, where the
+    // key is created. Its secret is read once from the real dialog and then used against the public
+    // OpenAI-compatible route.
     await authenticateBrowser(page.context(), owner)
     await page.goto('/my/agents')
     await expect(page.getByRole('meter', { name: 'Development usage' })).toBeVisible()
-    await page.getByRole('button', { name: 'Create development key' }).click()
+    await page.getByRole('link', { name: 'Get or test key' }).click()
+    await expect(page).toHaveURL(/\/llm$/)
+    const keySeason = page.getByRole('listitem').filter({ hasText: HEARTS_SEASON })
+    await keySeason.getByRole('button', { name: 'Create development key' }).click()
     const credential = page.getByRole('dialog', { name: 'Development credential' })
     await expect(
       credential.getByRole('textbox', { name: 'OPENAI_BASE_URL', exact: true }),
@@ -141,7 +145,7 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
 
     // Rotation confirms invalidation before showing the replacement. Closing the second dialog clears
     // the plaintext from the component, then the old credential is rejected by the proxy.
-    await page.getByRole('button', { name: 'Rotate development key' }).click()
+    await keySeason.getByRole('button', { name: 'Rotate development key' }).click()
     const confirmation = page.getByRole('dialog', { name: 'Rotate development key?' })
     await expect(confirmation.getByText('will stop working immediately')).toBeVisible()
     await confirmation.getByRole('button', { name: 'Rotate development key' }).click()
@@ -161,7 +165,6 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     expect(((await retainedCalls.json()) as { calls: unknown[] }).calls).toHaveLength(1)
 
     // The LLM Playground proves the pasted key and spends one real development call.
-    await page.getByRole('link', { name: 'Test key' }).click()
     await page.getByLabel('API key').fill(key)
     await page.getByRole('button', { name: 'Check' }).click()
     await expect(page.getByText('Key works')).toBeVisible()

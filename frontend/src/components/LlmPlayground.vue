@@ -1,7 +1,6 @@
 <!--
-  One-turn prompt tester on the LLM Playground. The caller owns where the request goes (development
-  key or direct upstream) and how a refusal is explained, and may add fields through the `settings`
-  slot, which opens the settings row.
+  One-turn prompt tester on the LLM Playground. The caller owns how the request is sent and how a
+  refusal is explained.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -19,8 +18,6 @@ import UiTextarea from './ui/UiTextarea.vue'
 
 const props = defineProps<{
   models: LlmModelAlias[]
-  /** Shown in the empty output limit, which leaves the deployment default in effect. */
-  maxTokensPlaceholder?: string
   run: (request: LlmTestRequest) => Promise<LlmTestOutcome>
   /** Budget weights; when given, the result also shows the weighted cost. */
   costWeights?: Partial<Record<LlmModelAlias, number>>
@@ -32,7 +29,7 @@ const SYSTEM_PLACEHOLDER =
 const USER_PLACEHOLDER = 'The message the model answers, e.g. "Your hand: 2C 7H QS. Which card do you play?"'
 
 const model = ref<string>(props.models[0] ?? '')
-// `v-model.number` leaves an empty field as ''.
+// `v-model.number` leaves an empty field as '', which leaves the deployment default in effect.
 const maxTokens = ref<number | ''>('')
 const system = ref('')
 const user = ref('')
@@ -105,7 +102,6 @@ async function submit(): Promise<void> {
   <UiCard>
     <form class="playground" @submit.prevent="submit">
       <div class="settings">
-        <slot name="settings" />
         <UiField label="Model">
           <template #default="{ id }">
             <UiSelect :id="id" v-model="model">
@@ -115,13 +111,7 @@ async function submit(): Promise<void> {
         </UiField>
         <UiField label="Max output tokens">
           <template #default="{ id }">
-            <UiInput
-              :id="id"
-              v-model.number="maxTokens"
-              type="number"
-              min="1"
-              :placeholder="maxTokensPlaceholder ?? 'Default'"
-            />
+            <UiInput :id="id" v-model.number="maxTokens" type="number" min="1" placeholder="Default" />
           </template>
         </UiField>
       </div>

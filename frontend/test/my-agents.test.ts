@@ -10,7 +10,6 @@ vi.mock('../src/api/client.js', () => ({
   getMe: vi.fn(),
   getMyAgents: vi.fn(),
   listLlmDevelopmentSeasons: vi.fn(async () => []),
-  rotateLlmDevelopmentKey: vi.fn(),
 }))
 
 vi.mock('../src/environmentCatalog.js', () => ({
@@ -18,12 +17,7 @@ vi.mock('../src/environmentCatalog.js', () => ({
   resetEnvironmentCatalog: vi.fn(),
 }))
 
-import {
-  getMe,
-  getMyAgents,
-  listLlmDevelopmentSeasons,
-  rotateLlmDevelopmentKey,
-} from '../src/api/client.js'
+import { getMe, getMyAgents, listLlmDevelopmentSeasons } from '../src/api/client.js'
 import { loadEnvironmentCatalog } from '../src/environmentCatalog.js'
 import MyAgentsPage from '../src/pages/MyAgentsPage.vue'
 
@@ -179,13 +173,13 @@ describe('MyAgentsPage', () => {
 
     expect(await screen.findByRole('meter', { name: 'Development usage' })).toHaveValue(250)
     expect(screen.getByText('250 units used of 1,000 units')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: 'Create development key' })).toHaveLength(1)
+    expect(screen.getAllByRole('link', { name: 'Get or test key' })).toHaveLength(1)
     const previousSeason = screen.getByText('Week 3').closest('li')
     expect(previousSeason).not.toBeNull()
     expect(within(previousSeason as HTMLElement).queryByRole('meter')).toBeNull()
   })
 
-  it('layers key creation above the row link and shows the one-time credential', async () => {
+  it('layers the key link above the row link', async () => {
     vi.mocked(getMyAgents).mockResolvedValue([
       {
         env_id: 'flappy_bird',
@@ -208,26 +202,14 @@ describe('MyAgentsPage', () => {
         key_exists: false,
       },
     ])
-    vi.mocked(rotateLlmDevelopmentKey).mockResolvedValue({
-      season_id: 'week-4',
-      base_url: 'https://sandbox.test/api/llm/v1',
-      api_key: 'sk-sandbox-dev-secret',
-      models: ['small'],
-      cost_weights: { small: 1 },
-      limits: { token_budget: 1000, rate_limit_rpm: 10 },
-    })
 
     const { router } = await renderPage()
-    await fireEvent.click(await screen.findByRole('button', { name: 'Create development key' }))
+    const keyLink = await screen.findByRole('link', { name: 'Get or test key' })
+    // Keys are created and tested on the LLM Playground, not on the row.
+    expect(screen.queryByRole('button', { name: /development key/ })).toBeNull()
+    await fireEvent.click(keyLink)
 
-    expect(vi.mocked(rotateLlmDevelopmentKey)).toHaveBeenCalledWith('week-4')
-    expect(router.currentRoute.value.fullPath).toBe('/my/agents')
-    expect(await screen.findByDisplayValue('sk-sandbox-dev-secret')).toHaveAttribute('readonly')
-    // Once a key exists, the row links to the LLM Playground.
-    expect(screen.getByRole('link', { name: 'Test key', hidden: true })).toHaveAttribute(
-      'href',
-      '/llm',
-    )
+    await waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/llm'))
   })
 
   it('shows no score when a released current season has no submission', async () => {

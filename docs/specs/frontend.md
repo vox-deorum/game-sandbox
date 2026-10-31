@@ -43,7 +43,7 @@ The global sidebar and mobile bar show the deployment name with its brand icon. 
 | My Profile | Signed-in identity and capabilities |
 | User Management | Admin-only roster management, approval, bans, roles, and password resets |
 | Server Logs | Admin-only view of recent structured messages retained by the current backend process |
-| LLM Playground | Paste a development key to see its season and remaining budget, then try a metered prompt with it; linked from My Agents. Operators also see the deployment upstream with a live check per model alias, and can send prompts straight to the upstream, unmetered |
+| LLM Playground | Create or rotate a development key for any open, LLM-enabled season, check a key to see its season and remaining budget, then try a metered prompt with it; linked from My Agents. Every prompt needs a key, for operators too. Operators also see the deployment upstream with a live check per model alias |
 
 ### Documentation
 
@@ -105,7 +105,7 @@ For the submission-open season, My Submissions shows the same settings info box 
 
 The **My Agents** page groups the user's current and recent submission seasons by environment. It marks the current submission-open season with text as well as color, shows each active attempt and validation status, and exposes released results only. A released result includes a placement earned by any of the user's attempts in that season, including one later replaced. A failed validation still counts as an attempt. Unreleased placements stay hidden, while zero and negative scores remain valid displayed results.
 
-When the current submission-open season has effective LLM access, My Agents and the owner's agent profile show development usage and key management. The owner can inspect call history for an eligible current season and for historical submission seasons. See [LLM API](llm.md#budgets-and-limits).
+When the current submission-open season has effective LLM access, My Agents shows development usage with a link to the LLM Playground, where keys are created and rotated. The owner's agent profile shows development usage and key management. The owner can inspect call history for an eligible current season and for historical submission seasons. See [LLM API](llm.md#budgets-and-limits).
 
 See [Submissions](submission.md).
 

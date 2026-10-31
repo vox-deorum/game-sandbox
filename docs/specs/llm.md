@@ -89,14 +89,15 @@ Successful development calls record the participant, model, token counts, estima
 
 ### Testing keys and prompts
 
-| Who | Key check | Prompt test |
+| Check | Route | Behavior |
 | --- | --- | --- |
-| Participant | `GET /api/llm/v1/key` with the development key as bearer. It applies the same checks as a completion and returns the key's season, models, prices, limits, and usage. It spends nothing. | An ordinary development call with that key, metered and recorded as above. |
-| Operator | Not needed: the deployment upstream has no per-user key. | `POST /api/admin/llm/chat` sends one request straight to the upstream model behind an alias. It bypasses metering and telemetry. An upstream refusal returns `502` with the provider's status in `upstream_status`. |
+| Key check, for anyone with a key | `GET /api/llm/v1/key` with the development key as bearer | Applies the same checks as a completion and returns the key's season, models, prices, limits, and usage. It spends nothing. |
+| Prompt test, for anyone with a key | `POST /api/llm/v1/chat/completions` | An ordinary development call, metered and recorded as above. Operators test prompts this way too, with their own development key. |
+| Alias check, for operators | `POST /api/admin/llm/chat` | Sends one request straight to the upstream model behind an alias. It bypasses metering and telemetry. An upstream refusal returns `502` with the provider's status in `upstream_status`. |
 
 `GET /api/admin/llm` reports the upstream URL, whether a credential is set (never its value), each configured alias with its upstream model and price, and the output-token defaults. See [Frontend](frontend.md#pages) for the LLM Playground page built on these routes.
 
-Both testers send the output limit as `max_completion_tokens`, the field reasoning models require. A blank limit leaves the field out, so the deployment default applies. The operator's alias check asks for at most 16 output tokens, or the deployment's hard limit when that is lower.
+The prompt tester sends the output limit as `max_completion_tokens`, the field reasoning models require. A blank limit leaves the field out, so the deployment default applies. The operator's alias check asks for at most 16 output tokens, or the deployment's hard limit when that is lower.
 
 ## Determinism and timing
 

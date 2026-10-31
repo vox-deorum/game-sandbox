@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/vue'
+import { fireEvent, screen, waitFor, within } from '@testing-library/vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AdminLlmInfo, LlmDevelopmentSeason } from '../src/api/client.js'
@@ -11,12 +11,16 @@ vi.mock('../src/api/client.js', () => ({
   runLlmDevelopmentChat: vi.fn(),
   getAdminLlm: vi.fn(),
   runAdminLlmChat: vi.fn(),
+  listLlmDevelopmentSeasons: vi.fn(async () => []),
+  rotateLlmDevelopmentKey: vi.fn(),
 }))
 
 import {
   checkLlmDevelopmentKey,
   getAdminLlm,
   getMe,
+  listLlmDevelopmentSeasons,
+  rotateLlmDevelopmentKey,
   runAdminLlmChat,
   runLlmDevelopmentChat,
 } from '../src/api/client.js'
@@ -61,6 +65,61 @@ describe('LLM Playground for a participant', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('student', 'normal'))
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([])
+  })
+
+  it('creates a key for a season with LLM access and checks it right away', async () => {
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([{ ...season, key_exists: false }])
+    vi.mocked(rotateLlmDevelopmentKey).mockResolvedValue({
+      season_id: 's1',
+      base_url: 'https://sandbox.test/api/llm/v1',
+      api_key: KEY,
+      models: ['small'],
+      cost_weights: { small: 2 },
+      limits: { token_budget: 1000, rate_limit_rpm: 30 },
+    })
+    vi.mocked(checkLlmDevelopmentKey).mockResolvedValue({ ok: true, season })
+    await renderPlayground()
+
+    expect(await screen.findByText('Season 5 · three_branches')).toBeInTheDocument()
+    expect(screen.getByText('No key yet')).toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'Create development key' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Development credential' })
+    expect(within(dialog).getByDisplayValue(KEY)).toHaveAttribute('readonly')
+    expect(rotateLlmDevelopmentKey).toHaveBeenCalledWith('s1')
+    await waitFor(() => expect(checkLlmDevelopmentKey).toHaveBeenCalledWith(KEY))
+    expect(await screen.findByText('Key works')).toBeInTheDocument()
+    expect(screen.getByText('Key issued')).toBeInTheDocument()
+  })
+
+  it('confirms before rotating an existing key', async () => {
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([season])
+    vi.mocked(rotateLlmDevelopmentKey).mockResolvedValue({
+      season_id: 's1',
+      base_url: 'https://sandbox.test/api/llm/v1',
+      api_key: KEY,
+      models: ['small'],
+      cost_weights: { small: 2 },
+      limits: { token_budget: 1000, rate_limit_rpm: 30 },
+    })
+    vi.mocked(checkLlmDevelopmentKey).mockResolvedValue({ ok: true, season })
+    await renderPlayground()
+    await fireEvent.click(await screen.findByRole('button', { name: 'Rotate development key' }))
+
+    const confirmation = await screen.findByRole('dialog', { name: 'Rotate development key?' })
+    expect(rotateLlmDevelopmentKey).not.toHaveBeenCalled()
+    await fireEvent.click(
+      within(confirmation).getByRole('button', { name: 'Rotate development key' }),
+    )
+    await waitFor(() => expect(rotateLlmDevelopmentKey).toHaveBeenCalledWith('s1'))
+  })
+
+  it('says when no season offers a key', async () => {
+    await renderPlayground()
+
+    expect(await screen.findByText('No open season has LLM access.')).toBeInTheDocument()
+    expect(screen.queryByText(/Turn on LLM/)).not.toBeInTheDocument()
   })
 
   it('turns away an account that cannot participate yet', async () => {
@@ -209,10 +268,12 @@ describe('LLM Playground for an operator', () => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('operator', 'admin'))
     vi.mocked(getAdminLlm).mockResolvedValue(info)
+    vi.mocked(listLlmDevelopmentSeasons).mockResolvedValue([])
   })
 
-  it('sends prompts to the upstream until a development key is checked', async () => {
-    vi.mocked(runAdminLlmChat).mockResolvedValue({
+  it('runs prompts with a development key, exactly like a participant', async () => {
+    vi.mocked(checkLlmDevelopmentKey).mockResolvedValue({ ok: true, season })
+    vi.mocked(runLlmDevelopmentChat).mockResolvedValue({
       ok: true,
       completion: {
         ...completion,
@@ -220,33 +281,24 @@ describe('LLM Playground for an operator', () => {
       },
       latencyMs: 3,
     })
-    vi.mocked(runLlmDevelopmentChat).mockResolvedValue({ ok: true, completion, latencyMs: 640 })
-    vi.mocked(checkLlmDevelopmentKey).mockResolvedValue({ ok: true, season })
-    await renderPlayground()
-
-    expect(await screen.findByLabelText('Send through')).toHaveValue('upstream')
-    expect(screen.getByLabelText('Max output tokens')).toHaveAttribute(
-      'placeholder',
-      'Default (256)',
-    )
-    await fireEvent.update(screen.getByLabelText('User prompt'), 'hi')
-    await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-    expect(await screen.findByText('2 tokens in / 1 token out / 3 ms')).toBeInTheDocument()
-    expect(runAdminLlmChat).toHaveBeenCalledWith({
-      model: 'large',
-      messages: [{ role: 'user', content: 'hi' }],
-    })
-
     await checkKey()
-    await waitFor(() => expect(screen.getByLabelText('Send through')).toHaveValue('key'))
+    await fireEvent.update(await screen.findByLabelText('User prompt'), 'hi')
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+
     expect(
-      await screen.findByText('31 tokens in / 9 tokens out / 80 units / 640 ms'),
+      await screen.findByText('2 tokens in / 1 token out / 6 units / 3 ms'),
     ).toBeInTheDocument()
     expect(runLlmDevelopmentChat).toHaveBeenCalledWith(KEY, {
       model: 'small',
       messages: [{ role: 'user', content: 'hi' }],
     })
+    expect(runAdminLlmChat).not.toHaveBeenCalled()
+  })
+
+  it('tells an operator how to give a season LLM access', async () => {
+    await renderPlayground()
+
+    expect(await screen.findByText(/Turn on LLM for a season in Manage/)).toBeInTheDocument()
   })
 
   it('names the missing settings when no upstream is configured', async () => {
@@ -287,19 +339,5 @@ describe('LLM Playground for an operator', () => {
     expect(runAdminLlmChat).toHaveBeenCalledWith(
       expect.objectContaining({ max_completion_tokens: 8 }),
     )
-  })
-
-  it('shows raw upstream errors in the prompt tester', async () => {
-    vi.mocked(runAdminLlmChat).mockResolvedValue({
-      ok: false,
-      status: 404,
-      code: 'model_not_found',
-      message: 'No such model',
-    })
-    await renderPlayground()
-    await fireEvent.update(await screen.findByLabelText('User prompt'), 'hi')
-    await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-
-    expect(await screen.findByText('404 model_not_found: No such model')).toBeInTheDocument()
   })
 })

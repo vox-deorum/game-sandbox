@@ -11,17 +11,13 @@ import { RouterLink } from 'vue-router'
 
 import {
   getMyAgents,
-  type LlmDevelopmentCredential,
   type LlmDevelopmentSeason,
   listLlmDevelopmentSeasons,
   type MyAgentEnvironmentSummary,
   type MyAgentSeasonSummary,
-  rotateLlmDevelopmentKey,
 } from '../api/client.js'
-import DevelopmentCredentialDialog from '../components/DevelopmentCredentialDialog.vue'
 import UiButton from '../components/ui/UiButton.vue'
 import UiCard from '../components/ui/UiCard.vue'
-import UiConfirmDialog from '../components/ui/UiConfirmDialog.vue'
 import UiEmptyState from '../components/ui/UiEmptyState.vue'
 import UiMeter from '../components/ui/UiMeter.vue'
 import UiStatusBadge from '../components/ui/UiStatusBadge.vue'
@@ -48,12 +44,6 @@ const error = ref(false)
 const signedOut = ref(false)
 const developmentSeasons = ref<LlmDevelopmentSeason[]>([])
 const developmentError = ref(false)
-const keyBusySeasonId = ref<string | null>(null)
-const keyError = ref<string | null>(null)
-const confirmSeason = ref<LlmDevelopmentSeason | null>(null)
-const confirmOpen = ref(false)
-const credential = ref<LlmDevelopmentCredential | null>(null)
-const credentialOpen = ref(false)
 
 onMounted(async () => {
   await me.whenSettled()
@@ -167,38 +157,6 @@ function developmentFor(envId: string, row: SeasonRow): LlmDevelopmentSeason | n
 function meterText(development: LlmDevelopmentSeason): string {
   return `${formatLlmCost(development.budget_cost_units_used)} used of ${formatLlmCost(development.limits.token_budget)}`
 }
-
-async function createOrConfirm(development: LlmDevelopmentSeason): Promise<void> {
-  if (keyBusySeasonId.value !== null) return
-  keyError.value = null
-  if (development.key_exists) {
-    confirmSeason.value = development
-    confirmOpen.value = true
-    return
-  }
-  await issueKey(development)
-}
-
-async function issueKey(development: LlmDevelopmentSeason): Promise<void> {
-  keyBusySeasonId.value = development.season_id
-  keyError.value = null
-  try {
-    credential.value = await rotateLlmDevelopmentKey(development.season_id)
-    development.key_exists = true
-    confirmOpen.value = false
-    confirmSeason.value = null
-    credentialOpen.value = true
-  } catch {
-    keyError.value = 'Could not create the development key.'
-  } finally {
-    keyBusySeasonId.value = null
-  }
-}
-
-function cancelRotation(): void {
-  confirmOpen.value = false
-  confirmSeason.value = null
-}
 </script>
 
 <template>
@@ -271,28 +229,8 @@ function cancelRotation(): void {
                       :text-value="meterText(developmentFor(row.summary.env_id, seasonRow)!)"
                       label="Development usage"
                     />
-                    <UiButton
-                      class="development-key-action"
-                      size="tight"
-                      variant="secondary"
-                      :loading="keyBusySeasonId === seasonRow.season.id"
-                      :disabled="keyBusySeasonId !== null"
-                      @click="createOrConfirm(developmentFor(row.summary.env_id, seasonRow)!)"
-                    >
-                      {{
-                        developmentFor(row.summary.env_id, seasonRow)!.key_exists
-                          ? 'Rotate development key'
-                          : 'Create development key'
-                      }}
-                    </UiButton>
-                    <UiButton
-                      v-if="developmentFor(row.summary.env_id, seasonRow)!.key_exists"
-                      class="development-key-action"
-                      size="tight"
-                      variant="ghost"
-                      to="/llm"
-                    >
-                      Test key
+                    <UiButton size="tight" variant="secondary" to="/llm">
+                      Get or test key
                     </UiButton>
                   </div>
                 </div>
@@ -305,26 +243,6 @@ function cancelRotation(): void {
       Could not load development access.
       <UiButton variant="secondary" size="tight" @click="loadDevelopmentSeasons">Retry</UiButton>
     </UiEmptyState>
-    <UiEmptyState v-if="keyError !== null" tone="danger">{{ keyError }}</UiEmptyState>
-
-    <UiConfirmDialog
-      v-model:open="confirmOpen"
-      title="Rotate development key?"
-      description="The current key will stop working immediately. Accumulated usage remains."
-      confirm-label="Rotate development key"
-      confirm-variant="danger"
-      :confirm-loading="confirmSeason !== null && keyBusySeasonId === confirmSeason.season_id"
-      cancel-label="Cancel"
-      @confirm="confirmSeason !== null && issueKey(confirmSeason)"
-      @cancel="cancelRotation"
-    >
-    </UiConfirmDialog>
-
-    <DevelopmentCredentialDialog
-      v-model:open="credentialOpen"
-      :credential="credential"
-      @cleared="credential = null"
-    />
   </section>
 </template>
 
@@ -406,7 +324,7 @@ function cancelRotation(): void {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-4) var(--space-3);
