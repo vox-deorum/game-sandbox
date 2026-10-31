@@ -586,6 +586,8 @@ def run_dev() -> int:
     print("\nPreparing local development")
     _run_step("Installing Python dependencies", ["uv", "sync"])
     _run_step("Installing web dependencies", [_NPM, "install"])
+    (REPO_ROOT / ".githooks" / "pre-commit").chmod(0o755)
+    _run_step("Enabling the pre-commit formatting check", ["git", "config", "core.hooksPath", ".githooks"])
     print("\nSetup complete. Local development is ready.")
     if has_custom_settings:
         print("Your existing .env settings will be used when Game Sandbox starts.")

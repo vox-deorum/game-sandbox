@@ -1,0 +1,29 @@
+#!/bin/sh
+# Check-only formatting gate for staged files. It never edits or stages anything: when a file
+# needs formatting it prints the fix command and stops the commit. CI runs the full checks.
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+staged() {
+  git diff --cached --name-only --diff-filter=ACMR -z -- "$@" | xargs -0 -r printf '%s\n'
+}
+
+status=0
+
+biome_files=$(staged '*.json' '*.jsonc' '*.js' '*.mjs' '*.cjs' '*.ts' '*.tsx' '*.css')
+if [ -n "$biome_files" ]; then
+  echo "$biome_files" | tr '\n' '\0' | xargs -0 npx --no-install biome format --no-errors-on-unmatched --files-ignore-unknown=true || {
+    echo "Fix with: npx biome format --write <files>" >&2
+    status=1
+  }
+fi
+
+python_files=$(staged '*.py')
+if [ -n "$python_files" ]; then
+  echo "$python_files" | tr '\n' '\0' | xargs -0 uv run ruff format --check || {
+    echo "Fix with: uv run ruff format <files>" >&2
+    status=1
+  }
+fi
+
+exit $status

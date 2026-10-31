@@ -22,6 +22,8 @@ npm install
 
 `uv sync` creates the Python workspace environment. `npm install` installs all npm workspaces.
 
+The guided local-development setup also turns on a pre-commit check. To enable it by hand, run `git config core.hooksPath .githooks` (and `chmod +x .githooks/pre-commit` on Linux or macOS). The hook checks the formatting of staged TypeScript, JSON, CSS, and Python files with Biome and Ruff. It never changes or stages files: when it fails, it prints the command that fixes them, such as `npx biome format --write <files>`, and you commit again. CI still runs the full checks.
+
 ## First verification
 
 ```console
