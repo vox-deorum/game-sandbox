@@ -61,7 +61,7 @@ The backend, sessions, and Docker-gated checks need a running Docker daemon; see
 | Run the app from the browser e2e fixture | `npm run demo` |
 | Rebuild the demo fixture without the slow E2E arcs, then run the app | `npm run demo -- --rerun-e2e` |
 
-`npm run demo` serves a disposable browser e2e fixture on port 8080 and prints bootstrap administrator and student credentials. See [Data folders](../data/folders.md) for its lifecycle.
+`npm run demo` serves a disposable browser e2e fixture on port 8080 and prints bootstrap administrator and student credentials. See [Data folders](../data/folders.md) for its lifecycle. It also starts the e2e suite's fake LLM upstream as the `small` tier, which answers every call with one fixed reply. To use the real provider from your `.env` instead, run `npm run demo -- --real-llm`.
 
 `scripts/generate.py` produces canonical JSON Schema files (built from the hand-written Zod schemas), packaged schema copies, environment metadata, packaging declarations, and golden fixtures. Edit the source, regenerate, and commit both the source and generated files. Do not edit generated files by hand.
 

@@ -38,6 +38,24 @@ def test_backend_env_opts_into_loopback_auth_defaults():
     assert env["PUBLIC_ORIGIN"].startswith(("http://localhost", "http://127.0.0.1"))
 
 
+def test_backend_env_points_the_llm_proxy_at_the_fake_upstream(monkeypatch):
+    # A real provider configured in .env must not leak into the demo: the blank tiers mask its
+    # model names, and the upstream URL and key come from the process environment, which wins.
+    monkeypatch.setenv("LLM_MODEL_LARGE", "real-large")
+    env = demo._demo_env("http://127.0.0.1:1234/v1")
+    assert env["LLM_UPSTREAM_URL"] == "http://127.0.0.1:1234/v1"
+    assert env["LLM_MODEL_SMALL"] == "provider-small"
+    assert env["LLM_MODEL_LARGE"] == ""
+    assert env["LLM_MODEL_MEDIUM"] == ""
+
+
+def test_backend_env_leaves_llm_settings_to_env_files_with_real_llm():
+    def llm(env):
+        return {key: value for key, value in env.items() if key.startswith("LLM_")}
+
+    assert llm(demo._demo_env()) == llm(demo.os.environ)
+
+
 def test_run_backend_returns_child_exit_code_after_keyboard_interrupt(monkeypatch):
     class FakeProcess:
         wait_calls = 0

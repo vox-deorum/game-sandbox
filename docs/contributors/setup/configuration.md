@@ -128,6 +128,8 @@ The listener binds on all interfaces inside the Compose `app` container so the f
 
 After changing these variables, open **LLM** in the admin sidebar and select **Test all** to confirm that the upstream accepts the credential and every mapped model.
 
+For local testing against a real provider, put `LLM_UPSTREAM_URL`, `LLM_UPSTREAM_KEY`, and the `LLM_MODEL_*` names in `.env`. If the provider sits behind a self-signed or TLS-intercepting proxy, the same `.env` may also set Node's `NODE_TLS_REJECT_UNAUTHORIZED=0`. That turns off certificate checks for every outbound backend call, so never deploy with it.
+
 `LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. [Budgets and limits](../../specs/llm.md#budgets-and-limits) defines how weighted-token budgets are counted and priced.
 
 ## Submissions

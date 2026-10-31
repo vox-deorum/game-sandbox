@@ -32,6 +32,10 @@ credentials for two example accounts to sign in with:
   experience with real data behind every page, and the admin console stays correctly locked. Their
   Better Auth role is ``user``, never promoted to ``admin``.
 
+LLM upstream: the demo starts the same fake OpenAI-compatible upstream as the e2e suite and maps the
+``small`` tier to it, so LLM pages and agents work with no provider account. Every call returns one
+fixed reply. Pass ``--real-llm`` to use the ``LLM_*`` settings from ``.env`` instead.
+
 If the backend reports a stale-schema SQLite error during startup, run
 ``npm run demo -- --rerun-e2e`` to rebuild the fixture.
 """
@@ -40,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 
@@ -69,6 +74,10 @@ _ADMIN_PASSWORD = "admin-dev-password"
 # and `MEMBER_PASSWORD`.
 _MEMBER_EMAIL = "ada-lovelace@e2e.local"
 _MEMBER_PASSWORD = "e2e-member-password"
+
+# The fake upstream frontend/e2e/fresh-backend.mjs runs for the e2e suite. It prints one readiness
+# line with its loopback address on stdout.
+_LLM_STUB = REPO_ROOT / "backend" / "test" / "support" / "llm-upstream-server.ts"
 
 
 def ensure_e2e_db() -> None:
@@ -156,7 +165,24 @@ def _print_credentials() -> None:
     )
 
 
-def _demo_env() -> dict[str, str]:
+def start_llm_stub() -> tuple[subprocess.Popen[str], str]:
+    """Start the fake LLM upstream on a free port and return it with its base URL."""
+    proc = subprocess.Popen(
+        ["node", "--import", "tsx", str(_LLM_STUB)],
+        cwd=REPO_ROOT,
+        env={**os.environ, "LLM_STUB_PORT": "0"},
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert proc.stdout is not None
+    match = re.search(r"LLM stub listening (http://127\.0\.0\.1:\d+)", proc.stdout.readline())
+    if match is None:
+        proc.kill()
+        raise SystemExit("the fake LLM upstream did not start")
+    return proc, f"{match.group(1)}/v1"
+
+
+def _demo_env(llm_upstream_url: str | None = None) -> dict[str, str]:
     """Backend env for the demo: the same loopback Better Auth config as the e2e "main" backend
     the data was written under (see frontend/playwright.config.ts), widening the idle timeout for
     a usable demo, on port 8080 so a lingering e2e server on 8090 does not clash.
@@ -165,6 +191,9 @@ def _demo_env() -> dict[str, str]:
     opts into the published development defaults, so the copied database's bootstrap admin re-syncs
     to ``_ADMIN_EMAIL``/``_ADMIN_PASSWORD`` on startup, and every persona (the bootstrap admin or a
     member fixture like ada-lovelace) is reached by signing in for real at /login.
+
+    With ``llm_upstream_url``, the LLM proxy points at the fake upstream with only the ``small``
+    tier. The empty tiers mask any model names in ``.env``, which treats blank as unset.
     """
     env = os.environ.copy()
     env.update(
@@ -178,14 +207,24 @@ def _demo_env() -> dict[str, str]:
             "PORT": "8080",
         }
     )
+    if llm_upstream_url is not None:
+        env.update(
+            {
+                "LLM_UPSTREAM_URL": llm_upstream_url,
+                "LLM_UPSTREAM_KEY": "demo-upstream-key",
+                "LLM_MODEL_SMALL": "provider-small",
+                "LLM_MODEL_MEDIUM": "",
+                "LLM_MODEL_LARGE": "",
+            }
+        )
     return env
 
 
-def run_backend() -> int:
+def run_backend(llm_upstream_url: str | None = None) -> int:
     """Run the backend against the demo copy."""
     cmd = [_NPM, "run", "start", "--workspace", "@game-sandbox/backend"]
     print(f"$ {' '.join(cmd)}  (PORT=8080 DATA_DIR={DEMO_DATA_DIR})", flush=True)
-    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, env=_demo_env())
+    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, env=_demo_env(llm_upstream_url))
     try:
         return proc.wait()
     except KeyboardInterrupt:
@@ -206,6 +245,11 @@ def main(argv: list[str] | None = None) -> None:
             "`npm run demo -- --rerun-e2e`."
         ),
     )
+    parser.add_argument(
+        "--real-llm",
+        action="store_true",
+        help="Use the LLM_* settings from .env instead of the fake LLM upstream.",
+    )
     args = parser.parse_args(argv)
 
     if args.rerun_e2e:
@@ -221,7 +265,14 @@ def main(argv: list[str] | None = None) -> None:
     prepare_demo_data()
 
     _print_credentials()
-    raise SystemExit(run_backend())
+    if args.real_llm:
+        raise SystemExit(run_backend())
+    stub, llm_upstream_url = start_llm_stub()
+    print(f"fake LLM upstream at {llm_upstream_url} (the small tier; use --real-llm for .env)", flush=True)
+    try:
+        raise SystemExit(run_backend(llm_upstream_url))
+    finally:
+        stub.terminate()
 
 
 if __name__ == "__main__":
