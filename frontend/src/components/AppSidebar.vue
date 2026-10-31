@@ -54,8 +54,8 @@ const items = computed<NavItem[]>(() =>
     ? [
         ...baseItems,
         { label: 'LLM Playground', to: '/admin/llm', icon: Sparkles, match: ['/admin/llm'] },
-        { label: 'Users', to: '/admin/users', icon: Users, match: ['/admin/users'] },
-        { label: 'Logs', to: '/admin/logs', icon: FileText, match: ['/admin/logs'] },
+        { label: 'User Management', to: '/admin/users', icon: Users, match: ['/admin/users'] },
+        { label: 'Server Logs', to: '/admin/logs', icon: FileText, match: ['/admin/logs'] },
       ]
     : baseItems,
 )

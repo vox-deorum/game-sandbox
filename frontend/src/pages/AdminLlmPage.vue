@@ -79,7 +79,7 @@ function statusTone(outcome: LlmTestOutcome | undefined): 'neutral' | 'success' 
 
 <template>
   <section class="admin-llm">
-    <h1>LLM</h1>
+    <h1>LLM Playground</h1>
     <UiEmptyState v-if="access === 'loading'">Checking access…</UiEmptyState>
     <UiEmptyState v-else-if="access === 'denied'" tone="danger">
       This page is limited to operators.
