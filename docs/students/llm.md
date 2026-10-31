@@ -31,7 +31,7 @@ Some assignments may ask your game agent to call an LLM. First, request a develo
 
 A successful test prints the chosen tier, the response, and the token use. It never prints your API key.
 
-You can also test in the browser. In **My Agents**, select **Test key**, paste the key, and select **Check**. The page shows the key's season and remaining budget, then lets you try a prompt. Checking is free, but each prompt counts against your development budget like any other call.
+You can also test in the browser. In **My Agents**, select **Test key** to open the **LLM Playground**, paste the key, and select **Check**. The page shows the key's season and remaining budget, then lets you try a prompt: the **System prompt** sets who the model is and how it answers, and the **User prompt** is the message it answers. Checking is free, but each prompt counts against your development budget like any other call.
 
 Never commit `.env` or paste a key into source code, a prompt, an issue, or a chat. The template's `.gitignore` excludes `.env`, but still check `git status` before every commit. If you lose a key or think it was exposed, select **Rotate development key** in **My Agents**, which issues a new key and invalidates the old one.
 

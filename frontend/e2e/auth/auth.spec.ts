@@ -22,9 +22,9 @@ test('an admin signs in, sees the admin nav, and signs out', async ({ page }) =>
   await signInThroughUi(page, ADMIN_EMAIL, ADMIN_PASSWORD)
 
   // AppSidebar appends the operator links only when isAdmin(me) is true (see its `items` computed).
-  await expect(page.getByRole('link', { name: 'Users' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Logs' })).toBeVisible()
-  await page.getByRole('link', { name: 'Logs' }).click()
+  await expect(page.getByRole('link', { name: 'User Management' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Server Logs' })).toBeVisible()
+  await page.getByRole('link', { name: 'Server Logs' }).click()
   await expect(page).toHaveURL(/\/admin\/logs$/)
   await expect(page.getByRole('heading', { name: 'Backend Logs' })).toBeVisible()
 
@@ -34,8 +34,8 @@ test('an admin signs in, sees the admin nav, and signs out', async ({ page }) =>
   await page.waitForURL((url) => url.pathname === '/login')
 
   await expect(page.getByRole('link', { name: 'Sign in' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Users' })).toHaveCount(0)
-  await expect(page.getByRole('link', { name: 'Logs' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'User Management' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Server Logs' })).toHaveCount(0)
 
   // A signed-out visitor can still discover a built-in agent, and its watch action leads through the
   // real sign-in route instead of trying to start a session without a cookie.

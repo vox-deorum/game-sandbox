@@ -53,7 +53,7 @@ const items = computed<NavItem[]>(() =>
   isAdmin(me.me)
     ? [
         ...baseItems,
-        { label: 'LLM Playground', to: '/admin/llm', icon: Sparkles, match: ['/admin/llm'] },
+        { label: 'LLM Playground', to: '/llm', icon: Sparkles, match: ['/llm'] },
         { label: 'User Management', to: '/admin/users', icon: Users, match: ['/admin/users'] },
         { label: 'Server Logs', to: '/admin/logs', icon: FileText, match: ['/admin/logs'] },
       ]

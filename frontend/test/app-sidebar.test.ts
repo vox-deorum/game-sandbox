@@ -22,7 +22,7 @@ function makeRouter() {
       { path: '/my/profile', component: { template: '<div />' } },
       { path: '/admin/users', component: { template: '<div />' } },
       { path: '/admin/logs', component: { template: '<div />' } },
-      { path: '/admin/llm', component: { template: '<div />' } },
+      { path: '/llm', component: { template: '<div />' } },
       { path: '/environments/:envId', component: { template: '<div />' } },
       { path: '/login', component: { template: '<div />' } },
     ],
@@ -69,15 +69,15 @@ describe('AppSidebar', () => {
     expect(screen.getByRole('link', { name: 'Seasons' })).not.toHaveClass('active')
   })
 
-  it('shows the Users, Logs, and LLM destinations only for an admin', async () => {
+  it('shows the User Management, Server Logs, and LLM Playground destinations only for an admin', async () => {
     vi.mocked(getMe).mockResolvedValue(signedInMe('admin-1', 'admin'))
     await renderSidebar('/')
 
-    const users = await screen.findByRole('link', { name: 'Users' })
-    const logs = screen.getByRole('link', { name: 'Logs' })
+    const users = await screen.findByRole('link', { name: 'User Management' })
+    const logs = screen.getByRole('link', { name: 'Server Logs' })
     expect(users).toHaveAttribute('href', '/admin/users')
     expect(logs).toHaveAttribute('href', '/admin/logs')
-    expect(screen.getByRole('link', { name: 'LLM' })).toHaveAttribute('href', '/admin/llm')
+    expect(screen.getByRole('link', { name: 'LLM Playground' })).toHaveAttribute('href', '/llm')
   })
 
   it('hides the Users entry for a normal user', async () => {
@@ -85,8 +85,8 @@ describe('AppSidebar', () => {
     await renderSidebar('/')
 
     await screen.findByRole('link', { name: 'Environments' })
-    expect(screen.queryByRole('link', { name: 'Users' })).toBeNull()
-    expect(screen.queryByRole('link', { name: 'Logs' })).toBeNull()
-    expect(screen.queryByRole('link', { name: 'LLM' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'User Management' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Server Logs' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'LLM Playground' })).toBeNull()
   })
 })

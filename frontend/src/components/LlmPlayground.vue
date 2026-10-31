@@ -1,6 +1,7 @@
 <!--
-  One-turn prompt tester shared by the student key page and the operator LLM page. The caller owns
-  where the request goes (development key or direct upstream) and how a refusal is explained.
+  One-turn prompt tester on the LLM Playground. The caller owns where the request goes (development
+  key or direct upstream) and how a refusal is explained, and may add fields through the `settings`
+  slot, which opens the settings row.
 -->
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
@@ -18,16 +19,21 @@ import UiTextarea from './ui/UiTextarea.vue'
 
 const props = defineProps<{
   models: LlmModelAlias[]
-  /** Prefills Max tokens; left blank, the deployment default applies. */
-  defaultMaxTokens?: number
+  /** Shown in the empty output limit, which leaves the deployment default in effect. */
+  maxTokensPlaceholder?: string
   run: (request: LlmTestRequest) => Promise<LlmTestOutcome>
   /** Budget weights; when given, the result also shows the weighted cost. */
   costWeights?: Partial<Record<LlmModelAlias, number>>
   explain?: (failure: LlmFailure) => string
 }>()
+
+const SYSTEM_PLACEHOLDER =
+  'Optional. Who the model is and how it should answer, e.g. "You are a Hearts player. Reply with one card, like 7H."'
+const USER_PLACEHOLDER = 'The message the model answers, e.g. "Your hand: 2C 7H QS. Which card do you play?"'
+
 const model = ref<string>(props.models[0] ?? '')
 // `v-model.number` leaves an empty field as ''.
-const maxTokens = ref<number | ''>(props.defaultMaxTokens ?? '')
+const maxTokens = ref<number | ''>('')
 const system = ref('')
 const user = ref('')
 const busy = ref(false)
@@ -50,12 +56,19 @@ const reply = computed(() =>
 const stats = computed(() => {
   if (!outcome.value?.ok) return ''
   const usage = outcome.value.completion.usage
-  const parts = usage === undefined ? [] : [`${usage.prompt_tokens} in`, `${usage.completion_tokens} out`]
+  const parts =
+    usage === undefined
+      ? []
+      : [`${tokens(usage.prompt_tokens)} in`, `${tokens(usage.completion_tokens)} out`]
   const weight = outcomeWeight.value
   if (usage !== undefined && weight !== undefined) parts.push(formatLlmCost(weight * usage.total_tokens))
   parts.push(`${outcome.value.latencyMs} ms`)
-  return parts.join(' · ')
+  return parts.join(' / ')
 })
+
+function tokens(count: number): string {
+  return `${count} ${count === 1 ? 'token' : 'tokens'}`
+}
 
 const errorText = computed(() => {
   const value = outcome.value
@@ -92,6 +105,7 @@ async function submit(): Promise<void> {
   <UiCard>
     <form class="playground" @submit.prevent="submit">
       <div class="settings">
+        <slot name="settings" />
         <UiField label="Model">
           <template #default="{ id }">
             <UiSelect :id="id" v-model="model">
@@ -99,20 +113,26 @@ async function submit(): Promise<void> {
             </UiSelect>
           </template>
         </UiField>
-        <UiField label="Max tokens">
+        <UiField label="Max output tokens">
           <template #default="{ id }">
-            <UiInput :id="id" v-model.number="maxTokens" type="number" min="1" placeholder="Default" />
+            <UiInput
+              :id="id"
+              v-model.number="maxTokens"
+              type="number"
+              min="1"
+              :placeholder="maxTokensPlaceholder ?? 'Default'"
+            />
           </template>
         </UiField>
       </div>
-      <UiField label="System">
+      <UiField label="System prompt">
         <template #default="{ id }">
-          <UiTextarea :id="id" v-model="system" rows="3" />
+          <UiTextarea :id="id" v-model="system" rows="3" :placeholder="SYSTEM_PLACEHOLDER" />
         </template>
       </UiField>
-      <UiField label="User">
+      <UiField label="User prompt">
         <template #default="{ id }">
-          <UiTextarea :id="id" v-model="user" rows="3" />
+          <UiTextarea :id="id" v-model="user" rows="3" :placeholder="USER_PLACEHOLDER" />
         </template>
       </UiField>
       <div class="actions">

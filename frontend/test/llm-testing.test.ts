@@ -20,8 +20,7 @@ import {
   runAdminLlmChat,
   runLlmDevelopmentChat,
 } from '../src/api/client.js'
-import AdminLlmPage from '../src/pages/AdminLlmPage.vue'
-import LlmTestPage from '../src/pages/LlmTestPage.vue'
+import LlmPlaygroundPage from '../src/pages/LlmPlaygroundPage.vue'
 
 const KEY = 'sk-sandbox-dev-abc.secret'
 
@@ -44,24 +43,42 @@ const completion = {
   usage: { prompt_tokens: 31, completion_tokens: 9, total_tokens: 40 },
 }
 
-async function renderAt(path: string, component: object) {
-  const router = memoryRouter([{ path, component }])
-  router.push(path)
+async function renderPlayground() {
+  const router = memoryRouter([{ path: '/llm', component: LlmPlaygroundPage }])
+  router.push('/llm')
   await router.isReady()
   return renderWithMe(router)
 }
 
-describe('LlmTestPage', () => {
+/** Open the page if it is not open yet, then check the development key. */
+async function checkKey(): Promise<void> {
+  if (screen.queryByRole('heading', { name: 'LLM Playground' }) === null) await renderPlayground()
+  await fireEvent.update(await screen.findByLabelText('API key'), KEY)
+  await fireEvent.click(screen.getByRole('button', { name: 'Check' }))
+}
+
+describe('LLM Playground for a participant', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(getMe).mockResolvedValue(signedInMe('student', 'normal'))
   })
 
-  async function checkKey(): Promise<void> {
-    await renderAt('/my/llm', LlmTestPage)
-    await fireEvent.update(await screen.findByLabelText('API key'), KEY)
-    await fireEvent.click(screen.getByRole('button', { name: 'Check' }))
-  }
+  it('turns away an account that cannot participate yet', async () => {
+    vi.mocked(getMe).mockResolvedValue(signedInMe('newcomer', 'pending'))
+    await renderPlayground()
+
+    expect(await screen.findByText(/approved account/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('API key')).not.toBeInTheDocument()
+  })
+
+  it('shows only the key tools, without the operator upstream', async () => {
+    await renderPlayground()
+
+    expect(await screen.findByLabelText('API key')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Deployment upstream' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Prompt' })).not.toBeInTheDocument()
+    expect(getAdminLlm).not.toHaveBeenCalled()
+  })
 
   it('confirms a working key with its season and remaining budget', async () => {
     vi.mocked(checkLlmDevelopmentKey).mockResolvedValue({ ok: true, season })
@@ -91,12 +108,12 @@ describe('LlmTestPage', () => {
     vi.mocked(runLlmDevelopmentChat).mockResolvedValue({ ok: true, completion, latencyMs: 640 })
     await checkKey()
 
-    await fireEvent.update(await screen.findByLabelText('System'), 'You are the baker.')
-    await fireEvent.update(screen.getByLabelText('User'), 'Good morning!')
+    await fireEvent.update(await screen.findByLabelText('System prompt'), 'You are the baker.')
+    await fireEvent.update(screen.getByLabelText('User prompt'), 'Good morning!')
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
 
     expect(await screen.findByText('Morning! The rye is warm.')).toBeInTheDocument()
-    expect(screen.getByText('31 in · 9 out · 80 units · 640 ms')).toBeInTheDocument()
+    expect(screen.getByText('31 tokens in / 9 tokens out / 80 units / 640 ms')).toBeInTheDocument()
     expect(runLlmDevelopmentChat).toHaveBeenCalledWith(KEY, {
       model: 'small',
       messages: [
@@ -118,17 +135,19 @@ describe('LlmTestPage', () => {
     vi.mocked(runLlmDevelopmentChat).mockResolvedValue({ ok: true, completion, latencyMs: 640 })
     await checkKey()
 
-    await fireEvent.update(await screen.findByLabelText('Max tokens'), '50')
-    await fireEvent.update(screen.getByLabelText('User'), 'hi')
+    await fireEvent.update(await screen.findByLabelText('Max output tokens'), '50')
+    await fireEvent.update(screen.getByLabelText('User prompt'), 'hi')
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-    expect(await screen.findByText('31 in · 9 out · 80 units · 640 ms')).toBeInTheDocument()
+    expect(
+      await screen.findByText('31 tokens in / 9 tokens out / 80 units / 640 ms'),
+    ).toBeInTheDocument()
     expect(runLlmDevelopmentChat).toHaveBeenCalledWith(
       KEY,
       expect.objectContaining({ max_completion_tokens: 50 }),
     )
 
     await fireEvent.update(screen.getByLabelText('Model'), 'large')
-    expect(screen.getByText('31 in · 9 out · 80 units · 640 ms')).toBeInTheDocument()
+    expect(screen.getByText('31 tokens in / 9 tokens out / 80 units / 640 ms')).toBeInTheDocument()
   })
 
   it('ignores a late budget refresh for a key that was replaced', async () => {
@@ -140,7 +159,7 @@ describe('LlmTestPage', () => {
       .mockResolvedValueOnce({ ok: true, season: { ...season, label: 'Season 6' } })
     vi.mocked(runLlmDevelopmentChat).mockResolvedValue({ ok: true, completion, latencyMs: 640 })
     await checkKey()
-    await fireEvent.update(await screen.findByLabelText('User'), 'hi')
+    await fireEvent.update(await screen.findByLabelText('User prompt'), 'hi')
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
     await waitFor(() => expect(checkLlmDevelopmentKey).toHaveBeenCalledTimes(2))
 
@@ -166,14 +185,14 @@ describe('LlmTestPage', () => {
       message: 'over',
     })
     await checkKey()
-    await fireEvent.update(await screen.findByLabelText('User'), 'hi')
+    await fireEvent.update(await screen.findByLabelText('User prompt'), 'hi')
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
 
     expect(await screen.findByText(/could cost more than the budget left/)).toBeInTheDocument()
   })
 })
 
-describe('AdminLlmPage', () => {
+describe('LLM Playground for an operator', () => {
   const info: AdminLlmInfo = {
     configured: true,
     upstream_url: 'https://provider.test/v1',
@@ -192,17 +211,47 @@ describe('AdminLlmPage', () => {
     vi.mocked(getAdminLlm).mockResolvedValue(info)
   })
 
-  it('is limited to operators', async () => {
-    vi.mocked(getMe).mockResolvedValue(signedInMe('student', 'normal'))
-    await renderAt('/admin/llm', AdminLlmPage)
+  it('sends prompts to the upstream until a development key is checked', async () => {
+    vi.mocked(runAdminLlmChat).mockResolvedValue({
+      ok: true,
+      completion: {
+        ...completion,
+        usage: { prompt_tokens: 2, completion_tokens: 1, total_tokens: 3 },
+      },
+      latencyMs: 3,
+    })
+    vi.mocked(runLlmDevelopmentChat).mockResolvedValue({ ok: true, completion, latencyMs: 640 })
+    vi.mocked(checkLlmDevelopmentKey).mockResolvedValue({ ok: true, season })
+    await renderPlayground()
 
-    expect(await screen.findByText(/limited to operators/)).toBeInTheDocument()
-    expect(getAdminLlm).not.toHaveBeenCalled()
+    expect(await screen.findByLabelText('Send through')).toHaveValue('upstream')
+    expect(screen.getByLabelText('Max output tokens')).toHaveAttribute(
+      'placeholder',
+      'Default (256)',
+    )
+    await fireEvent.update(screen.getByLabelText('User prompt'), 'hi')
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(await screen.findByText('2 tokens in / 1 token out / 3 ms')).toBeInTheDocument()
+    expect(runAdminLlmChat).toHaveBeenCalledWith({
+      model: 'large',
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+
+    await checkKey()
+    await waitFor(() => expect(screen.getByLabelText('Send through')).toHaveValue('key'))
+    await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
+    expect(
+      await screen.findByText('31 tokens in / 9 tokens out / 80 units / 640 ms'),
+    ).toBeInTheDocument()
+    expect(runLlmDevelopmentChat).toHaveBeenCalledWith(KEY, {
+      model: 'small',
+      messages: [{ role: 'user', content: 'hi' }],
+    })
   })
 
   it('names the missing settings when no upstream is configured', async () => {
     vi.mocked(getAdminLlm).mockResolvedValue({ ...info, configured: false, models: [] })
-    await renderAt('/admin/llm', AdminLlmPage)
+    await renderPlayground()
 
     expect(await screen.findByText(/LLM_UPSTREAM_URL/)).toBeInTheDocument()
   })
@@ -213,7 +262,7 @@ describe('AdminLlmPage', () => {
         ? { ok: true, completion, latencyMs: 820 }
         : { ok: false, status: 401, code: 'invalid_api_key', message: 'Incorrect API key' },
     )
-    await renderAt('/admin/llm', AdminLlmPage)
+    await renderPlayground()
 
     expect(await screen.findByText('provider-large')).toBeInTheDocument()
     expect(screen.getByText('Key set')).toBeInTheDocument()
@@ -232,7 +281,7 @@ describe('AdminLlmPage', () => {
   it('keeps alias checks within a small output limit', async () => {
     vi.mocked(getAdminLlm).mockResolvedValue({ ...info, max_output_tokens: 8 })
     vi.mocked(runAdminLlmChat).mockResolvedValue({ ok: true, completion, latencyMs: 5 })
-    await renderAt('/admin/llm', AdminLlmPage)
+    await renderPlayground()
     await fireEvent.click(await screen.findByRole('button', { name: 'Test small' }))
 
     expect(runAdminLlmChat).toHaveBeenCalledWith(
@@ -247,8 +296,8 @@ describe('AdminLlmPage', () => {
       code: 'model_not_found',
       message: 'No such model',
     })
-    await renderAt('/admin/llm', AdminLlmPage)
-    await fireEvent.update(await screen.findByLabelText('User'), 'hi')
+    await renderPlayground()
+    await fireEvent.update(await screen.findByLabelText('User prompt'), 'hi')
     await fireEvent.click(screen.getByRole('button', { name: 'Run' }))
 
     expect(await screen.findByText('404 model_not_found: No such model')).toBeInTheDocument()

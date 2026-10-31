@@ -132,9 +132,12 @@ test('operator season configuration exposes and validates LLM controls', async (
   }
 })
 
-test('operator LLM page checks each alias against the real upstream', async ({ page, admin }) => {
+test('operator LLM Playground checks each alias against the real upstream', async ({
+  page,
+  admin,
+}) => {
   await authenticateBrowser(page.context(), admin)
-  await page.goto('/admin/llm')
+  await page.goto('/llm')
   await expect(page.getByRole('cell', { name: 'provider-small' })).toBeVisible()
   await page.getByRole('button', { name: 'Test all' }).click()
   await expect(page.getByText(/^OK · \d+ ms$/)).toBeVisible()

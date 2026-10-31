@@ -290,7 +290,7 @@ function cancelRotation(): void {
                       class="development-key-action"
                       size="tight"
                       variant="ghost"
-                      to="/my/llm"
+                      to="/llm"
                     >
                       Test key
                     </UiButton>

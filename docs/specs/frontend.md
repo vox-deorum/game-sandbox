@@ -6,16 +6,16 @@ The frontend lets people discover environments, submit agents, watch or play ses
 
 Navigation has two levels:
 
-| Global sidebar    | Environment tabs      |
-| ----------------- | --------------------- |
-| Environments      | Overview              |
-| Seasons           | Leaderboards          |
-| Documentation     | Replays               |
-| My Agents         | My Submissions        |
-| My Profile        | Manage, for operators |
-| Users, for admins |                       |
-| Logs, for admins  |                       |
-| LLM, for admins   |                       |
+| Global sidebar              | Environment tabs      |
+| --------------------------- | --------------------- |
+| Environments                | Overview              |
+| Seasons                     | Leaderboards          |
+| Documentation               | Replays               |
+| My Agents                   | My Submissions        |
+| My Profile                  | Manage, for operators |
+| User Management, for admins |                       |
+| Server Logs, for admins     |                       |
+| LLM Playground, for admins  |                       |
 
 The site uses **Environment** and **Season** as its front-facing names, matching the `environment` and `season` entity names used throughout the API and the operator console.
 
@@ -41,10 +41,9 @@ The global sidebar and mobile bar show the deployment name with its brand icon. 
 | Manage | Operator-only season configuration, deletion of unused private seasons, workflow logs, preview, and release |
 | Documentation | Student guides, rendered in-app with a section navigation |
 | My Profile | Signed-in identity and capabilities |
-| Users | Admin-only roster management, approval, bans, roles, and password resets |
-| Logs | Admin-only view of recent structured messages retained by the current backend process |
-| LLM | Admin-only upstream summary, a live check per model alias, and an unmetered prompt tester |
-| Test LLM key | Paste a development key to see its season and remaining budget, then try a prompt with it; linked from My Agents |
+| User Management | Admin-only roster management, approval, bans, roles, and password resets |
+| Server Logs | Admin-only view of recent structured messages retained by the current backend process |
+| LLM Playground | Paste a development key to see its season and remaining budget, then try a metered prompt with it; linked from My Agents. Operators also see the deployment upstream with a live check per model alias, and can send prompts straight to the upstream, unmetered |
 
 ### Documentation
 

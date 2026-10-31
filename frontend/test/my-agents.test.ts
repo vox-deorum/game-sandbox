@@ -32,7 +32,7 @@ async function renderPage() {
     { path: '/', component: { template: '<div />' } },
     { path: '/login', component: { template: '<div />' } },
     { path: '/my/agents', component: MyAgentsPage },
-    { path: '/my/llm', component: { template: '<div />' } },
+    { path: '/llm', component: { template: '<div />' } },
     { path: '/environments/:envId/agents/:ownerId', component: { template: '<div />' } },
   ])
   router.push('/my/agents')
@@ -223,10 +223,10 @@ describe('MyAgentsPage', () => {
     expect(vi.mocked(rotateLlmDevelopmentKey)).toHaveBeenCalledWith('week-4')
     expect(router.currentRoute.value.fullPath).toBe('/my/agents')
     expect(await screen.findByDisplayValue('sk-sandbox-dev-secret')).toHaveAttribute('readonly')
-    // Once a key exists, the row links to the key tester.
+    // Once a key exists, the row links to the LLM Playground.
     expect(screen.getByRole('link', { name: 'Test key', hidden: true })).toHaveAttribute(
       'href',
-      '/my/llm',
+      '/llm',
     )
   })
 
