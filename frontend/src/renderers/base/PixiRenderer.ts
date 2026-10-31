@@ -129,6 +129,8 @@ export abstract class PixiRenderer implements RendererInstance {
   private readonly transition = new TransitionGate()
   private resizeObserver: ResizeObserver | null = null
   private resizeTimer: ReturnType<typeof setTimeout> | null = null
+  /** The pending {@link redrawCurrentFrame} draw, if one is scheduled. */
+  private redrawRequest: number | null = null
   private devicePixelRatioQuery: MediaQueryList | null = null
   private detachInput: (() => void) | null = null
 
@@ -191,6 +193,10 @@ export abstract class PixiRenderer implements RendererInstance {
     if (this.resizeTimer !== null) {
       clearTimeout(this.resizeTimer)
       this.resizeTimer = null
+    }
+    if (this.redrawRequest !== null) {
+      cancelAnimationFrame(this.redrawRequest)
+      this.redrawRequest = null
     }
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
@@ -439,10 +445,17 @@ export abstract class PixiRenderer implements RendererInstance {
     this.app.render()
   }
 
-  /** Draw display-object mutations that do not come from a new game state, such as view-only hover. */
+  /**
+   * Draw display-object mutations that do not come from a new game state, such as view-only hover or
+   * a camera drag. Requests coalesce into one draw on the next animation frame, since pointer events
+   * can arrive faster than the display refreshes. While the ticker runs it draws every frame anyway.
+   */
   protected redrawCurrentFrame(): void {
-    if (this.app === null || !this.ready) return
-    this.app.render()
+    if (this.app === null || !this.ready || this.animating || this.redrawRequest !== null) return
+    this.redrawRequest = requestAnimationFrame(() => {
+      this.redrawRequest = null
+      if (this.app !== null && this.ready) this.app.render()
+    })
   }
 
   private observeResize(): void {

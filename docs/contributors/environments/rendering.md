@@ -39,7 +39,7 @@ A realtime environment's live human session is unpaced: the host draws every fra
 
 The registry stores each `PixiRenderer` subclass with its static image thumbnail. The frontend discovers every `environments/*/renderer/index.ts` module on its own.
 
-`PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard, which skips canvas and WebGL work when a test runs under jsdom, the DOM simulator. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`.
+`PixiRenderer` owns PixiJS setup and teardown, high-DPI sizing, resize handling, pending-state caching, input listeners, and the jsdom guard, which skips canvas and WebGL work when a test runs under jsdom, the DOM simulator. A subclass creates persistent nodes in `setup(root)`, reconciles them in `update(state)`, and may declare fixed gesture mappings in `inputs()`. For a view-only change such as hover or a camera drag, it calls `redrawCurrentFrame()`. That draws once on the next animation frame however many times it is called, and not at all while the ticker is already drawing every frame.
 
 Renderers that need pan and zoom can compose the shared pure camera reducers and DOM gesture wiring under `frontend/src/renderers/base/`. Keep the movable world in its own container so screen-fixed overlays remain outside the camera transform. A canvas-painted button is not a DOM control, so the browser still reports gestures over it: give the gesture wiring an `accepts` callback that rejects those areas, and pressing a button will not also move the world.
 
@@ -61,6 +61,7 @@ PixiJS rebuilds draw instructions one render group at a time. A large world need
 - Make a camera-moved world root a render group (`isRenderGroup: true`), so panning changes one GPU transform instead of re-packing every vertex below it. Put any clipping mask on a plain wrapper around that root, not on the render group itself. Pixi clips away everything inside a masked render group that has no stencil mask of its own.
 - Give large static layers, such as packed tile ground, a render group of their own, so a redraw elsewhere never re-batches them.
 - Redrawing a small `Graphics` or touching a `Text` marks its whole render group for a rebuild. Assigning `Text.resolution` counts even when the value is unchanged, so use `setTextResolution` from `@renderers/base/pixi-helpers.js`, and repaint a `Graphics` only when its shape changes. Days at Three Branches follows all three.
+- Keep filters few. Each filter renders its container into a separate texture every frame, and that cost grows with the canvas's pixel count, so a scene that runs smoothly in a small stage can stall in fullscreen. Never give each of many layers its own filter. Days at Three Branches draws each route's ten edge-fade layers with a `max` blend inside one filtered group, so a route costs one pass instead of ten.
 
 ## Input and semantic data
 

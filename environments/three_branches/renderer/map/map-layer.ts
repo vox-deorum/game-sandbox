@@ -127,7 +127,7 @@ export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
     )
     pathLayers.view.setMask?.({ mask: pathBridgeCutout, inverse: true })
     naturalView.addChild(pathLayers.view, pathBridgeCutout)
-    owned.push(pathLayers.view)
+    owned.push(pathLayers)
     graphics.push(...pathLayers.graphics)
     pathBridgeCutout.label = 'terrain-path-bridge-cutout'
     graphics.push(pathBridgeCutout)
@@ -147,7 +147,7 @@ export function drawMap(scene: StaticScene, art?: TerrainArt): MapLayerView {
     )
     roadLayers.view.setMask?.({ mask: roadBridgeCutout, inverse: true })
     naturalView.addChild(roadLayers.view, roadBridgeCutout)
-    owned.push(roadLayers.view)
+    owned.push(roadLayers)
     graphics.push(...roadLayers.graphics)
     roadBridgeCutout.label = 'terrain-road-bridge-cutout'
     graphics.push(roadBridgeCutout)
@@ -707,7 +707,7 @@ export function pathGuideGraphics(
   return path
 }
 
-/** Stroke the inset road guide with the road pattern. The caller flattens its composite alpha. */
+/** Stroke the inset road guide with the road pattern. The caller's fade group sets its opacity. */
 export function roadGuideGraphics(
   routes: TerrainRoutePlan,
   cellSize: number,
@@ -759,9 +759,18 @@ function appendPathGuides(
 interface RouteFadeLayers {
   readonly view: Container
   readonly graphics: readonly Graphics[]
+  /** Release the view, its fade group, and the group's filter. The caller destroys `graphics`. */
+  destroy(): void
 }
 
-/** Draw one route surface from concentric layers whose composite alpha rises linearly inward. */
+/**
+ * Draw one route surface from concentric layers whose composite alpha rises linearly inward.
+ *
+ * Every layer shares one opaque pattern and each narrower layer sits inside the wider ones, so a
+ * pixel shows the pattern at the alpha of the innermost layer covering it. A `max` blend inside one
+ * isolated group computes exactly that, and it keeps overlapping strokes within a layer from
+ * doubling. The route then costs one filter pass instead of one per layer.
+ */
 function routeFadeLayers(
   label: string,
   edgeFadeCells: number,
@@ -769,21 +778,30 @@ function routeFadeLayers(
   drawLayer: (extraWidthCells: number) => Graphics,
 ): RouteFadeLayers {
   const view = new Container()
+  const fade = new Container()
+  const filter = new AlphaFilter({ alpha: opacity })
   const graphics: Graphics[] = []
   view.label = label
-  let previousComposite = 0
+  fade.filters = [filter]
+  view.addChild(fade)
   for (let step = 0; step < ROUTE_EDGE_FADE_STEPS; step += 1) {
-    const targetComposite = (opacity * (step + 1)) / ROUTE_EDGE_FADE_STEPS
-    const layerOpacity = (targetComposite - previousComposite) / (1 - previousComposite)
     const extraWidthCells = 2 * edgeFadeCells * (1 - (2 * step) / (ROUTE_EDGE_FADE_STEPS - 1))
     const layer = drawLayer(extraWidthCells)
-    layer.filters = [new AlphaFilter({ alpha: layerOpacity })]
+    layer.alpha = (step + 1) / ROUTE_EDGE_FADE_STEPS
+    layer.blendMode = 'max'
     layer.label = `${label}-fade-${step}`
-    view.addChild(layer)
+    fade.addChild(layer)
     graphics.push(layer)
-    previousComposite = targetComposite
   }
-  return { view, graphics }
+  return {
+    view,
+    graphics,
+    destroy() {
+      fade.destroy()
+      view.destroy()
+      filter.destroy()
+    },
+  }
 }
 
 function appendRoadGuide(
