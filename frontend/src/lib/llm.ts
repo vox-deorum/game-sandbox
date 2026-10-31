@@ -52,3 +52,19 @@ export function groupSetupCalls(
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([player, calls]) => ({ player, calls }))
 }
+
+const LLM_ERROR_TEXT: Record<string, string> = {
+  invalid_api_key: 'Key not recognized. It may have been rotated.',
+  development_closed: 'Submissions for this season are closed.',
+  llm_not_enabled: 'LLM access is off for this season.',
+  account_not_active: 'Your account is not active.',
+  budget_exceeded: 'This call could cost more than the budget left. Try fewer max tokens.',
+  rate_limit_exceeded: 'Too many calls this minute. Try again shortly.',
+  upstream_timeout: 'The model provider timed out.',
+  upstream_connection_error: 'The model provider could not be reached.',
+}
+
+/** A short, plain explanation of an LLM refusal, falling back to the server's own message. */
+export function describeLlmError(code: string, message: string): string {
+  return LLM_ERROR_TEXT[code] ?? message
+}

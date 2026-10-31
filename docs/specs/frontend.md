@@ -15,6 +15,7 @@ Navigation has two levels:
 | My Profile        | Manage, for operators |
 | Users, for admins |                       |
 | Logs, for admins  |                       |
+| LLM, for admins   |                       |
 
 The site uses **Environment** and **Season** as its front-facing names, matching the `environment` and `season` entity names used throughout the API and the operator console.
 
@@ -42,6 +43,8 @@ The global sidebar and mobile bar show the deployment name with its brand icon. 
 | My Profile | Signed-in identity and capabilities |
 | Users | Admin-only roster management, approval, bans, roles, and password resets |
 | Logs | Admin-only view of recent structured messages retained by the current backend process |
+| LLM | Admin-only upstream summary, a live check per model alias, and an unmetered prompt tester |
+| Test LLM key | Paste a development key to see its season and remaining budget, then try a prompt with it; linked from My Agents |
 
 ### Documentation
 

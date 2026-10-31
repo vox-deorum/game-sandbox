@@ -100,6 +100,17 @@ export function registerDevelopmentLlmRoutes(
     },
   )
 
+  // The bearer key authenticates itself, so a student can check the exact string in their `.env`.
+  app.get('/api/llm/v1/key', async (request, reply) => {
+    try {
+      const key = await deps.keys.verify(readBearer(request.headers.authorization))
+      return await discoveryView(deps, key.season.id, key.userId, key)
+    } catch (error) {
+      const normalized = asLlmError(error)
+      return reply.code(normalized.status).send(normalized.body())
+    }
+  })
+
   app.post(
     '/api/llm/v1/chat/completions',
     {

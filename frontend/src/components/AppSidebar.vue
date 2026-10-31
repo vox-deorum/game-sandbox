@@ -8,7 +8,18 @@
   RouterLink's prefix matching, because the "Games" root would otherwise read as active everywhere.
 -->
 <script setup lang="ts">
-import { Bot, BookOpen, FileText, Gamepad2, PanelLeftClose, PanelLeftOpen, Trophy, Users, X } from '@lucide/vue'
+import {
+  Bot,
+  BookOpen,
+  FileText,
+  Gamepad2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sparkles,
+  Trophy,
+  Users,
+  X,
+} from '@lucide/vue'
 import { computed, type FunctionalComponent } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 
@@ -42,6 +53,7 @@ const items = computed<NavItem[]>(() =>
   isAdmin(me.me)
     ? [
         ...baseItems,
+        { label: 'LLM Playground', to: '/admin/llm', icon: Sparkles, match: ['/admin/llm'] },
         { label: 'Users', to: '/admin/users', icon: Users, match: ['/admin/users'] },
         { label: 'Logs', to: '/admin/logs', icon: FileText, match: ['/admin/logs'] },
       ]

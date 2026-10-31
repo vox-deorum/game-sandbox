@@ -85,6 +85,7 @@ export interface OpenTestAppOptions {
   docsDir?: string
   docsIndexFile?: string
   llmDevelopment?: AppDeps['llmDevelopment']
+  llmUpstream?: AppDeps['llmUpstream']
   officialTelemetry?: AppDeps['officialTelemetry']
   logs?: LogBuffer
   beforeReady?: (app: FastifyInstance) => void
@@ -146,6 +147,7 @@ export async function openTestApp(options: OpenTestAppOptions = {}): Promise<Tes
       ? {}
       : { officialTelemetry: options.officialTelemetry }),
     ...(options.llmDevelopment === undefined ? {} : { llmDevelopment: options.llmDevelopment }),
+    ...(options.llmUpstream === undefined ? {} : { llmUpstream: options.llmUpstream }),
     ...submissionDeps,
     ...(options.siteName === undefined ? {} : { siteName: options.siteName }),
     ...(options.siteIconUrl === undefined ? {} : { siteIconUrl: options.siteIconUrl }),

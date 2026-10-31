@@ -73,17 +73,21 @@ async function main(): Promise<void> {
   const llmRegistry = llmConfigured
     ? new KeyRegistry(undefined, { maxRequestMs: upstreamMaxRequestMs })
     : undefined
+  // The handler and the operator test route share one upstream client.
+  const llmUpstream = llmConfigured
+    ? new UpstreamCaller({
+        baseURL: config.llm.upstreamUrl as string,
+        apiKey: config.llm.upstreamKey,
+        timeoutMs: config.llm.upstreamTimeoutMs,
+        maxRetries: config.llm.upstreamMaxRetries,
+      })
+    : undefined
   const llmHandler =
-    llmConfigured && llmTokenizer !== undefined
+    llmUpstream !== undefined && llmTokenizer !== undefined
       ? new LlmHandler({
           meter: llmMeter,
           tokenizer: llmTokenizer,
-          upstream: new UpstreamCaller({
-            baseURL: config.llm.upstreamUrl as string,
-            apiKey: config.llm.upstreamKey,
-            timeoutMs: config.llm.upstreamTimeoutMs,
-            maxRetries: config.llm.upstreamMaxRetries,
-          }),
+          upstream: llmUpstream,
           options: {
             defaultMaxOutputTokens: config.llm.defaultMaxOutputTokens,
             maxOutputTokens: config.llm.maxOutputTokens,
@@ -251,6 +255,7 @@ async function main(): Promise<void> {
     auth,
     userDirectory,
     llm: config.llm,
+    ...(llmUpstream === undefined ? {} : { llmUpstream }),
     officialTelemetry,
     llmDevelopment: {
       keys: developmentKeys,

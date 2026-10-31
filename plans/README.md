@@ -12,6 +12,7 @@ The [specification](../docs/specs/index.md) defines the system. This folder trac
 - [season-starter-templates.md](season-starter-templates.md) is the completed, current feature: a season's starter template as a repository plus an optional branch, with preset defaults for published examples.
 - [player-identity.md](player-identity.md) is the completed, current feature: the player profiles (in-game names and teams) a renderer reports to the host chrome, the sender colors and recipient badges the chat reads from them, and the view-only highlight behind every compact player id.
 - [replay-ratings.md](replay-ratings.md) is the completed, current feature: rating agents from a replay while a season's play window is open, the Leaderboards page section order, and per-seat scores in the Matchups table.
+- [llm-testing.md](llm-testing.md) is the completed, current feature: the student key tester, the operator LLM page, and the prompt tester they share.
 - [torch-support.md](torch-support.md) is the implemented feature, pending GPU verification on the cloud deployment: PyTorch in the session base image, per-season CPU, memory, and GPU resources, GPU leasing, and the Skirmish at Crane Reach imitation example.
 - [archived/](archived/README.md) holds the completed platform stages (1 through 19) and the conventions they followed.
 

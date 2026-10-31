@@ -285,6 +285,15 @@ function cancelRotation(): void {
                           : 'Create development key'
                       }}
                     </UiButton>
+                    <UiButton
+                      v-if="developmentFor(row.summary.env_id, seasonRow)!.key_exists"
+                      class="development-key-action"
+                      size="tight"
+                      variant="ghost"
+                      to="/my/llm"
+                    >
+                      Test key
+                    </UiButton>
                   </div>
                 </div>
             </UiCard>
@@ -397,7 +406,7 @@ function cancelRotation(): void {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: var(--space-3);
   padding: 0 var(--space-4) var(--space-3);

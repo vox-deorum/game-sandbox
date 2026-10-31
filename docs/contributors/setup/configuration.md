@@ -126,6 +126,8 @@ The listener binds on all interfaces inside the Compose `app` container so the f
 | `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |
 | `LLM_DEVELOPMENT_RATE_LIMIT_RPM` | `30` | Successful logical requests per minute per participant and season |
 
+After changing these variables, open **LLM** in the admin sidebar and select **Test all** to confirm that the upstream accepts the credential and every mapped model.
+
 `LLM_DEFAULT_MAX_OUTPUT_TOKENS` may be zero but must not exceed `LLM_MAX_OUTPUT_TOKENS`. [Budgets and limits](../../specs/llm.md#budgets-and-limits) defines how weighted-token budgets are counted and priced.
 
 ## Submissions

@@ -41,17 +41,13 @@ import { DEPS_VERSION } from '../build/deps-version.js'
 import {
   isSafeTemplateBranch,
   isSafeTemplateRepoUrl,
+  type LlmOptions,
   type SandboxDefaults,
 } from '../config/config.js'
 import { resolveSeasonParameters } from '../environments/parameters.js'
 import type { EnvironmentRegistry } from '../environments/registry.js'
 import { resolveSeasonDisplaySettings } from '../environments/season-settings.js'
-import {
-  officialPolicy,
-  type ResolveLlmOptions,
-  resolveLlm,
-  unavailableLlmAliases,
-} from '../llm/config.js'
+import { officialPolicy, resolveLlm, unavailableLlmAliases } from '../llm/config.js'
 import type { DevelopmentKeyService } from '../llm/development-keys.js'
 import {
   developmentCallPageView,
@@ -60,6 +56,7 @@ import {
 } from '../llm/development-views.js'
 import { asLlmError } from '../llm/errors.js'
 import { modelCostWeights } from '../llm/types.js'
+import type { UpstreamCaller } from '../llm/upstream.js'
 import { appLogBuffer } from '../logging/log-buffer.js'
 import { buildSchedule } from '../scheduler/build-schedule.js'
 import {
@@ -81,6 +78,7 @@ import { SnapshotMissingError, type SubmissionSnapshotStore } from '../submissio
 import { optionalField } from '../util/optional-field.js'
 import { zodReason } from '../util/zod-error.js'
 import type { RunEvent, WorkflowRunner } from '../workflow/runner.js'
+import { registerAdminLlmRoutes } from './llm-routes.js'
 import { registerAdminLogRoutes } from './log-routes.js'
 
 /** The deployment's container defaults a season's `overrides.sandbox` may replace. */
@@ -107,7 +105,9 @@ export interface AdminDeps {
   /** The display-name directory; run/board/submission views batch their user ids through it. */
   userDirectory: UserDirectory
   /** Deployment aliases and defaults used to validate season edits and freeze run policy. */
-  llm: ResolveLlmOptions
+  llm: LlmOptions
+  /** The deployment upstream the operator LLM test calls, absent when LLM calling is unconfigured. */
+  llmUpstream?: Pick<UpstreamCaller, 'call'>
   /** Container defaults for the editor's placeholders and GPU validation; absent means no GPUs. */
   sandbox?: AdminSandboxDeployment
   llmDevelopment?: {
@@ -514,6 +514,10 @@ export async function registerAdminRoutes(app: FastifyInstance, deps: AdminDeps)
       })
 
       registerAdminLogRoutes(admin, appLogBuffer())
+      registerAdminLlmRoutes(admin, {
+        llm: deps.llm,
+        ...(deps.llmUpstream === undefined ? {} : { upstream: deps.llmUpstream }),
+      })
 
       // --- Declare ---------------------------------------------------------------------------
       // Create an unreleased, submission-closed, play-closed season for the environment with a

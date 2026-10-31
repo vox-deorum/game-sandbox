@@ -1897,6 +1897,107 @@ export async function listAdminLlmDevelopmentCalls(
   )) as LlmDevelopmentCallPage
 }
 
+// --- LLM key and prompt testing ------------------------------------------------------------
+
+export interface LlmChatMessage {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export interface LlmTestRequest {
+  model: LlmModelAlias
+  messages: LlmChatMessage[]
+  /** Omitted, the deployment default applies. This field also suits reasoning models. */
+  max_completion_tokens?: number
+}
+
+/** The parts of an OpenAI chat completion the test page shows. */
+export interface LlmTestCompletion {
+  choices: { message: { content: string | null } }[]
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+}
+
+export interface LlmFailure {
+  ok: false
+  status: number
+  code: string
+  message: string
+}
+
+export type LlmTestOutcome =
+  | { ok: true; completion: LlmTestCompletion; latencyMs: number }
+  | LlmFailure
+
+export type LlmKeyCheck = { ok: true; season: LlmDevelopmentSeason } | LlmFailure
+
+export interface AdminLlmInfo {
+  configured: boolean
+  upstream_url: string | null
+  key_set: boolean
+  models: { alias: LlmModelAlias; upstream_model: string; cost_weight: number }[]
+  default_max_output_tokens: number
+  max_output_tokens: number
+}
+
+/** Read an OpenAI-style `{ error: { code, message } }` refusal, with the provider status if relayed. */
+async function llmFailure(res: Response): Promise<LlmFailure> {
+  const body = (await res.json().catch(() => ({}))) as {
+    error?: { code?: string; message?: string } | string
+    code?: string
+    upstream_status?: number
+  }
+  const error = typeof body.error === 'object' ? body.error : undefined
+  return {
+    ok: false,
+    status: body.upstream_status ?? res.status,
+    code: error?.code ?? body.code ?? 'failed',
+    message: error?.message ?? (typeof body.error === 'string' ? body.error : 'Request failed.'),
+  }
+}
+
+function bearer(key: string): Record<string, string> {
+  return { authorization: `Bearer ${key.trim()}` }
+}
+
+/** Check a pasted development key. Spends no budget. */
+export async function checkLlmDevelopmentKey(key: string): Promise<LlmKeyCheck> {
+  const res = await request('/llm/v1/key', { headers: bearer(key) })
+  if (!res.ok) return llmFailure(res)
+  return { ok: true, season: (await res.json()) as LlmDevelopmentSeason }
+}
+
+/** Send one prompt with a development key, exactly as agent code would. */
+export async function runLlmDevelopmentChat(
+  key: string,
+  body: LlmTestRequest,
+): Promise<LlmTestOutcome> {
+  const started = performance.now()
+  const res = await request('/llm/v1/chat/completions', {
+    method: 'POST',
+    headers: { ...bearer(key), 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return llmFailure(res)
+  const completion = (await res.json()) as LlmTestCompletion
+  return { ok: true, completion, latencyMs: Math.round(performance.now() - started) }
+}
+
+export async function getAdminLlm(): Promise<AdminLlmInfo> {
+  return (await json(await request('/admin/llm'), 'GET /admin/llm')) as AdminLlmInfo
+}
+
+/** Send one prompt straight to the deployment upstream, unmetered. */
+export async function runAdminLlmChat(body: LlmTestRequest): Promise<LlmTestOutcome> {
+  const res = await request('/admin/llm/chat', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) return llmFailure(res)
+  const result = (await res.json()) as { completion: LlmTestCompletion; latency_ms: number }
+  return { ok: true, completion: result.completion, latencyMs: result.latency_ms }
+}
+
 // --- Process log viewer --------------------------------------------------------------------
 
 /** The severities the backend process-log buffer retains, from the shared schema vocabulary. */

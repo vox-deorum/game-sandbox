@@ -55,6 +55,11 @@ export interface DevelopmentReadPolicy {
   resolved: ResolvedLlm
 }
 
+/** A presented key's owner and the eligible season policy it was checked against. */
+export interface VerifiedDevelopmentKey extends DevelopmentReadPolicy {
+  userId: string
+}
+
 /** Persistent development credentials and per-request current-policy grant construction. */
 export class DevelopmentKeyService {
   private readonly now: () => Date
@@ -66,7 +71,7 @@ export class DevelopmentKeyService {
   }
 
   async rotate(seasonId: string, userId: string): Promise<DevelopmentKeyResponse> {
-    const resolved = await this.resolveEligibleSeason(seasonId)
+    const { resolved } = await this.resolveEligibleSeason(seasonId)
     const keyId = this.random(18).toString('base64url')
     const secret = this.random(32).toString('base64url')
     await this.deps.storage.rotateDevelopmentKey({
@@ -86,7 +91,8 @@ export class DevelopmentKeyService {
     }
   }
 
-  async authenticate(credential: string): Promise<LlmGrant> {
+  /** Check a presented key and its season's current eligibility without spending anything. */
+  async verify(credential: string): Promise<VerifiedDevelopmentKey> {
     const parsed = CREDENTIAL.exec(credential)
     if (parsed?.[1] === undefined || parsed[2] === undefined) throw invalidCredential()
     const row = await this.deps.storage.getDevelopmentKeyByKeyId(parsed[1])
@@ -96,15 +102,20 @@ export class DevelopmentKeyService {
     if (status !== 'normal' && status !== 'admin') {
       throw new LlmError(403, 'account_not_active', 'The account is not active.')
     }
-    const resolved = await this.resolveEligibleSeason(row.season_id)
+    return { userId: row.user_id, ...(await this.resolveEligibleSeason(row.season_id)) }
+  }
+
+  async authenticate(credential: string): Promise<LlmGrant> {
+    const { season, userId, resolved } = await this.verify(credential)
+    const seasonId = season.id
     const scope = {
-      key: `development:${row.season_id}:${row.user_id}`,
+      key: `development:${seasonId}:${userId}`,
       limits: resolved.development,
       weights: modelCostWeights(resolved.models),
-      verifyWritable: () => this.deps.ledger.open(row.season_id),
-      readCommittedUsage: () => this.deps.ledger.readUserUsageByModel(row.season_id, row.user_id),
+      verifyWritable: () => this.deps.ledger.open(seasonId),
+      readCommittedUsage: () => this.deps.ledger.readUserUsageByModel(seasonId, userId),
     }
-    const sink = createDevelopmentRecordSink(this.deps.ledger, row.season_id, row.user_id)
+    const sink = createDevelopmentRecordSink(this.deps.ledger, seasonId, userId)
     return {
       kind: 'development',
       models: resolved.models,
@@ -125,15 +136,16 @@ export class DevelopmentKeyService {
     return { season, resolved }
   }
 
-  private async resolveEligibleSeason(seasonId: string): Promise<ResolvedLlm> {
-    const { season, resolved } = await this.resolveReadPolicy(seasonId)
+  private async resolveEligibleSeason(seasonId: string): Promise<DevelopmentReadPolicy> {
+    const policy = await this.resolveReadPolicy(seasonId)
+    const { season, resolved } = policy
     if (season.submission_status !== 'open') {
       throw new LlmError(403, 'development_closed', 'Development access is closed for this season.')
     }
     if (!resolved.enabled) {
       throw new LlmError(403, 'llm_not_enabled', 'LLM access is not enabled for this season.')
     }
-    return resolved
+    return policy
   }
 }
 

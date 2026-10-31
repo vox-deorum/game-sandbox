@@ -132,6 +132,14 @@ test('operator season configuration exposes and validates LLM controls', async (
   }
 })
 
+test('operator LLM page checks each alias against the real upstream', async ({ page, admin }) => {
+  await authenticateBrowser(page.context(), admin)
+  await page.goto('/admin/llm')
+  await expect(page.getByRole('cell', { name: 'provider-small' })).toBeVisible()
+  await page.getByRole('button', { name: 'Test all' }).click()
+  await expect(page.getByText(/^OK · \d+ ms$/)).toBeVisible()
+})
+
 /**
  * The peer-rating arc against real data: an operator opens a season, three differently-behaved agents
  * from three owners submit and build, the operator runs the automated workflow over them, then the

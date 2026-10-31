@@ -28,6 +28,7 @@ import type { DevelopmentKeyService } from './llm/development-keys.js'
 import { registerDevelopmentLlmRoutes } from './llm/development-routes.js'
 import type { LlmHandler } from './llm/handler.js'
 import { registerRecordingLlmRoutes } from './llm/recording-routes.js'
+import type { UpstreamCaller } from './llm/upstream.js'
 import { appLog } from './logging/log-buffer.js'
 import { registerMyAgentRoutes } from './my-agents/routes.js'
 import { registerRatingRoutes } from './ratings/routes.js'
@@ -104,6 +105,8 @@ export interface AppDeps {
   userDirectory: UserDirectory
   /** Current deployment LLM configuration used by admin validation and run-policy freezing. */
   llm: LlmOptions
+  /** The deployment upstream caller for operator test calls; absent without upstream calling. */
+  llmUpstream?: Pick<UpstreamCaller, 'call'>
   /** Public development-key and history routes. The handler is absent without upstream calling. */
   llmDevelopment?: {
     keys: DevelopmentKeyService
@@ -198,6 +201,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     snapshots: deps.submissionSnapshots,
     userDirectory: deps.userDirectory,
     llm: deps.llm,
+    ...(deps.llmUpstream === undefined ? {} : { llmUpstream: deps.llmUpstream }),
     ...(deps.llmDevelopment === undefined
       ? {}
       : {

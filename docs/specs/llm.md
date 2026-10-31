@@ -87,6 +87,17 @@ The backend also provides an authenticated OpenAI-compatible endpoint for studen
 
 Successful development calls record the participant, model, token counts, estimation status, latency, accepted prompt, and canonical completion under that season. Only the participant and operators can view them. Development calls are never attached to a recording or included in leaderboard usage.
 
+### Testing keys and prompts
+
+| Who | Key check | Prompt test |
+| --- | --- | --- |
+| Participant | `GET /api/llm/v1/key` with the development key as bearer. It applies the same checks as a completion and returns the key's season, models, prices, limits, and usage. It spends nothing. | An ordinary development call with that key, metered and recorded as above. |
+| Operator | Not needed: the deployment upstream has no per-user key. | `POST /api/admin/llm/chat` sends one request straight to the upstream model behind an alias. It bypasses metering and telemetry. An upstream refusal returns `502` with the provider's status in `upstream_status`. |
+
+`GET /api/admin/llm` reports the upstream URL, whether a credential is set (never its value), each configured alias with its upstream model and price, and the output-token defaults. See [Frontend](frontend.md#pages) for the pages built on these routes.
+
+Both testers send the output limit as `max_completion_tokens`, the field reasoning models require. A blank limit leaves the field out, so the deployment default applies. The operator's alias check asks for at most 16 output tokens, or the deployment's hard limit when that is lower.
+
 ## Determinism and timing
 
 A seed does not make a model response deterministic. Seeded repetitions reduce the effect of stochastic policies but do not remove it.

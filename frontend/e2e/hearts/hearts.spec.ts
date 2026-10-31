@@ -160,7 +160,18 @@ test('a Hearts season: two example agents, a scheduled multi-seat matchup, then 
     expect(retainedCalls.status(), await retainedCalls.text()).toBe(200)
     expect(((await retainedCalls.json()) as { calls: unknown[] }).calls).toHaveLength(1)
 
-    await developmentCompletion(owner, key)
+    // The key tester proves the pasted key and spends one real development call.
+    await page.getByRole('link', { name: 'Test key' }).click()
+    await page.getByLabel('API key').fill(key)
+    await page.getByRole('button', { name: 'Check' }).click()
+    await expect(page.getByText('Key works')).toBeVisible()
+    await page.getByLabel('Max tokens').fill('4')
+    await page
+      .getByLabel('User', { exact: true })
+      .fill('[stub:success] Return one useful sentence.')
+    await page.getByRole('button', { name: 'Run' }).click()
+    await expect(page.getByText('Play the lowest legal card.')).toBeVisible()
+    await page.goto('/my/agents')
     const ownCalls = await owner.get(`/api/seasons/${season.id}/llm-development/calls`)
     expect(ownCalls.status(), await ownCalls.text()).toBe(200)
     expect(((await ownCalls.json()) as { calls: unknown[] }).calls).toHaveLength(2)

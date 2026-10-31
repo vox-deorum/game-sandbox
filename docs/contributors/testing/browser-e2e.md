@@ -41,10 +41,10 @@ The suite runs serially (`workers: 1`, `fullyParallel: false`) so the real conta
 | --- | --- | --- |
 | `auth` | Sign in, sign out, roster creation, the pending gate, and the ban lifecycle. | `LoginPage.vue`, `ProfilePage.vue`, `AccountMenu.vue`, `me.ts`, `auth.ts` |
 | `play` | Live Flappy Bird play, pause and resume, stop, replay, pin, and the season-settings download. | `SessionPage.vue`, `ReplayPage.vue`, `StageFrame.vue`, `useSessionSocket.ts`, `api/socket.ts` |
-| `seasons` | Operator season configuration, the LLM controls, and the competition arc through ready-for-peer-rating. | `LeaderboardsPage.vue`, `SeasonsPage.vue`, `components/admin/`, `lib/standings.ts` |
+| `seasons` | Operator season configuration, the LLM controls and operator LLM page, and the competition arc through ready-for-peer-rating. | `LeaderboardsPage.vue`, `SeasonsPage.vue`, `AdminLlmPage.vue`, `components/admin/`, `lib/standings.ts` |
 | `submissions` | The resolve, static, build, and load pipeline: a ready agent watched, and a load failure. | `SubmitAgentForm.vue`, `SubmissionStageTimeline.vue`, `MyAgentsPage.vue`, `AgentProfilePage.vue` |
 | `local` | The standalone local bundle against the loopback bridge, with canvas device-pixel-ratio and resize behavior. | `src/local/`, `vite.local.config.ts` |
-| `hearts` | Four-seat rendering, the scheduled multi-seat matchup, the LLM journey, human seat play, and replay attribution. | `environments/hearts/renderer/` |
+| `hearts` | Four-seat rendering, the scheduled multi-seat matchup, the LLM journey (including the key tester), human seat play, and replay attribution. | `environments/hearts/renderer/`, `LlmTestPage.vue`, `LlmPlayground.vue` |
 | `spades` | Chat filtering and replay, seat-ranked results on both seat plans, and the partnership matchup. | `environments/spades/renderer/` |
 | `crane-reach` | A skirmish watched to game over with exact replay seeking, an army season built from the Season 5 preset with a submitted example agent, and an order composed by clicking the board. | `environments/skirmish_crane/renderer/` |
 | `z-demo-seed` | The demo fixture seed: reproduces the demo's released and play-open seasons over the API (no browser), so a fast frontend-e2e rebuild serves the same rich state a complete run builds with the season arcs. | `scripts/demo.py` |

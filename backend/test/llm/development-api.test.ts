@@ -192,6 +192,36 @@ describe('development LLM API', () => {
     db.close()
   })
 
+  it('checks a pasted key without spending budget', async () => {
+    const { testApp, ledger, upstream, statuses } = await fixture()
+    const seasonId = await enabledSeason(testApp)
+    const key = await issue(testApp, statuses, seasonId, 'alice')
+    const check = (authorization: string) =>
+      testApp.app.inject({ method: 'GET', url: '/api/llm/v1/key', headers: { authorization } })
+
+    const valid = await check(`Bearer ${key}`)
+    expect(valid.statusCode).toBe(200)
+    expect(valid.json()).toMatchObject({
+      season_id: seasonId,
+      environment: 'llm_env',
+      models: ['small'],
+      successful_calls: 0,
+      budget_cost_units_remaining: 100,
+      key_exists: true,
+    })
+    expect(upstream.call).not.toHaveBeenCalled()
+    expect(ledger.readUserUsageByModel(seasonId, testApp.users.idOf('alice'))).toEqual({})
+
+    const wrong = await check(`Bearer ${key}x`)
+    expect(wrong.statusCode).toBe(401)
+    expect(wrong.json()).toMatchObject({ error: { code: 'invalid_api_key' } })
+
+    await testApp.storage.setSubmissionStatus(seasonId, 'closed')
+    const closed = await check(`Bearer ${key}`)
+    expect(closed.statusCode).toBe(403)
+    expect(closed.json()).toMatchObject({ error: { code: 'development_closed' } })
+  })
+
   it('closes key rotation and completion access until submissions reopen', async () => {
     const { testApp, statuses } = await fixture()
     const seasonId = await enabledSeason(testApp)

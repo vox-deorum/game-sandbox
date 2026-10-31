@@ -4,6 +4,7 @@ import {
   ApiError,
   adminSeasonDownloadUrl,
   adminSubmissionDownloadUrl,
+  checkLlmDevelopmentKey,
   configureSeason,
   declareSeason,
   deleteSeason,
@@ -32,6 +33,8 @@ import {
   openSubmissions,
   pinRecording,
   rotateLlmDevelopmentKey,
+  runAdminLlmChat,
+  runLlmDevelopmentChat,
   type SeasonConfig,
   setAuthorPrompt,
   setSeasonDescription,
@@ -829,5 +832,48 @@ describe('api client', () => {
     expect(callsMock.mock.calls[0]?.[0]).toBe(
       '/api/admin/seasons/season%20one/llm-development/users/user%2Fname/calls?limit=100',
     )
+  })
+
+  it('sends a pasted development key as a bearer and reads its refusals', async () => {
+    const fetchMock = stubFetch(async () =>
+      jsonResponse({ error: { code: 'invalid_api_key', message: 'Invalid key.' } }, 401),
+    )
+    expect(await checkLlmDevelopmentKey(' sk-sandbox-dev-a.b ')).toEqual({
+      ok: false,
+      status: 401,
+      code: 'invalid_api_key',
+      message: 'Invalid key.',
+    })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/llm/v1/key')
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toMatchObject({
+      authorization: 'Bearer sk-sandbox-dev-a.b',
+    })
+    // A rejected development key is not an expired sign-in.
+    expect(window.location.assign).not.toHaveBeenCalled()
+
+    vi.unstubAllGlobals()
+    const completion = { choices: [{ message: { content: 'OK' } }] }
+    stubFetch(async () => jsonResponse(completion))
+    const request = { model: 'small' as const, messages: [], max_completion_tokens: 16 }
+    expect(await runLlmDevelopmentChat('sk-sandbox-dev-a.b', request)).toMatchObject({
+      ok: true,
+      completion,
+    })
+  })
+
+  it('reports the provider status of an operator test call', async () => {
+    stubFetch(async () =>
+      jsonResponse(
+        { error: { code: 'invalid_api_key', message: 'Bad upstream key' }, upstream_status: 401 },
+        502,
+      ),
+    )
+    const request = { model: 'small' as const, messages: [], max_completion_tokens: 16 }
+    expect(await runAdminLlmChat(request)).toEqual({
+      ok: false,
+      status: 401,
+      code: 'invalid_api_key',
+      message: 'Bad upstream key',
+    })
   })
 })

@@ -15,12 +15,14 @@ import { createRouter, createWebHistory } from 'vue-router'
 import App from './App.vue'
 import { loadSiteConfig } from './composables/useSiteConfig.js'
 import AdminConsolePage from './pages/AdminConsolePage.vue'
+import AdminLlmPage from './pages/AdminLlmPage.vue'
 import AdminLogsPage from './pages/AdminLogsPage.vue'
 import AgentProfilePage from './pages/AgentProfilePage.vue'
 import DocsPage from './pages/DocsPage.vue'
 import EnvironmentPage from './pages/EnvironmentPage.vue'
 import HomePage from './pages/HomePage.vue'
 import LeaderboardsPage from './pages/LeaderboardsPage.vue'
+import LlmTestPage from './pages/LlmTestPage.vue'
 import LoginPage from './pages/LoginPage.vue'
 import MyAgentsPage from './pages/MyAgentsPage.vue'
 import ProfilePage from './pages/ProfilePage.vue'
@@ -58,11 +60,13 @@ const router = createRouter({
     { path: '/docs/:docPath(.*)', component: DocsPage },
     { path: '/my/agents', component: MyAgentsPage },
     { path: '/my/profile', component: ProfilePage },
+    { path: '/my/llm', component: LlmTestPage },
     // The operator roster page: lists, searches, and pages every account through the Better Auth
     // admin plugin. Like the admin console it self-gates on `isAdmin(me)`; the backend admin API
     // (the plugin's custom-role permission check) is the real authority.
     { path: '/admin/users', component: UsersAdminPage },
     { path: '/admin/logs', component: AdminLogsPage },
+    { path: '/admin/llm', component: AdminLlmPage },
     { path: '/environments/:envId', component: EnvironmentPage },
     { path: '/environments/:envId/agents/:ownerId', component: AgentProfilePage },
     // The per-environment, per-season Leaderboards page; the season id is optional and defaults

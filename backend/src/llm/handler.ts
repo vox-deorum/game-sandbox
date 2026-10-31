@@ -188,7 +188,8 @@ function allowedAlias(grant: LlmGrant, requested: unknown): ModelAlias {
   return requested as ModelAlias
 }
 
-function normalizeMaximum(
+/** Validate and normalize the one accepted output maximum, applying the deployment default. */
+export function normalizeMaximum(
   request: Record<string, unknown>,
   defaultMaximum: number,
   hardMaximum: number,
