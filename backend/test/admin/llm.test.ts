@@ -19,7 +19,7 @@ describe('admin LLM test routes', () => {
     testApp = undefined
   })
 
-  async function build(options: { configured?: boolean } = {}) {
+  async function build(options: { upstream?: boolean; aliases?: boolean } = {}) {
     const upstream = {
       call: vi.fn(async () => ({
         completion: {
@@ -31,10 +31,11 @@ describe('admin LLM test routes', () => {
         },
         latencyMs: 12,
       })),
+      listModels: vi.fn(async () => ['provider-large', 'provider-small']),
     }
     testApp = await openTestApp({
-      config: makeConfig({ llm }),
-      ...(options.configured === false ? {} : { llmUpstream: upstream }),
+      config: makeConfig({ llm: options.aliases === false ? { ...llm, models: {} } : llm }),
+      ...(options.upstream === false ? {} : { llmUpstream: upstream }),
     })
     const admin = await testApp.users.headersFor('operator', { status: 'admin' })
     const normal = await testApp.users.headersFor('student', { status: 'normal' })
@@ -57,16 +58,22 @@ describe('admin LLM test routes', () => {
       headers: normal,
       payload: ping,
     })
+    const models = await app.inject({
+      method: 'GET',
+      url: '/api/admin/llm/models',
+      headers: normal,
+    })
     expect(info.statusCode).toBe(403)
     expect(chat.statusCode).toBe(403)
+    expect(models.statusCode).toBe(403)
     expect(upstream.call).not.toHaveBeenCalled()
+    expect(upstream.listModels).not.toHaveBeenCalled()
   })
 
   it('describes the upstream without revealing its key', async () => {
     const { app, admin } = await build()
     const response = await app.inject({ method: 'GET', url: '/api/admin/llm', headers: admin })
     expect(response.json()).toEqual({
-      configured: true,
       upstream_url: 'https://provider.test/v1',
       key_set: true,
       models: [{ alias: 'small', upstream_model: 'provider-small', cost_weight: 1 }],
@@ -74,6 +81,52 @@ describe('admin LLM test routes', () => {
       max_output_tokens: llm.maxOutputTokens,
     })
     expect(response.body).not.toContain('sk-secret-upstream')
+  })
+
+  it('lists the models the upstream offers', async () => {
+    const { app, admin } = await build()
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/admin/llm/models',
+      headers: admin,
+    })
+    expect(response.json()).toEqual({ models: ['provider-large', 'provider-small'] })
+  })
+
+  it('lists the upstream models before any alias is mapped', async () => {
+    const { app, admin } = await build({ aliases: false })
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/admin/llm/models',
+      headers: admin,
+    })
+    const chat = await app.inject({
+      method: 'POST',
+      url: '/api/admin/llm/chat',
+      headers: admin,
+      payload: ping,
+    })
+    expect(response.json()).toEqual({ models: ['provider-large', 'provider-small'] })
+    expect(chat.json()).toMatchObject({ error: { code: 'model_not_allowed' } })
+  })
+
+  it('reports a refused model list as a gateway error carrying the provider status', async () => {
+    const { app, admin, upstream } = await build()
+    upstream.listModels.mockRejectedValueOnce(
+      new UpstreamError(401, {
+        error: { message: 'Incorrect API key', type: 'auth', code: 'invalid_api_key' },
+      }),
+    )
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/admin/llm/models',
+      headers: admin,
+    })
+    expect(response.statusCode).toBe(502)
+    expect(response.json()).toMatchObject({
+      upstream_status: 401,
+      error: { code: 'invalid_api_key' },
+    })
   })
 
   it('sends a test call straight to the mapped upstream model', async () => {
@@ -133,16 +186,16 @@ describe('admin LLM test routes', () => {
   })
 
   it('refuses test calls when no upstream is configured', async () => {
-    const { app, admin } = await build({ configured: false })
-    const info = await app.inject({ method: 'GET', url: '/api/admin/llm', headers: admin })
+    const { app, admin } = await build({ upstream: false })
     const chat = await app.inject({
       method: 'POST',
       url: '/api/admin/llm/chat',
       headers: admin,
       payload: ping,
     })
-    expect(info.json()).toMatchObject({ configured: false })
+    const models = await app.inject({ method: 'GET', url: '/api/admin/llm/models', headers: admin })
     expect(chat.statusCode).toBe(403)
     expect(chat.json()).toMatchObject({ error: { code: 'llm_not_enabled' } })
+    expect(models.json()).toMatchObject({ error: { code: 'llm_not_enabled' } })
   })
 })

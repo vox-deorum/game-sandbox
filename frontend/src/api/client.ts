@@ -1930,8 +1930,9 @@ export type LlmTestOutcome =
 
 export type LlmKeyCheck = { ok: true; season: LlmDevelopmentSeason } | LlmFailure
 
+export type LlmModelList = { ok: true; models: string[] } | LlmFailure
+
 export interface AdminLlmInfo {
-  configured: boolean
   upstream_url: string | null
   key_set: boolean
   models: { alias: LlmModelAlias; upstream_model: string; cost_weight: number }[]
@@ -1984,6 +1985,13 @@ export async function runLlmDevelopmentChat(
 
 export async function getAdminLlm(): Promise<AdminLlmInfo> {
   return (await json(await request('/admin/llm'), 'GET /admin/llm')) as AdminLlmInfo
+}
+
+/** The model ids the deployment upstream offers, read from its own model list. */
+export async function listAdminLlmUpstreamModels(): Promise<LlmModelList> {
+  const res = await request('/admin/llm/models')
+  if (!res.ok) return llmFailure(res)
+  return { ok: true, models: ((await res.json()) as { models: string[] }).models }
 }
 
 /** Send one prompt straight to the deployment upstream, unmetered. */

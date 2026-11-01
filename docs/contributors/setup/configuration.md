@@ -126,7 +126,7 @@ The listener binds on all interfaces inside the Compose `app` container so the f
 | `LLM_DEVELOPMENT_TOKEN_BUDGET` | `100000` | Successful weighted-token allowance per participant and season |
 | `LLM_DEVELOPMENT_RATE_LIMIT_RPM` | `30` | Successful logical requests per minute per participant and season |
 
-After changing these variables, open **LLM** in the admin sidebar and select **Test all** to confirm that the upstream accepts the credential and every mapped model.
+After changing these variables, open **LLM Playground** in the sidebar and select **Test all** to confirm that the upstream accepts the credential and every mapped model. Select **List models** to see the exact model names the upstream offers, which is handy when choosing `LLM_MODEL_*` values.
 
 For local testing against a real provider, put `LLM_UPSTREAM_URL`, `LLM_UPSTREAM_KEY`, and the `LLM_MODEL_*` names in `.env`. If the provider sits behind a self-signed or TLS-intercepting proxy, the same `.env` may also set Node's `NODE_TLS_REJECT_UNAUTHORIZED=0`. That turns off certificate checks for every outbound backend call, so never deploy with it.
 

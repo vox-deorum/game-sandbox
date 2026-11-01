@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 
 import type { LlmOptions } from '../config/config.js'
@@ -10,8 +10,8 @@ import { appLog } from '../logging/log-buffer.js'
 
 export interface AdminLlmDeps {
   llm: LlmOptions
-  /** The deployment's upstream caller, absent when no upstream URL or alias is configured. */
-  upstream?: Pick<UpstreamCaller, 'call'>
+  /** The deployment's upstream caller, absent when no upstream URL is configured. */
+  upstream?: Pick<UpstreamCaller, 'call' | 'listModels'>
 }
 
 const ChatBodySchema = z.strictObject({
@@ -24,12 +24,12 @@ const ChatBodySchema = z.strictObject({
 })
 
 /**
- * Operator checks of the deployment upstream: what is configured, and one direct call per request.
- * Test calls bypass metering and telemetry, so they never touch a participant's budget.
+ * Operator checks of the deployment upstream: what is configured, which models the upstream offers,
+ * and one direct call per request. Test calls bypass metering and telemetry, so they never touch a
+ * participant's budget.
  */
 export function registerAdminLlmRoutes(admin: FastifyInstance, deps: AdminLlmDeps): void {
   admin.get('/llm', () => ({
-    configured: deps.upstream !== undefined,
     upstream_url: deps.llm.upstreamUrl ?? null,
     key_set: deps.llm.upstreamKey !== undefined,
     models: MODEL_ALIASES.flatMap((alias) => {
@@ -41,6 +41,17 @@ export function registerAdminLlmRoutes(admin: FastifyInstance, deps: AdminLlmDep
     default_max_output_tokens: deps.llm.defaultMaxOutputTokens,
     max_output_tokens: deps.llm.maxOutputTokens,
   }))
+
+  admin.get('/llm/models', async (_request, reply) => {
+    try {
+      if (deps.upstream === undefined) {
+        throw new LlmError(403, 'llm_not_enabled', 'No LLM upstream is configured.')
+      }
+      return { models: await deps.upstream.listModels() }
+    } catch (error) {
+      return sendFailure(reply, 'operator model list', error)
+    }
+  })
 
   admin.post('/llm/chat', async (request, reply) => {
     let alias: ModelAlias | undefined
@@ -65,17 +76,21 @@ export function registerAdminLlmRoutes(admin: FastifyInstance, deps: AdminLlmDep
       appLog('llm', `operator test ${alias}: ok in ${result.latencyMs} ms`, 'info')
       return { completion: result.completion, latency_ms: result.latencyMs }
     } catch (error) {
-      if (error instanceof UpstreamError) {
-        appLog('llm', `operator test ${alias}: upstream ${error.status}`, 'warn')
-        // Report the provider's status in the body. Relaying it as this route's status would make an
-        // upstream 401 look like the operator's own expired sign-in.
-        return reply.code(502).send({ ...error.body(), upstream_status: error.status })
-      }
-      if (!(error instanceof LlmError)) {
-        appLog('llm', `operator test ${alias}: ${describeError(error)}`, 'error')
-      }
-      const normalized = asLlmError(error)
-      return reply.code(normalized.status).send(normalized.body())
+      return sendFailure(reply, `operator test ${alias}`, error)
     }
   })
+}
+
+function sendFailure(reply: FastifyReply, label: string, error: unknown): FastifyReply {
+  if (error instanceof UpstreamError) {
+    appLog('llm', `${label}: upstream ${error.status}`, 'warn')
+    // Report the provider's status in the body. Relaying it as this route's status would make an
+    // upstream 401 look like the operator's own expired sign-in.
+    return reply.code(502).send({ ...error.body(), upstream_status: error.status })
+  }
+  if (!(error instanceof LlmError)) {
+    appLog('llm', `${label}: ${describeError(error)}`, 'error')
+  }
+  const normalized = asLlmError(error)
+  return reply.code(normalized.status).send(normalized.body())
 }

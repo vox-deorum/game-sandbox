@@ -106,8 +106,8 @@ export interface AdminDeps {
   userDirectory: UserDirectory
   /** Deployment aliases and defaults used to validate season edits and freeze run policy. */
   llm: LlmOptions
-  /** The deployment upstream the operator LLM test calls, absent when LLM calling is unconfigured. */
-  llmUpstream?: Pick<UpstreamCaller, 'call'>
+  /** The deployment upstream the operator LLM checks call, absent when no upstream URL is set. */
+  llmUpstream?: Pick<UpstreamCaller, 'call' | 'listModels'>
   /** Container defaults for the editor's placeholders and GPU validation; absent means no GPUs. */
   sandbox?: AdminSandboxDeployment
   llmDevelopment?: {

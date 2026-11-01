@@ -73,15 +73,17 @@ async function main(): Promise<void> {
   const llmRegistry = llmConfigured
     ? new KeyRegistry(undefined, { maxRequestMs: upstreamMaxRequestMs })
     : undefined
-  // The handler and the operator test route share one upstream client.
-  const llmUpstream = llmConfigured
-    ? new UpstreamCaller({
-        baseURL: config.llm.upstreamUrl as string,
-        apiKey: config.llm.upstreamKey,
-        timeoutMs: config.llm.upstreamTimeoutMs,
-        maxRetries: config.llm.upstreamMaxRetries,
-      })
-    : undefined
+  // The handler and the operator routes share one upstream client. It exists whenever an upstream URL
+  // is set, so an operator can list the upstream's models before mapping the first alias.
+  const llmUpstream =
+    config.llm.upstreamUrl !== undefined
+      ? new UpstreamCaller({
+          baseURL: config.llm.upstreamUrl,
+          apiKey: config.llm.upstreamKey,
+          timeoutMs: config.llm.upstreamTimeoutMs,
+          maxRetries: config.llm.upstreamMaxRetries,
+        })
+      : undefined
   const llmHandler =
     llmUpstream !== undefined && llmTokenizer !== undefined
       ? new LlmHandler({

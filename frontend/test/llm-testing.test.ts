@@ -11,6 +11,7 @@ vi.mock('../src/api/client.js', () => ({
   runLlmDevelopmentChat: vi.fn(),
   getAdminLlm: vi.fn(),
   runAdminLlmChat: vi.fn(),
+  listAdminLlmUpstreamModels: vi.fn(),
   listLlmDevelopmentSeasons: vi.fn(async () => []),
   rotateLlmDevelopmentKey: vi.fn(),
 }))
@@ -19,6 +20,7 @@ import {
   checkLlmDevelopmentKey,
   getAdminLlm,
   getMe,
+  listAdminLlmUpstreamModels,
   listLlmDevelopmentSeasons,
   rotateLlmDevelopmentKey,
   runAdminLlmChat,
@@ -253,7 +255,6 @@ describe('LLM Playground for a participant', () => {
 
 describe('LLM Playground for an operator', () => {
   const info: AdminLlmInfo = {
-    configured: true,
     upstream_url: 'https://provider.test/v1',
     key_set: true,
     models: [
@@ -302,10 +303,24 @@ describe('LLM Playground for an operator', () => {
   })
 
   it('names the missing settings when no upstream is configured', async () => {
-    vi.mocked(getAdminLlm).mockResolvedValue({ ...info, configured: false, models: [] })
+    vi.mocked(getAdminLlm).mockResolvedValue({ ...info, upstream_url: null, models: [] })
     await renderPlayground()
 
     expect(await screen.findByText(/LLM_UPSTREAM_URL/)).toBeInTheDocument()
+  })
+
+  it('lets an operator list models before mapping the first alias', async () => {
+    vi.mocked(getAdminLlm).mockResolvedValue({ ...info, models: [] })
+    vi.mocked(listAdminLlmUpstreamModels).mockResolvedValue({
+      ok: true,
+      models: ['provider-small'],
+    })
+    await renderPlayground()
+
+    expect(await screen.findByText(/No model alias is set/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Test all' })).not.toBeInTheDocument()
+    await fireEvent.click(screen.getByRole('button', { name: 'List models' }))
+    expect(await screen.findByText('provider-small')).toBeInTheDocument()
   })
 
   it('tests every alias and shows each outcome', async () => {
@@ -328,6 +343,39 @@ describe('LLM Playground for an operator', () => {
       messages: [{ role: 'user', content: 'Reply with exactly: OK' }],
       max_completion_tokens: 16,
     })
+  })
+
+  it("lists the upstream's models and marks the ones an alias uses", async () => {
+    vi.mocked(listAdminLlmUpstreamModels).mockResolvedValue({
+      ok: true,
+      models: ['provider-large', 'provider-small', 'unused-model'],
+    })
+    await renderPlayground()
+    await fireEvent.click(await screen.findByRole('button', { name: 'List models' }))
+
+    const list = within(await screen.findByRole('region', { name: 'Upstream models' }))
+    expect(list.getByText('Upstream models · 3')).toBeInTheDocument()
+    // A long list scrolls, so it must take keyboard focus.
+    expect(list.getByRole('list', { name: 'Upstream model list' })).toHaveAttribute('tabindex', '0')
+    const item = (id: string) =>
+      within(list.getAllByRole('listitem').find((li) => within(li).queryByText(id)) as HTMLElement)
+    expect(item('provider-large').getByText('large')).toBeInTheDocument()
+    expect(item('provider-small').getByText('small')).toBeInTheDocument()
+    expect(item('unused-model').queryByText(/^(large|small)$/)).not.toBeInTheDocument()
+  })
+
+  it('explains a refused model list', async () => {
+    vi.mocked(listAdminLlmUpstreamModels).mockResolvedValue({
+      ok: false,
+      status: 401,
+      code: 'invalid_api_key',
+      message: 'Incorrect API key',
+    })
+    await renderPlayground()
+    await fireEvent.click(await screen.findByRole('button', { name: 'List models' }))
+
+    expect(await screen.findByText('401 invalid_api_key')).toBeInTheDocument()
+    expect(screen.getByText('Incorrect API key')).toBeInTheDocument()
   })
 
   it('keeps alias checks within a small output limit', async () => {

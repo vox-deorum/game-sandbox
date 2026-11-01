@@ -43,7 +43,7 @@ The global sidebar and mobile bar show the deployment name with its brand icon. 
 | My Profile | Signed-in identity and capabilities |
 | User Management | Admin-only roster management, approval, bans, roles, and password resets |
 | Server Logs | Admin-only view of recent structured messages retained by the current backend process |
-| LLM Playground | Create or rotate a development key for any open, LLM-enabled season, check a key to see its season and remaining budget, then try a metered prompt with it; linked from My Agents. Every prompt needs a key, for operators too. Operators also see the deployment upstream with a live check per model alias |
+| LLM Playground | Create or rotate a development key for any open, LLM-enabled season, check a key to see its season and remaining budget, then try a metered prompt with it; linked from My Agents. Every prompt needs a key, for operators too. Operators also see the deployment upstream with a live check per model alias and can list the models the upstream offers |
 
 ### Documentation
 

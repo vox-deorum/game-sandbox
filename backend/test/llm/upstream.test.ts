@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { LlmChatCompletion } from '../../src/llm/types.js'
 import { UpstreamCaller, upstreamRequestAllowanceMs } from '../../src/llm/upstream.js'
+import { createLlmUpstreamStub } from '../support/llm-upstream.js'
 
 const success = {
   id: 'c',
@@ -121,5 +122,21 @@ describe('UpstreamCaller', () => {
     })
     await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({ status, code })
     expect(client.create).toHaveBeenCalledOnce()
+  })
+
+  it('lists the upstream models, and reports a refusal with the provider status', async () => {
+    const stub = createLlmUpstreamStub()
+    const address = await stub.listen()
+    try {
+      const caller = (baseURL: string) =>
+        new UpstreamCaller({ baseURL, timeoutMs: 1_000, maxRetries: 0 })
+      expect(await caller(`${address}/v1`).listModels()).toEqual([
+        'provider-large',
+        'provider-small',
+      ])
+      await expect(caller(`${address}/missing`).listModels()).rejects.toMatchObject({ status: 404 })
+    } finally {
+      await stub.close()
+    }
   })
 })

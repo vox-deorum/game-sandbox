@@ -56,27 +56,34 @@ export class UpstreamError extends LlmError {
 
 /** One SDK-backed upstream request with SDK-managed retries and a per-request timeout. */
 export class UpstreamCaller {
+  private readonly sdk: OpenAI
   private readonly client: UpstreamChatClient
   private readonly now: () => number
 
   constructor(private readonly options: UpstreamCallerOptions) {
-    if (options.client !== undefined) {
-      this.client = options.client
-    } else {
-      const sdk = new OpenAI({
-        apiKey: options.apiKey ?? 'unused-no-upstream-credential',
-        baseURL: options.baseURL,
-        maxRetries: options.maxRetries,
-        // Some OpenAI-compatible local endpoints are deliberately unauthenticated. The SDK requires
-        // an apiKey constructor value, then this explicit null suppresses its generated bearer header.
-        ...(options.apiKey === undefined ? { defaultHeaders: { Authorization: null } } : {}),
-      })
-      this.client = {
-        create: (request, requestOptions) =>
-          sdk.chat.completions.create(request, requestOptions) as Promise<LlmChatCompletion>,
-      }
+    this.sdk = new OpenAI({
+      apiKey: options.apiKey ?? 'unused-no-upstream-credential',
+      baseURL: options.baseURL,
+      maxRetries: options.maxRetries,
+      // Some OpenAI-compatible local endpoints are deliberately unauthenticated. The SDK requires
+      // an apiKey constructor value, then this explicit null suppresses its generated bearer header.
+      ...(options.apiKey === undefined ? { defaultHeaders: { Authorization: null } } : {}),
+    })
+    this.client = options.client ?? {
+      create: (request, requestOptions) =>
+        this.sdk.chat.completions.create(request, requestOptions) as Promise<LlmChatCompletion>,
     }
     this.now = options.now ?? Date.now
+  }
+
+  /** The model ids the upstream's `GET /models` lists, sorted and without duplicates. */
+  async listModels(): Promise<string[]> {
+    try {
+      const page = await this.sdk.models.list({ timeout: this.options.timeoutMs })
+      return [...new Set(page.data.map((model) => model.id))].sort()
+    } catch (error) {
+      throw normalizeUpstreamError(error)
+    }
   }
 
   async call(request: LlmChatRequest, signal?: AbortSignal): Promise<UpstreamSuccess> {

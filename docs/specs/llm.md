@@ -94,6 +94,7 @@ Successful development calls record the participant, model, token counts, estima
 | Key check, for anyone with a key | `GET /api/llm/v1/key` with the development key as bearer | Applies the same checks as a completion and returns the key's season, models, prices, limits, and usage. It spends nothing. |
 | Prompt test, for anyone with a key | `POST /api/llm/v1/chat/completions` | An ordinary development call, metered and recorded as above. Operators test prompts this way too, with their own development key. |
 | Alias check, for operators | `POST /api/admin/llm/chat` | Sends one request straight to the upstream model behind an alias. It bypasses metering and telemetry. An upstream refusal returns `502` with the provider's status in `upstream_status`. |
+| Model list, for operators | `GET /api/admin/llm/models` | Reads the upstream's own `GET /models` list and returns its model ids, sorted. It spends nothing. A refusal is reported the same way as an alias check. |
 
 `GET /api/admin/llm` reports the upstream URL, whether a credential is set (never its value), each configured alias with its upstream model and price, and the output-token defaults. See [Frontend](frontend.md#pages) for the LLM Playground page built on these routes.
 

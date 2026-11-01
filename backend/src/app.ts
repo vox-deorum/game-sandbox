@@ -105,8 +105,8 @@ export interface AppDeps {
   userDirectory: UserDirectory
   /** Current deployment LLM configuration used by admin validation and run-policy freezing. */
   llm: LlmOptions
-  /** The deployment upstream caller for operator test calls; absent without upstream calling. */
-  llmUpstream?: Pick<UpstreamCaller, 'call'>
+  /** The deployment upstream caller for operator LLM checks; absent without an upstream URL. */
+  llmUpstream?: Pick<UpstreamCaller, 'call' | 'listModels'>
   /** Public development-key and history routes. The handler is absent without upstream calling. */
   llmDevelopment?: {
     keys: DevelopmentKeyService

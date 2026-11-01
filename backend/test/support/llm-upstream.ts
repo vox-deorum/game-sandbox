@@ -54,6 +54,16 @@ export function createLlmUpstreamStub(options: { delayMs?: number } = {}): LlmUp
   const retryAttempts = new Map<string, number>()
   const delayMs = options.delayMs ?? 150
 
+  app.get('/v1/models', () => ({
+    object: 'list',
+    data: ['provider-small', 'provider-large'].map((id) => ({
+      id,
+      object: 'model',
+      created: 0,
+      owned_by: 'stub',
+    })),
+  }))
+
   app.post('/v1/chat/completions', async (request, reply) => {
     const body = asObject(request.body)
     const selection = scenarioFor(body)

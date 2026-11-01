@@ -141,6 +141,10 @@ test('operator LLM Playground checks each alias against the real upstream', asyn
   await expect(page.getByRole('cell', { name: 'provider-small' })).toBeVisible()
   await page.getByRole('button', { name: 'Test all' }).click()
   await expect(page.getByText(/^OK · \d+ ms$/)).toBeVisible()
+  await page.getByRole('button', { name: 'List models' }).click()
+  await expect(
+    page.getByRole('region', { name: 'Upstream models' }).getByText('provider-large'),
+  ).toBeVisible()
 })
 
 /**
