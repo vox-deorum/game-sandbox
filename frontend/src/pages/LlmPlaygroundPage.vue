@@ -177,7 +177,7 @@ async function run(request: LlmTestRequest): Promise<LlmTestOutcome> {
     <template v-else>
       <section v-if="access === 'operator'" class="llm-section">
         <div class="section-head">
-          <h2>Upstream</h2>
+          <h2>Upstream Status</h2>
           <span class="note">Operators only</span>
         </div>
         <UiEmptyState v-if="upstreamError" tone="danger">Could not load the LLM setup.</UiEmptyState>
@@ -185,7 +185,7 @@ async function run(request: LlmTestRequest): Promise<LlmTestOutcome> {
         <LlmUpstreamCard v-else :info="upstream" />
       </section>
       <section class="llm-section">
-        <h2>Development key</h2>
+        <h2>API Key for Development</h2>
         <UiCard>
           <UiEmptyState v-if="keySeasonsError" tone="danger">
             Could not load the seasons with LLM access.
@@ -244,7 +244,7 @@ async function run(request: LlmTestRequest): Promise<LlmTestOutcome> {
         </UiCard>
       </section>
       <section v-if="season" class="llm-section">
-        <h2>Prompt</h2>
+        <h2>Test Your Prompt</h2>
         <LlmPlayground
           :models="season.models"
           :cost-weights="season.cost_weights"
