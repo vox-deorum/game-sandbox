@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from gymnasium.spaces import Discrete
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
@@ -26,9 +27,6 @@ from game_sandbox_harness.environment import (
 )
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import (
-    REASON_EPISODE_LIMIT,
-    REASON_TERMINATED,
-    REASON_TRUNCATED,
     AgentPlayer,
     Episode,
     ExternalPlayer,
@@ -101,7 +99,10 @@ class ProbedResultEnv(FakeEnv):
 class CloseClearsResultEnv(FakeResultEnv):
     """Clear the state the score hook needs when the environment closes."""
 
+    closed = False
+
     def close(self) -> None:
+        self.closed = True
         self._i = 0
 
 
@@ -163,32 +164,50 @@ class ScriptedAgent:
 def test_same_seed_same_agent_byte_identical_recordings(tmp_path: Path):
     entry = make_entry(n_steps=4, with_overlay=True)
 
-    def run(root: Path) -> Path:
-        store = FolderRecordingStore(root)
+    def run(root: Path) -> bytes:
         run_episode(
             entry,
             {"player_0": AgentPlayer(ScriptedAgent([0, 1, 0, 1]))},
             parameters=resolve_parameters(entry.meta),
             seed=99,
-            store=store,
+            store=FolderRecordingStore(root),
             recording_id="r",
-            clock=ManualClock(),
+            clock=ManualClock(100),
             player_attribution={
-                "player_0": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                },
+                "player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
             },
         )
-        return root / "r" / "recording.jsonl"
+        return (root / "r" / "recording.jsonl").read_bytes()
 
-    a = run(tmp_path / "a").read_bytes()
-    b = run(tmp_path / "b").read_bytes()
+    a, b = run(tmp_path / "a"), run(tmp_path / "b")
     assert a == b
-    # The recording carries the overlay and the per-step decision timing.
-    assert b'"overlay"' in a
-    assert b'"decision_ms"' in a
+    states = [json.loads(line) for line in a.splitlines()[1:]]
+    assert [(state["tick"], state["agents"], state["timing"], state["overlay"]) for state in states] == [
+        (
+            0,
+            {"player_0": {"action": 0, "reward": 1.0, "score": 1.0, "timing": {"decision_ms": 0}}},
+            {"started_at": 100, "duration_ms": 0},
+            {"i": 1},
+        ),
+        (
+            1,
+            {"player_0": {"action": 1, "reward": 1.0, "score": 2.0, "timing": {"decision_ms": 0}}},
+            {"started_at": 100, "duration_ms": 0},
+            {"i": 2},
+        ),
+        (
+            2,
+            {"player_0": {"action": 0, "reward": 1.0, "score": 3.0, "timing": {"decision_ms": 0}}},
+            {"started_at": 100, "duration_ms": 0},
+            {"i": 3},
+        ),
+        (
+            3,
+            {"player_0": {"action": 1, "reward": 1.0, "score": 4.0, "timing": {"decision_ms": 0}}},
+            {"started_at": 100, "duration_ms": 0},
+            {"i": 4},
+        ),
+    ]
 
 
 def test_players_attribution_lands_in_the_recording_header(tmp_path: Path):
@@ -257,62 +276,78 @@ def test_static_overlay_hook_runs_once_after_reset_without_changing_opening_stat
     assert header["overlay_static"] == {"sprites": {"bird": "blue"}}
 
 
-def test_opening_state_returns_the_dealt_overlay_for_a_turn_based_env():
-    # A turn-based env with an overlay yields a pre-action opening frame: the dealt overlay, no agent
-    # having acted, tick 0. The live runner streams this so a human who leads sees the table at once.
-    entry = make_entry(n_steps=3, pace_interval_ms=None, with_overlay=True)
+@pytest.mark.parametrize(
+    ("pace", "with_overlay", "expected"),
+    [
+        (
+            None,
+            True,
+            {
+                "schema_version": 1,
+                "tick": 0,
+                "agents": {},
+                "timing": {"started_at": 0, "duration_ms": 0},
+                "overlay": {"i": 0},
+            },
+        ),
+        (16, True, None),
+        (None, False, None),
+    ],
+)
+def test_opening_state_returns_the_dealt_overlay_for_a_turn_based_env(pace, with_overlay, expected):
+    entry = make_entry(pace_interval_ms=pace, with_overlay=with_overlay)
     with Episode(
         entry,
         {"player_0": AgentPlayer(ScriptedAgent([0]))},
         parameters=resolve_parameters(entry.meta),
         seed=1,
+        clock=ManualClock(0),
     ) as episode:
-        opening = episode.opening_state()
-    assert opening is not None
-    assert opening["tick"] == 0
-    assert opening["agents"] == {}
-    assert opening["overlay"] == {"i": 0}  # the env's overlay at reset, before any step
+        assert episode.opening_state() == expected
 
 
-def test_opening_state_is_none_for_paced_or_overlayless_envs():
-    # A paced env renders its first frame within an interval, and an env with no overlay has nothing
-    # to draw, so neither gets a streamed opening frame.
-    paced = make_entry(n_steps=2, pace_interval_ms=16, with_overlay=True)
-    with Episode(
-        paced,
-        {"player_0": AgentPlayer(ScriptedAgent([0]))},
-        parameters=resolve_parameters(paced.meta),
-        seed=1,
-    ) as episode:
-        assert episode.opening_state() is None
-    overlayless = make_entry(n_steps=2, pace_interval_ms=None, with_overlay=False)
-    with Episode(
-        overlayless,
-        {"player_0": AgentPlayer(ScriptedAgent([0]))},
-        parameters=resolve_parameters(overlayless.meta),
-        seed=1,
-    ) as episode:
-        assert episode.opening_state() is None
-
-
-def test_agent_per_step_timeout_discards_action_and_counts_overage():
+@pytest.mark.parametrize(
+    ("cost", "override", "applied", "timeouts"),
+    [(1000, None, 1, 0), (5000, None, -1, 3), (1200, 1500, 1, 0), (600, 500, -1, 3)],
+)
+def test_agent_per_step_timeout_discards_action_and_counts_overage(
+    tmp_path: Path, cost, override, applied, timeouts
+):
     clock = ManualClock()
     entry = make_entry(n_steps=3, step_limit_ms=1000)
-    agent = ScriptedAgent([1, 1, 1], clock=clock, cost_ms=5000)  # 5s > 1s limit every step
+    store = FolderRecordingStore(tmp_path)
     result = run_episode(
         entry,
-        {"player_0": AgentPlayer(agent)},
+        {"player_0": AgentPlayer(ScriptedAgent([1], clock=clock, cost_ms=cost))},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=clock,
+        step_limit_ms=override,
+        store=store,
+        recording_id="r",
+        player_attribution={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
     )
-    assert result.step_timeouts["player_0"] == 3
-    assert result.reason == REASON_TERMINATED
+    steps = [state["agents"]["player_0"] for state in store.open("r").steps()]
+    assert [step["action"] for step in steps] == [applied, applied, applied]
+    assert [step["timing"] for step in steps] == [{"decision_ms": cost}] * 3
+    assert result.step_timeouts == {"player_0": timeouts}
+    assert result.reason == "terminated"
+    assert result.failed_player is None
 
 
-def test_learn_hook_time_counts_toward_per_step_overage():
+@pytest.mark.parametrize(
+    ("learn_ms", "step_limit", "episode_limit", "length", "reason", "timeouts"),
+    [
+        (250, 300, 120_000, 3, "terminated", 3),
+        (200, 300, 120_000, 3, "terminated", 0),
+        (300, 1000, 1000, 10, "episode_limit", 0),
+    ],
+)
+def test_learn_hook_time_counts_toward_per_step_overage(
+    tmp_path: Path, learn_ms, step_limit, episode_limit, length, reason, timeouts
+):
     clock = ManualClock()
-    entry = make_entry(n_steps=3, step_limit_ms=300, episode_limit_ms=120_000)
+    entry = make_entry(n_steps=length, step_limit_ms=step_limit, episode_limit_ms=episode_limit)
 
     class LearningAgent:
         def reset(self, seed: int, observation: Any) -> None: ...
@@ -322,17 +357,26 @@ def test_learn_hook_time_counts_toward_per_step_overage():
             return 0
 
         def learn(self, observation, action, reward, terminated) -> None:
-            clock.advance(250)
+            clock.advance(learn_ms)
 
+    store = FolderRecordingStore(tmp_path)
     result = run_episode(
         entry,
         {"player_0": AgentPlayer(LearningAgent())},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=clock,
+        store=store,
+        recording_id="r",
+        player_attribution={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}},
     )
-    assert result.step_timeouts["player_0"] == 3
-    assert result.reason == REASON_TERMINATED
+    steps = [state["agents"]["player_0"] for state in store.open("r").steps()]
+    assert [step["action"] for step in steps] == [0, 0, 0]
+    assert [step["timing"] for step in steps] == [{"decision_ms": 100, "learn_ms": learn_ms}] * 3
+    assert result.ticks == 3
+    assert result.reason == reason
+    assert result.step_timeouts == {"player_0": timeouts}
+    assert result.failed_player == ("player_0" if reason == "episode_limit" else None)
 
 
 def test_per_episode_budget_truncates():
@@ -347,55 +391,55 @@ def test_per_episode_budget_truncates():
         seed=1,
         clock=clock,
     )
-    assert result.reason == REASON_EPISODE_LIMIT
+    assert result.reason == "episode_limit"
     assert result.ticks == 3  # 800*3 = 2400 > 2000, tripped on the third step
     # The player that overran owns the overage, so it is named for per-player failure attribution.
     assert result.failed_player == "player_0"
 
 
-def test_external_scripted_source_drives_player():
-    entry = make_entry(n_steps=3)
-    source = ScriptedSource([0, 1, 0])
-    result = run_episode(
-        entry,
-        {"player_0": ExternalPlayer(source)},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=ManualClock(),
-    )
-    assert result.ticks == 3
-    # External players never touch the agent-timeout machinery.
-    assert result.step_timeouts["player_0"] == 0
+@pytest.mark.parametrize(
+    ("environment_timeout", "override", "expected_window"),
+    [(None, None, None), (700, None, 700), (700, 200, 200)],
+)
+def test_external_scripted_source_drives_player(
+    tmp_path: Path, environment_timeout, override, expected_window
+):
+    clock = ManualClock()
+    entry = make_entry(n_steps=3, human_timeout_ms=environment_timeout, step_limit_ms=1, episode_limit_ms=1)
+    seen: list[tuple[str, Any, int | None]] = []
 
+    class Source(ScriptedSource):
+        def get_action(self, player_id: str, observation: Any, window_ms: int | None) -> Any:
+            seen.append((player_id, observation, window_ms))
+            clock.advance(5)
+            return super().get_action(player_id, observation, window_ms)
 
-def test_external_noop_source_falls_back_to_default(tmp_path: Path):
-    entry = make_entry(n_steps=2)
     store = FolderRecordingStore(tmp_path)
     result = run_episode(
         entry,
-        {"player_0": ExternalPlayer(NoopSource())},
+        {"player_0": ExternalPlayer(Source([0, 1]), timeout_ms=override)},
         parameters=resolve_parameters(entry.meta),
         seed=1,
+        clock=clock,
         store=store,
         recording_id="r",
-        clock=ManualClock(),
     )
-    assert result.step_timeouts["player_0"] == 0
-    # The default action was recorded (no agent input arrived).
-    recording = store.open("r")
-    actions = [s["agents"]["player_0"]["action"] for s in recording.steps()]
-    assert actions == [DEFAULT_ACTION, DEFAULT_ACTION]
+    assert seen == [
+        ("player_0", 0, expected_window),
+        ("player_0", 1, expected_window),
+        ("player_0", 2, expected_window),
+    ]
+    assert [state["agents"]["player_0"]["action"] for state in store.open("r").steps()] == [0, 1, -1]
+    assert result.ticks == 3
+    assert result.step_timeouts == {"player_0": 0}
+    assert result.failed_player is None
 
 
 def test_default_action_receives_live_env_and_player_and_records_result(tmp_path: Path):
-    # The timeout hook is handed the *live* env and the acting player id, so it can read the current
-    # state and return a concrete action; that returned integer is exactly what the recording stores.
-    seen: list[tuple[Any, str]] = []
+    seen: list[str] = []
 
     def provider(env: Any, player_id: str) -> int:
-        seen.append((env, player_id))
-        # A value read off the live env (its step counter, 0 before the first step, 1 before the
-        # second) proves the hook truly received the live instance, and it lands in the recording.
+        seen.append(player_id)
         return 100 + env._i
 
     entry = replace(make_entry(n_steps=2), default_action=provider)
@@ -409,45 +453,26 @@ def test_default_action_receives_live_env_and_player_and_records_result(tmp_path
         recording_id="r",
         clock=ManualClock(),
     )
-    assert result.step_timeouts["player_0"] == 0
-    # Called once per step with the live env instance and the acting player id.
-    assert [player for _env, player in seen] == ["player_0", "player_0"]
-    assert all(env is not None and hasattr(env, "_i") for env, _player in seen)
-    # The integer the hook returned, derived from live env state, is what the recording stored.
-    recording = store.open("r")
-    actions = [s["agents"]["player_0"]["action"] for s in recording.steps()]
-    assert actions == [100, 101]
+    assert seen == ["player_0", "player_0"]
+    assert [state["agents"]["player_0"]["action"] for state in store.open("r").steps()] == [100, 101]
+    assert result.step_timeouts == {"player_0": 0}
 
 
-def test_max_steps_caps_episode():
-    entry = make_entry(n_steps=100)
+@pytest.mark.parametrize(
+    ("length", "cap", "ticks", "score", "reason"),
+    [(100, 5, 5, 5.0, "truncated"), (3, 3, 3, 3.0, "terminated")],
+)
+def test_max_steps_caps_episode(length, cap, ticks, score, reason):
+    entry = make_entry(n_steps=length)
     result = run_episode(
         entry,
         {"player_0": AgentPlayer(ScriptedAgent([0]))},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
-        max_steps=5,
+        max_steps=cap,
     )
-    assert result.ticks == 5
-    assert result.scores["player_0"] == 5.0
-    assert result.reason == REASON_TRUNCATED
-
-
-def test_max_steps_coinciding_with_termination_reports_terminated():
-    # The env terminates on its 3rd step; capping at exactly 3 must not mask that natural
-    # termination as a cap truncation.
-    entry = make_entry(n_steps=3)
-    result = run_episode(
-        entry,
-        {"player_0": AgentPlayer(ScriptedAgent([0]))},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=ManualClock(),
-        max_steps=3,
-    )
-    assert result.ticks == 3
-    assert result.reason == REASON_TERMINATED
+    assert (result.ticks, result.scores, result.reason) == (ticks, {"player_0": score}, reason)
 
 
 class FakeTeamEnv:
@@ -527,30 +552,6 @@ def _team_entry(finals: dict[str, float], *, make: Any = None) -> EnvironmentEnt
     )
 
 
-def test_terminal_rewards_credited_to_every_player_not_just_the_actor():
-    # Only player_2 acts last, but all three players are paid at the terminal step. A loop that
-    # read only the acting player would leave player_0/player_1 at 0.0 and mis-rank the episode.
-    finals = {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
-    entry = _team_entry(finals)
-    players = {p: AgentPlayer(ScriptedAgent([0])) for p in ("player_0", "player_1", "player_2")}
-    result = run_episode(
-        entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock()
-    )
-    assert result.reason == REASON_TERMINATED
-    assert result.scores == finals
-    assert result.failed_player is None  # a clean episode charges no player
-
-
-def test_complete_result_scores_override_rewards_only_after_natural_completion():
-    entry = make_entry()
-    entry = replace(entry, make=lambda _parameters: FakeResultEnv(3))
-    players = {"player_0": ExternalPlayer(ScriptedSource([0, 0, 0]))}
-    complete = run_episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1)
-    partial = run_episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, max_steps=1)
-    assert complete.scores == {"player_0": 99.0}
-    assert partial.scores == {"player_0": 1.0}
-
-
 def test_complete_result_scores_are_cached_before_environment_close():
     env = CloseClearsResultEnv(1)
     entry = replace(make_entry(n_steps=1), make=lambda _parameters: env)
@@ -560,7 +561,7 @@ def test_complete_result_scores_are_cached_before_environment_close():
         parameters=resolve_parameters(entry.meta),
         seed=1,
     )
-    assert env._i == 0
+    assert env.closed is True
     assert result.scores == {"player_0": 99.0}
 
 
@@ -590,7 +591,7 @@ def test_max_steps_on_the_natural_terminal_transition_keeps_complete_result_scor
     )
     assert env.result_calls == 1
     assert env.agents == []
-    assert result.reason == REASON_TERMINATED
+    assert result.reason == "terminated"
     assert result.scores == {"player_0": 99.0}
 
 
@@ -634,23 +635,27 @@ def test_complete_result_scores_reject_malformed_reports(reported: object, error
 
 
 def test_aec_terminal_rewards_record_nonacting_players_without_synthetic_actions(tmp_path: Path):
-    finals = {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
-    entry = _team_entry(finals)
-    run_episode(
+    entry = _team_entry({"player_0": -13.0, "player_1": -3.0, "player_2": 0.0})
+    store = FolderRecordingStore(tmp_path)
+    result = run_episode(
         entry,
-        {player: ExternalPlayer(ScriptedSource([0])) for player in finals},
+        {player: ExternalPlayer(ScriptedSource([0])) for player in ("player_0", "player_1", "player_2")},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=ManualClock(),
-        store=FolderRecordingStore(tmp_path),
+        store=store,
         recording_id="team",
     )
-
-    states = list(FolderRecordingStore(tmp_path).open("team").steps())
-    terminal = states[-1]["agents"]
-    assert terminal["player_2"]["action"] == 0
-    assert terminal["player_0"] == {"reward": -13.0, "score": -13.0}
-    assert terminal["player_1"] == {"reward": -3.0, "score": -3.0}
+    states = list(store.open("team").steps())
+    assert [state["tick"] for state in states] == [0, 1, 2]
+    assert states[-1]["agents"] == {
+        "player_2": {"action": 0, "reward": 0.0, "score": 0.0},
+        "player_0": {"reward": -13.0, "score": -13.0},
+        "player_1": {"reward": -3.0, "score": -3.0},
+    }
+    assert result.scores == {"player_0": -13.0, "player_1": -3.0, "player_2": 0.0}
+    assert result.reason == "terminated"
+    assert result.failed_player is None
 
 
 class EarlyDepartureEnv:
@@ -747,56 +752,19 @@ def test_aec_individual_departure_records_reward_only_and_skips_every_later_hook
     )
 
     states = list(FolderRecordingStore(tmp_path).open("early").steps())
+    assert [state["tick"] for state in states] == [0, 1]
+    assert [list(state["agents"]) for state in states] == [["player_0", "player_1"], ["player_0"]]
     assert states[0]["agents"]["player_1"] == {"reward": 4.0, "score": 4.0}
     assert calls == [("player_0", "act"), ("player_0", "learn"), ("player_0", "act"), ("player_0", "learn")]
-    assert result.reason == REASON_TRUNCATED
+    assert result.reason == "truncated"
     assert result.scores == {"player_0": 1.0, "player_1": 4.0}
-
-
-def test_agent_crash_charges_the_failure_to_its_own_player():
-    # In a three-player game only player_1's agent raises. The crash must be charged to player_1 alone,
-    # so the orchestrator never marks player_0 or player_2 failed for a competitor's bug. The exception
-    # still propagates (the container exits non-zero); the loop only records which player was at fault.
-    class Crashing:
-        def reset(self, seed: int, observation: Any) -> None: ...
-
-        def act(self, observation: Any) -> int:
-            raise RuntimeError("boom")
-
-    entry = _team_entry({"player_0": 0.0, "player_1": -13.0, "player_2": -3.0})
-    players = {
-        "player_0": AgentPlayer(ScriptedAgent([0])),
-        "player_1": AgentPlayer(Crashing()),
-        "player_2": AgentPlayer(ScriptedAgent([0])),
-    }
-    episode = Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
-    episode.start()
-    episode.step_once()  # player_0 acts cleanly
-    with pytest.raises(RuntimeError, match="boom"):
-        episode.step_once()  # player_1 raises on its turn
-    assert episode.failed_player == "player_1"
-    assert episode.result().failed_player == "player_1"
-
-
-class _Discrete:
-    """A minimal stand-in for a Gymnasium ``Discrete`` action space: membership over ``0..n-1``.
-
-    Mirrors ``Discrete.contains`` closely enough for the action boundary (an integer in range, never
-    a bool), so the loop's legality check can be exercised without depending on the Gymnasium types.
-    """
-
-    def __init__(self, n: int) -> None:
-        self.n = n
-
-    def contains(self, action: Any) -> bool:
-        return isinstance(action, int) and not isinstance(action, bool) and 0 <= action < self.n
 
 
 class MaskedEnv:
     """A 2-player AEC env that exposes a Discrete action space and a per-step ``action_mask``, the way
     Hearts does, and rejects an illegal card from ``step`` (its ``IllegalMoveError`` analogue).
 
-    Legal moves are the masked-1 indices. ``step`` raises on a masked-0 or out-of-range action — so a
+    Legal moves are the masked-1 indices. ``step`` raises on a masked-0 or out-of-range action, so a
     loop that skipped the action boundary would let that raise smear the failure across the table.
     ``raise_on_legal`` makes ``step`` raise on an otherwise-legal action too, to model a genuine
     environment fault that the boundary must leave unowned. ``mask_in_info`` publishes the mask in the
@@ -817,8 +785,8 @@ class MaskedEnv:
         self._raise_on_legal = raise_on_legal
         self._mask_in_info = mask_in_info
 
-    def action_space(self, agent: str) -> _Discrete:
-        return _Discrete(self._n)
+    def action_space(self, agent: str) -> Discrete:
+        return Discrete(self._n)
 
     def reset(self, seed: int | None = None, options: Any = None) -> None:
         self.agents = list(self.possible_agents)
@@ -845,6 +813,8 @@ class MaskedEnv:
         a = self.agent_selection
         if self.terminations[a] or self.truncations[a]:
             self.agents.remove(a)
+            if self.agents:
+                self.agent_selection = self.agents[0]
             return
         if action not in self._legal or action == self._raise_on_legal:
             raise ValueError(f"env rejects illegal action {action!r}")
@@ -885,74 +855,56 @@ def _masked_entry(**kwargs: Any) -> EnvironmentEntry:
     )
 
 
-def test_illegal_masked_action_is_charged_to_the_acting_player():
-    # player_1 returns a card the action mask flags illegal. The loop must reject it at the boundary
-    # and charge player_1 alone, so another player is never marked failed for player_1's illegal move.
-    # The rejection still aborts the episode, but the right player owns the fault.
+@pytest.mark.parametrize(
+    ("in_info", "legal", "first_action", "second_action", "prior_steps", "failed", "diagnostic"),
+    [
+        (False, (0, 1), 0, 2, 1, "player_1", "legal-move mask"),
+        (True, (0, 1), 0, 2, 1, "player_1", "legal-move mask"),
+        (False, (0, 1, 2, 3), 9, 0, 0, "player_0", "action space"),
+    ],
+)
+def test_illegal_masked_action_is_charged_to_the_acting_player(
+    in_info, legal, first_action, second_action, prior_steps, failed, diagnostic
+):
+    entry = _masked_entry(legal=legal, mask_in_info=in_info)
+    with Episode(
+        entry,
+        {
+            "player_0": AgentPlayer(ScriptedAgent([first_action])),
+            "player_1": AgentPlayer(ScriptedAgent([second_action])),
+        },
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+    ) as episode:
+        for _ in range(prior_steps):
+            episode.step_once()
+        with pytest.raises(IllegalAgentActionError, match=diagnostic):
+            episode.step_once()
+        assert episode.failed_player == failed
+        assert episode.result().failed_player == failed
+
+
+def test_illegal_external_action_defaults_instead_of_crashing_the_session(tmp_path: Path):
     entry = _masked_entry(legal=(0, 1))
-    players = {
-        "player_0": AgentPlayer(ScriptedAgent([0])),  # legal
-        "player_1": AgentPlayer(ScriptedAgent([2])),  # masked illegal
-    }
-    episode = Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
-    episode.start()
-    episode.step_once()  # player_0 plays a legal card
-    with pytest.raises(IllegalAgentActionError, match="legal-move mask"):
-        episode.step_once()  # player_1's illegal card is refused at the boundary
-    assert episode.failed_player == "player_1"
-    assert episode.result().failed_player == "player_1"
-
-
-def test_illegal_action_masked_via_info_is_charged_to_the_acting_player():
-    # Some environments (Shimmy's OpenSpiel wrapper) publish the action mask in env.last()'s `info`
-    # rather than the observation. The boundary must consult both, or an OpenSpiel illegal move slips
-    # past unattributed and marks every player failed. Same outcome as the observation-masked case.
-    entry = _masked_entry(legal=(0, 1), mask_in_info=True)
-    players = {
-        "player_0": AgentPlayer(ScriptedAgent([0])),  # legal
-        "player_1": AgentPlayer(ScriptedAgent([2])),  # illegal per the info-supplied mask
-    }
-    episode = Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
-    episode.start()
-    episode.step_once()  # player_0 plays a legal card
-    with pytest.raises(IllegalAgentActionError, match="legal-move mask"):
-        episode.step_once()  # player_1's illegal card is refused via the info mask
-    assert episode.failed_player == "player_1"
-    assert episode.result().failed_player == "player_1"
-
-
-def test_illegal_external_action_defaults_instead_of_crashing_the_session():
-    # A human player is not charged like an agent. An illegal action from a hand-rolled transport client
-    # (the UI only sends legal cards) must fall back to the environment default rather than reaching
-    # env.step and taking down every other player in the container. player_0 (external) sends a
-    # masked-out card; the loop swaps in the legal default (0) so the step lands cleanly.
-    entry = _masked_entry(legal=(0, 1))
-    players = {
-        "player_0": ExternalPlayer(ScriptedSource([2])),  # 2 is masked illegal for a human player
-        "player_1": AgentPlayer(ScriptedAgent([0])),  # legal
-    }
-    episode = Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
-    episode.start()
-    # Without the external-path legality check this would raise the env's illegal-move error; with it,
-    # the action is defaulted and the step is applied.
-    episode.step_once()
-    assert episode.tick == 1
-    assert episode.failed_player is None
-
-
-def test_out_of_action_space_action_is_charged_to_the_acting_player():
-    # An action outside the player's Discrete space (the agent contract is an in-space action) is the
-    # agent's fault, named even when the env publishes no per-card mask reason for it.
-    entry = _masked_entry(n=4, legal=(0, 1, 2, 3))
-    players = {
-        "player_0": AgentPlayer(ScriptedAgent([9])),  # 9 is outside Discrete(4)
-        "player_1": AgentPlayer(ScriptedAgent([0])),
-    }
-    episode = Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock())
-    episode.start()
-    with pytest.raises(IllegalAgentActionError, match="action space"):
-        episode.step_once()
-    assert episode.failed_player == "player_0"
+    store = FolderRecordingStore(tmp_path)
+    result = run_episode(
+        entry,
+        {"player_0": ExternalPlayer(ScriptedSource([2])), "player_1": AgentPlayer(ScriptedAgent([0]))},
+        parameters=resolve_parameters(entry.meta),
+        seed=1,
+        clock=ManualClock(),
+        store=store,
+        recording_id="r",
+        player_attribution={
+            "player_0": {"kind": "human", "label": "Human"},
+            "player_1": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"},
+        },
+    )
+    assert next(store.open("r").steps())["agents"]["player_0"]["action"] == 0
+    assert result.ticks == 2
+    assert result.failed_player is None
+    assert result.step_timeouts == {"player_0": 0, "player_1": 0}
 
 
 def test_environment_fault_on_a_legal_action_is_owned_by_no_player():
@@ -972,22 +924,28 @@ def test_environment_fault_on_a_legal_action_is_owned_by_no_player():
     assert episode.result().failed_player is None
 
 
-def test_agent_reset_crash_is_charged_to_its_player_over_a_written_recording(tmp_path: Path):
-    # An agent whose reset() raises must be charged to its own player, not reported as an unowned
-    # infrastructure fault. The header is opened before the participants reset, so the crash still
-    # leaves a readable recording for the orchestrator to attribute over (instead of no result row).
-    class ResetCrashing:
-        def reset(self, seed: int, observation: Any) -> None:
-            raise RuntimeError("reset boom")
+@pytest.mark.parametrize(("hook", "ticks"), [("reset", 0), ("act", 1), ("learn", 1)])
+def test_agent_hook_crash_preserves_attribution_recording_and_cleanup(tmp_path: Path, hook, ticks):
+    error = RuntimeError("participant boom")
 
-        def act(self, observation: Any) -> int:
-            return 0
+    def crash(*_args):
+        raise error
 
-    entry = _team_entry({"player_0": 0.0, "player_1": 0.0, "player_2": 0.0})
-    store = FolderRecordingStore(tmp_path)
+    finals = {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0}
+
+    class ClosingTeamEnv(FakeTeamEnv):
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    env = ClosingTeamEnv(finals)
+    entry = _team_entry(finals, make=lambda _parameters: env)
+    broken = ScriptedAgent([0])
+    setattr(broken, hook, crash)
     players = {
         "player_0": AgentPlayer(ScriptedAgent([0])),
-        "player_1": AgentPlayer(ResetCrashing()),
+        "player_1": AgentPlayer(broken),
         "player_2": AgentPlayer(ScriptedAgent([0])),
     }
     episode = Episode(
@@ -995,68 +953,70 @@ def test_agent_reset_crash_is_charged_to_its_player_over_a_written_recording(tmp
         players,
         parameters=resolve_parameters(entry.meta),
         seed=1,
-        store=store,
+        store=FolderRecordingStore(tmp_path),
         recording_id="r",
         clock=ManualClock(),
         player_attribution={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-            "player_1": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-            "player_2": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
+            player: {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
+            for player in ("player_0", "player_1", "player_2")
         },
     )
-    with pytest.raises(RuntimeError, match="reset boom"):
-        episode.start()
+    with pytest.raises(RuntimeError, match="participant boom") as caught, episode:
+        while not episode.done:
+            episode.advance()
+    assert caught.value is error
+    assert episode.tick == ticks
     assert episode.failed_player == "player_1"
     assert episode.result().failed_player == "player_1"
-
-    episode.close()
-    # The recording exists with its header, so this reads as an attributable crash, not a missing run.
+    assert env.closed is True
     header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert header["environment"] == "team"
 
 
-def test_reset_time_is_charged_and_stops_before_the_first_step_in_canonical_order():
+@pytest.mark.parametrize(
+    ("cost", "reason", "ticks", "failed"),
+    [(10, "episode_limit", 0, "player_0"), (5, "terminated", 3, None)],
+)
+def test_reset_time_is_charged_and_stops_before_the_first_step_in_canonical_order(
+    cost, reason, ticks, failed
+):
     clock = ManualClock()
+    reset_seeds: list[int] = []
 
     class SlowSetup:
         def reset(self, seed: int, observation: Any) -> None:
-            clock.advance(10)
+            reset_seeds.append(seed)
+            clock.advance(cost)
 
         def act(self, observation: Any) -> int:
             return 0
 
     entry = _team_entry({"player_0": 0.0, "player_1": 0.0, "player_2": 0.0})
-    episode = Episode(
+    with Episode(
         entry,
         {player: AgentPlayer(SlowSetup()) for player in ("player_2", "player_1", "player_0")},
         parameters=resolve_parameters(entry.meta),
         seed=1,
         clock=clock,
+        step_limit_ms=1,
         episode_limit_ms=5,
-    )
-    episode.start()
-    assert episode.done
-    assert episode.tick == 0
-    assert episode.result().reason == REASON_EPISODE_LIMIT
-    assert episode.failed_player == "player_0"
-    assert all(state.budget_used_ms == 10 for state in episode._state.values())
-    episode.close()
+    ) as episode:
+        assert reset_seeds == [1, 1, 1]
+        assert episode.tick == 0
+        assert episode.done == (failed is not None)
+        while not episode.done:
+            episode.advance()
+    result = episode.result()
+    assert (result.reason, result.ticks, result.failed_player) == (reason, ticks, failed)
+    assert result.step_timeouts == {"player_0": 0, "player_1": 0, "player_2": 0}
 
 
 def test_sequential_setup_receives_each_agents_observe_value_and_skips_humans():
     class DistinctObservations(FakeTeamEnv):
+        def reset(self, seed: int | None = None, options: Any = None) -> None:
+            self.seed = seed
+            super().reset(seed, options)
+
         def observe(self, player: str) -> dict[str, int]:
             return {"player": int(player.removeprefix("player_"))}
 
@@ -1067,15 +1027,14 @@ def test_sequential_setup_receives_each_agents_observe_value_and_skips_humans():
             self.player = player
 
         def reset(self, seed: int, observation: object) -> None:
-            seen[self.player] = observation
+            seen[self.player] = (seed, observation)
 
         def act(self, observation: object) -> int:
             return 0
 
-    entry = _team_entry(
-        {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0},
-        make=lambda _parameters: DistinctObservations({"player_0": 0.0, "player_1": 0.0, "player_2": 0.0}),
-    )
+    finals = {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0}
+    env = DistinctObservations(finals)
+    entry = _team_entry(finals, make=lambda _parameters: env)
     with Episode(
         entry,
         {
@@ -1084,105 +1043,10 @@ def test_sequential_setup_receives_each_agents_observe_value_and_skips_humans():
             "player_2": ExternalPlayer(ScriptedSource([])),
         },
         parameters=resolve_parameters(entry.meta),
-        seed=1,
+        seed=23,
     ):
-        assert seen == {"player_0": {"player": 0}, "player_1": {"player": 1}}
-
-
-def test_start_failure_through_context_manager_closes_recording_and_env(tmp_path: Path):
-    # run_episode drives Episode as a context manager. When start() raises (here an agent reset crash)
-    # __enter__ propagates before the `with` body, so __exit__ never runs — start() itself must close
-    # the half-opened recording writer and the constructed env, or both leak. Proof: the env's close()
-    # is called and the recording stays readable (its header was flushed on open).
-    class ResetCrashing:
-        def reset(self, seed: int, observation: Any) -> None:
-            raise RuntimeError("reset boom")
-
-        def act(self, observation: Any) -> int:
-            return 0
-
-    finals = {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0}
-
-    class ClosingTeamEnv(FakeTeamEnv):
-        def __init__(self) -> None:
-            super().__init__(finals)
-            self.closed = False
-
-        def close(self) -> None:
-            self.closed = True
-
-    made: list[ClosingTeamEnv] = []
-
-    def make(_parameters: object) -> ClosingTeamEnv:
-        env = ClosingTeamEnv()
-        made.append(env)
-        return env
-
-    entry = _team_entry(finals, make=make)
-    store = FolderRecordingStore(tmp_path)
-    players = {
-        "player_0": AgentPlayer(ScriptedAgent([0])),
-        "player_1": AgentPlayer(ResetCrashing()),
-        "player_2": AgentPlayer(ScriptedAgent([0])),
-    }
-    with pytest.raises(RuntimeError, match="reset boom"):
-        run_episode(
-            entry,
-            players,
-            parameters=resolve_parameters(entry.meta),
-            seed=1,
-            store=store,
-            recording_id="r",
-            clock=ManualClock(),
-            player_attribution={
-                "player_0": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                },
-                "player_1": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                },
-                "player_2": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                },
-            },
-        )
-
-    assert len(made) == 1
-    assert made[0].closed is True  # start() closed the env even though __exit__ never ran
-    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    assert header["environment"] == "team"
-
-
-def test_learn_hook_time_counts_against_budget():
-    clock = ManualClock()
-    entry = make_entry(n_steps=10, episode_limit_ms=1000)
-
-    class LearningAgent:
-        def reset(self, seed: int, observation: Any) -> None: ...
-
-        def act(self, observation: Any) -> int:
-            clock.advance(100)
-            return 0
-
-        def learn(self, observation, action, reward, terminated) -> None:
-            clock.advance(300)
-
-    result = run_episode(
-        entry,
-        {"player_0": AgentPlayer(LearningAgent())},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=clock,
-    )
-    # Each step costs 100 (act) + 300 (learn) = 400ms; budget 1000 trips on the third step.
-    assert result.reason == REASON_EPISODE_LIMIT
-    assert result.ticks == 3
+        assert env.seed == 23
+        assert seen == {"player_0": (23, {"player": 0}), "player_1": (23, {"player": 1})}
 
 
 def test_episode_normalizes_a_complete_parameter_map_before_constructing_the_environment():
