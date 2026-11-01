@@ -26,20 +26,21 @@ from game_sandbox_harness.environment import (
     EnvironmentEntry,
     EnvironmentMeta,
     PlayerBounds,
+    ResolvedLayout,
+    ResolvedSeat,
     SeatDeclaration,
     SeatPlan,
     SeatPlans,
     resolve_parameters,
 )
 from game_sandbox_harness.live import (
-    DEFAULT_BUILTIN_AGENT_BASE,
-    UNSET_TIMEOUT,
     LiveConfig,
     LiveConfigError,
     PlayerBinding,
     build_players,
     describe_failure,
     parse_config,
+    run,
     run_live_loop,
 )
 from game_sandbox_harness.live_io import (
@@ -47,13 +48,12 @@ from game_sandbox_harness.live_io import (
     ProtocolStream,
     SessionControl,
     TransportSource,
-    result_envelope,
+    build_tee_store,
 )
 from game_sandbox_harness.participant_runner import IllegalAgentActionError
 from game_sandbox_harness.session import AgentPlayer, Episode, ExternalPlayer
 
 DEFAULT_ACTION = -1
-FLAP = 1
 PARAMETERS = {"players": 1}
 
 
@@ -81,6 +81,9 @@ class FakeEnv:
     def last(self) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         a = self.agent_selection
         return self._obs, self.rewards[a], self.terminations[a], self.truncations[a], {}
+
+    def observe(self, player_id: str) -> Any:
+        return self._obs
 
     def step(self, action: Any) -> None:
         a = self.agent_selection
@@ -165,61 +168,133 @@ def _recorded_actions(recording_path: Path) -> list[Any]:
     return actions
 
 
+def _payload(recording_dir="/r") -> dict[str, Any]:
+    return {
+        "env_id": "fake",
+        "parameters": {"players": 1},
+        "player_bindings": {"player_0": {"kind": "external"}},
+        "players": {"player_0": {"kind": "human", "label": "Alice", "user": "alice"}},
+        "recording_dir": str(recording_dir),
+        "recording_id": "r",
+    }
+
+
+def _run_config(entry, config, *, base=None, clock=None, control=None, sleeper=None):
+    base = base or ManualClock(0)
+    clock = clock or PausableClock(base)
+    control = control or SessionControl(clock)
+    streamed = []
+    protocol = ProtocolStream(_ListSink(streamed))
+    exit_code = run(
+        entry,
+        config,
+        protocol=protocol,
+        control=control,
+        clock=clock,
+        sleeper=sleeper or AdvancingSleeper(base),
+        store=build_tee_store(config.recording_dir, protocol),
+    )
+    assert exit_code == 0
+    return (
+        streamed,
+        [json.loads(line) for line in "".join(streamed).splitlines()],
+        Path(config.recording_dir) / "r" / "recording.jsonl",
+    )
+
+
+def _write_agent(path, source):
+    (path / "manifest.json").write_text(
+        json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}), encoding="utf-8"
+    )
+    (path / "agent.py").write_text(source, encoding="utf-8")
+
+
+def _subprocess_payload(tmp_path, agent):
+    payload = _payload(tmp_path)
+    payload.update(
+        env_id="flappy_bird",
+        parameters={"players": 1, "pipe_gap": 100},
+        player_bindings={"player_0": {"kind": "builtin-agent", "path": str(agent)}},
+        players={"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}},
+    )
+    return payload
+
+
 # --- parse_config -----------------------------------------------------------------------
 
 
-def test_parse_config_minimal_and_full():
-    cfg = parse_config(
-        [
-            json.dumps(
-                {
-                    "env_id": "flappy_bird",
-                    "parameters": {"players": 1, "pipe_gap": 100},
-                    "seed": 7,
-                    "player_bindings": {"player_0": {"kind": "external"}},
-                    "human_timeout_ms": 5000,
-                    "recording_dir": "/recordings",
-                    "recording_id": "abc",
-                    "players": {"player_0": {"kind": "human", "label": "alice", "user": "alice"}},
-                }
-            )
-        ]
-    )
-    assert cfg == LiveConfig(
-        env_id="flappy_bird",
-        seed=7,
-        player_bindings={"player_0": PlayerBinding(kind="external")},
-        human_timeout_ms=5000,
-        recording_dir="/recordings",
-        recording_id="abc",
-        parameters={"players": 1, "pipe_gap": 100},
-        players={"player_0": {"kind": "human", "label": "alice", "user": "alice"}},
-        layout=cfg.layout,
-    )
+@pytest.mark.parametrize(
+    "overrides,seed",
+    [
+        ({}, 0),
+        (
+            {
+                "seed": 7,
+                "headless": True,
+                "step_timeout_ms": 250,
+                "episode_timeout_ms": 450,
+                "messaging_enabled": False,
+                "message_cap": 80,
+            },
+            7,
+        ),
+    ],
+)
+def test_parse_config_minimal_and_full(tmp_path, monkeypatch, overrides, seed):
+    import game_sandbox_harness.live as live
 
+    base = ManualClock(0)
+    entry = make_entry(4 if overrides else 2, pace_interval_ms=50)
+    payload = {**_payload(tmp_path), **overrides}
+    if overrides:
+        _write_agent(
+            tmp_path,
+            "class A:\n"
+            "    def reset(self, seed, observation): pass\n"
+            "    def act(self, observation):\n"
+            "        self.clock.advance(300)\n"
+            "        return 0\n",
+        )
+        load_agent = live.load_agent
 
-def test_parse_config_requires_players():
-    payload = {
-        "env_id": "fake",
-        "parameters": PARAMETERS,
-        "player_bindings": {"p": {"kind": "external"}},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError):
-        parse_config([json.dumps(payload)])
+        def load_timed_agent(path):
+            agent = load_agent(path)
+            agent.clock = base
+            return agent
+
+        monkeypatch.setattr(live, "load_agent", load_timed_agent)
+        payload.update(
+            player_bindings={"player_0": {"kind": "builtin-agent", "path": str(tmp_path)}},
+            players={"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}},
+        )
+    config = parse_config([json.dumps(payload)], entry=entry)
+    assert config.layout == ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1)
+    _, frames, recording = _run_config(entry, config, base=base)
+    header = json.loads(recording.read_text().splitlines()[0])
+    assert header["seed"] == seed
+    assert header["players"] == (
+        {"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}}
+        if overrides
+        else {"player_0": {"kind": "human", "label": "Alice", "user": "alice"}}
+    )
+    assert header["parameters"] == {"players": 1}
+    assert frames[-1]["ticks"] == 2
+    states = [json.loads(line) for line in recording.read_text().splitlines()[1:]]
+    assert [state["timing"]["started_at"] for state in states] == ([0, 300] if overrides else [50, 100])
+    assert _recorded_actions(recording) == [-1, -1]
+    assert frames[-1]["reason"] == ("episode_limit" if overrides else "terminated")
+    assert frames[-1]["step_timeouts"] == {"player_0": 2 if overrides else 0}
+    if overrides:
+        assert [state["agents"]["player_0"]["timing"]["decision_ms"] for state in states] == [300, 300]
 
 
 @pytest.mark.parametrize("human_timeout_ms", [None, 5000])
-def test_parse_config_rejects_any_simultaneous_human_timeout_override(human_timeout_ms: int | None):
+def test_parse_config_rejects_any_simultaneous_human_timeout_override(human_timeout_ms):
     sequential = make_entry(1, pace_interval_ms=50)
     entry = replace(sequential, meta=replace(sequential.meta, stepping="simultaneous"))
-    payload: dict[str, Any] = {
-        "env_id": "fake",
-        "parameters": PARAMETERS,
-        "player_bindings": {"player_0": {"kind": "external"}},
-        "recording_dir": "/r",
-        "human_timeout_ms": human_timeout_ms,
-    }
+    payload = _payload()
+    assert parse_config([json.dumps(payload)], entry=entry).env_id == "fake"
+    payload["human_timeout_ms"] = human_timeout_ms
     with pytest.raises(LiveConfigError, match="simultaneous.*human_timeout_ms"):
         parse_config([json.dumps(payload)], entry=entry)
 
@@ -339,279 +414,92 @@ def test_parse_config_accepts_only_an_external_designated_chat_player():
         parse_config([json.dumps(payload)], entry=entry)
 
 
-def test_parse_config_defaults_seed_and_optional_fields():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "external"}},
-        "players": {"player_0": {"kind": "human", "label": "Human"}},
-        "recording_dir": "/r",
-    }
-    cfg = parse_config([json.dumps(payload)])
-    assert cfg.seed == 0
-    assert cfg.human_timeout_ms is UNSET_TIMEOUT
-    assert cfg.recording_id is None
-    # The Stage 6 timeout overrides default to None (take the environment metadata default).
-    assert cfg.step_timeout_ms is None
-    assert cfg.episode_timeout_ms is None
-    # The Stage 8 messaging keys default to None (let the environment metadata decide).
-    assert cfg.messaging_enabled is None
-    assert cfg.message_cap is None
-    assert cfg.headless is False
-
-
-def test_parse_config_reads_workflow_overrides():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "naive"}},
-        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
-        "recording_dir": "/r",
-        "step_timeout_ms": 250,
-        "episode_timeout_ms": 60_000,
-        "headless": True,
-    }
-    cfg = parse_config([json.dumps(payload)])
-    assert cfg.step_timeout_ms == 250
-    assert cfg.episode_timeout_ms == 60_000
-    assert cfg.headless is True
-
-
-def test_parse_config_reads_messaging_keys():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "naive"}},
-        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
-        "recording_dir": "/r",
-        "messaging_enabled": False,
-        "message_cap": 80,
-    }
-    cfg = parse_config([json.dumps(payload)])
-    assert cfg.messaging_enabled is False
-    assert cfg.message_cap == 80
+@pytest.mark.parametrize(
+    "player,cause",
+    [
+        (
+            {"kind": "agent", "label": "Both", "submission_id": "sub-1", "builtin_name": "naive"},
+            "exactly one",
+        ),
+        ({"kind": "agent", "label": "Anonymous"}, "exactly one"),
+        ({"kind": "agent", "label": "Owned", "builtin_name": "naive", "user": "owner"}, "cannot carry"),
+        ({"kind": "agent", "label": "Empty", "submission_id": ""}, "submission_id"),
+        ({"kind": "agent", "label": "Null", "submission_id": None}, "submission_id"),
+        ({"kind": "human", "label": "Alice", "builtin_name": "naive"}, "cannot carry"),
+    ],
+)
+def test_parse_config_rejects_non_disjoint_player_attribution(player, cause):
+    payload = _payload()
+    if player["kind"] == "agent":
+        payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agent"}}
+        payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}}
+    entry = make_entry(1, pace_interval_ms=None)
+    parse_config([json.dumps(payload)], entry=entry)
+    payload["players"] = {"player_0": player}
+    with pytest.raises(LiveConfigError, match=cause):
+        parse_config([json.dumps(payload)], entry=entry)
 
 
 @pytest.mark.parametrize(
-    "player",
+    "binding,identity,cause",
     [
-        {"kind": "agent", "label": "Ambiguous", "submission_id": "sub-1", "builtin_name": "naive"},
-        {"kind": "agent", "label": "Anonymous"},
-        {"kind": "agent", "label": "Owned builtin", "builtin_name": "naive", "user": "owner"},
+        ({"kind": "builtin-agent"}, {"kind": "agent", "builtin_name": "naive", "label": "A"}, "must name"),
+        (
+            {"kind": "builtin-agent", "name": "unknown"},
+            {"kind": "agent", "builtin_name": "unknown", "label": "A"},
+            "does not declare",
+        ),
+        (
+            {"kind": "builtin-agent", "name": "naive"},
+            {"kind": "agent", "builtin_name": "other", "label": "A"},
+            "match",
+        ),
+        (
+            {"kind": "builtin-agent", "path": "/agent"},
+            {"kind": "agent", "builtin_name": "naive", "label": "A"},
+            "submission_id",
+        ),
+        ({"kind": "external", "name": "naive"}, {"kind": "human", "label": "A"}, "must not name"),
     ],
 )
-def test_parse_config_rejects_non_disjoint_player_attribution(player: dict[str, object]):
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "naive"}},
-        "players": {"player_0": player},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="exactly one|cannot carry"):
-        parse_config([json.dumps(payload)])
+def test_parse_config_requires_a_name_for_a_pathless_builtin_binding(binding, identity, cause):
+    entry = make_entry(1, pace_interval_ms=None)
+    payload = _payload()
+    parse_config([json.dumps(payload)], entry=entry)
+    payload.update(player_bindings={"player_0": binding}, players={"player_0": identity})
+    with pytest.raises(LiveConfigError, match=cause):
+        parse_config([json.dumps(payload)], entry=entry)
 
 
 @pytest.mark.parametrize(
-    "player",
+    "field,value,cause",
     [
-        {"kind": "agent", "label": "Empty", "submission_id": ""},
-        {"kind": "agent", "label": "Null", "submission_id": None},
+        ("env_id", None, "env_id"),
+        ("player_bindings", None, "player_bindings"),
+        ("player_bindings", {}, "player_bindings"),
+        ("player_bindings", {"player_0": {"kind": "robot"}}, "kind"),
+        ("recording_dir", None, "recording_dir"),
+        ("seed", 1.5, "seed"),
+        ("players", {"player_0": {"kind": "robot", "label": "x"}}, "kind"),
+        ("players", {"player_0": {"kind": "human"}}, "label"),
+        ("players", [], "players"),
+        ("players", None, "players"),
+        ("step_timeout_ms", "soon", "step_timeout_ms"),
+        ("headless", "yes", "headless"),
+        ("messaging_enabled", "on", "messaging_enabled"),
+        ("message_cap", "lots", "message_cap"),
     ],
 )
-def test_parse_config_rejects_empty_or_null_submission_identity(player: dict[str, object]):
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": "/agent"}},
-        "players": {"player_0": player},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="submission_id"):
-        parse_config([json.dumps(payload)])
-
-
-def test_parse_config_rejects_agent_identity_on_a_human_player():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "external"}},
-        "players": {"player_0": {"kind": "human", "label": "Alice", "builtin_name": "naive"}},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="cannot carry"):
-        parse_config([json.dumps(payload)])
-
-
-def test_parse_config_requires_a_name_for_a_pathless_builtin_binding():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent"}},
-        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="must name a built-in agent"):
-        parse_config([json.dumps(payload)])
-
-
-def test_parse_config_rejects_an_undeclared_builtin_name():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "name": "unknown"}},
-        "players": {"player_0": {"kind": "agent", "builtin_name": "unknown", "label": "Agent"}},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="does not declare"):
-        parse_config([json.dumps(payload)])
-
-
-def test_parse_config_requires_binding_and_recording_builtin_names_to_match():
-    payload = {
-        "env_id": "spades",
-        "parameters": {"seat_plan": "solo"},
-        "player_bindings": {
-            player_id: {"kind": "builtin-agent", "name": "naive"}
-            for player_id in ("player_0", "player_1", "player_2", "player_3")
-        },
-        "players": {
-            player_id: {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"}
-            for player_id in ("player_0", "player_1", "player_2", "player_3")
-        },
-        "recording_dir": "/r",
-    }
-    payload["players"]["player_0"]["builtin_name"] = "cautious"
-    with pytest.raises(LiveConfigError, match="must match"):
-        parse_config([json.dumps(payload)])
-
-
-def test_parse_config_accepts_a_declared_name_with_an_explicit_local_path():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {
-            "player_0": {
-                "kind": "builtin-agent",
-                "path": "/opt/agents/builtin/flappy_bird/naive",
-                "name": "naive",
-            }
-        },
-        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
-        "recording_dir": "/r",
-    }
-    config = parse_config([json.dumps(payload)])
-    assert config.player_bindings["player_0"].name == "naive"
-
-
-def test_parse_config_requires_submission_identity_for_a_path_only_binding():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": "/untrusted"}},
-        "players": {"player_0": {"kind": "agent", "builtin_name": "naive", "label": "Agent"}},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="path-only binding must carry submission_id"):
-        parse_config([json.dumps(payload)])
-
-
-def test_parse_config_rejects_a_named_external_binding():
-    payload = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "player_bindings": {"player_0": {"kind": "external", "name": "naive"}},
-        "players": {"player_0": {"kind": "human", "label": "Human"}},
-        "recording_dir": "/r",
-    }
-    with pytest.raises(LiveConfigError, match="must not name an agent"):
-        parse_config([json.dumps(payload)])
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"player_bindings": {"p": {"kind": "external"}}, "recording_dir": "/r"},  # no env_id
-        {"env_id": "fake", "parameters": PARAMETERS, "recording_dir": "/r"},  # no players
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {},
-            "recording_dir": "/r",
-        },  # empty players
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "robot"}},
-            "recording_dir": "/r",
-        },  # bad kind
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-        },  # no recording_dir
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "ext"}},
-            "recording_dir": "/r",
-            "seed": 1.5,
-        },
-        # players: bad kind, missing label, and a non-object map.
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "players": {"p": {"kind": "robot", "label": "x"}},
-        },
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "players": {"p": {"kind": "human"}},
-        },
-        {
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "players": [],
-        },
-        {  # a non-integer timeout override is rejected
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "step_timeout_ms": "soon",
-        },
-        {  # a non-boolean headless flag is rejected
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "headless": "yes",
-        },
-        {  # a non-boolean messaging_enabled is rejected
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "messaging_enabled": "on",
-        },
-        {  # a non-integer message_cap is rejected
-            "env_id": "fake",
-            "parameters": PARAMETERS,
-            "player_bindings": {"p": {"kind": "external"}},
-            "recording_dir": "/r",
-            "message_cap": "lots",
-        },
-    ],
-)
-def test_parse_config_rejects_bad_payloads(payload: dict[str, Any]):
-    with pytest.raises(LiveConfigError):
-        parse_config([json.dumps(payload)])
+def test_parse_config_rejects_bad_payloads(field, value, cause):
+    entry = make_entry(1, pace_interval_ms=50)
+    payload = _payload()
+    parse_config([json.dumps(payload)], entry=entry)
+    if value is None:
+        del payload[field]
+    else:
+        payload[field] = value
+    with pytest.raises(LiveConfigError, match=cause):
+        parse_config([json.dumps(payload)], entry=entry)
 
 
 def test_parse_config_requires_exactly_one_argument():
@@ -624,192 +512,111 @@ def test_parse_config_requires_exactly_one_argument():
 # --- build_players ------------------------------------------------------------------------
 
 
-def test_build_players_external_resolves_timeout_override_then_metadata():
-    control = SessionControl()
-    clock = PausableClock(ManualClock())
-    sleeper = AdvancingSleeper(ManualClock())
-    entry = make_entry(3, pace_interval_ms=None, human_timeout_ms=8000)
-
-    # No override → metadata default.
-    cfg = LiveConfig(
-        "fake", 0, {"player_0": PlayerBinding("external")}, UNSET_TIMEOUT, "/r", None, {"players": 1}
+@pytest.mark.parametrize(
+    "override,action,elapsed",
+    [
+        ({}, -1, 30),
+        ({"human_timeout_ms": 10}, -1, 10),
+        ({"human_timeout_ms": None}, 5, 50),
+    ],
+)
+def test_build_players_external_resolves_timeout_override_then_metadata(tmp_path, override, action, elapsed):
+    entry = make_entry(1, pace_interval_ms=None, human_timeout_ms=30)
+    config = parse_config([json.dumps({**_payload(tmp_path), **override})], entry=entry)
+    base = ManualClock(0)
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    control.handle_line('{"kind":"clock","player":"player_0","running":true}')
+    sleeper = AdvancingSleeper(
+        base, at=10, do=lambda: control.handle_line('{"kind":"input","player":"player_0","action":5}')
     )
-    players = build_players(cfg, entry, control, clock, sleeper)
-    player = players["player_0"]
-    assert isinstance(player, ExternalPlayer)
-    assert player.timeout_ms == 8000
-    assert isinstance(player.source, TransportSource)
-
-    # Override wins.
-    cfg = LiveConfig("fake", 0, {"player_0": PlayerBinding("external")}, 2000, "/r", None, {"players": 1})
-    players = build_players(cfg, entry, control, clock, sleeper)
-    assert isinstance(players["player_0"], ExternalPlayer)
-    assert players["player_0"].timeout_ms == 2000
-
-    # An explicit null disables the metadata timeout. It is distinct from the absent override.
-    cfg = LiveConfig("fake", 0, {"player_0": PlayerBinding("external")}, None, "/r", None, {"players": 1})
-    players = build_players(cfg, entry, control, clock, sleeper)
-    assert isinstance(players["player_0"], ExternalPlayer)
-    assert players["player_0"].timeout_ms is None
+    _, _, recording = _run_config(entry, config, base=base, control=control, sleeper=sleeper)
+    assert _recorded_actions(recording) == [action]
+    assert base.now_ms() == elapsed
+    assert entry.meta.human_timeout_ms == 30
 
 
-def test_build_players_builtin_agent_loads_through_manifest(tmp_path: Path):
-    (tmp_path / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}),
-        encoding="utf-8",
+def test_build_players_builtin_agent_loads_through_manifest(tmp_path):
+    _write_agent(
+        tmp_path,
+        "class A:\n"
+        "    def reset(self, seed, observation): self.n = seed\n"
+        "    def act(self, observation):\n"
+        "        self.n += 1\n"
+        "        return self.n\n",
     )
-    (tmp_path / "agent.py").write_text(
-        "class A:\n    def reset(self, seed, observation): pass\n    def act(self, observation): return 0\n",
-        encoding="utf-8",
-    )
-    control = SessionControl()
-    clock = PausableClock(ManualClock())
-    sleeper = AdvancingSleeper(ManualClock())
-    entry = make_entry(3, pace_interval_ms=16)
-    cfg = LiveConfig(
-        "fake",
-        0,
-        {"player_0": PlayerBinding("builtin-agent", path=str(tmp_path))},
-        None,
-        "/r",
-        None,
-        {"players": 1},
-    )
-    players = build_players(cfg, entry, control, clock, sleeper)
-    assert isinstance(players["player_0"], AgentPlayer)
-
-
-def test_build_players_builtin_agent_without_path_resolves_the_named_env_default(monkeypatch):
-    # A builtin-agent player with no explicit overlay path loads its named agent from the staged
-    # /opt/agents/builtin/<env_id>/<name> tree.
-    import game_sandbox_harness.live as live
-
-    captured: list[str] = []
-    monkeypatch.setattr(live, "load_agent", lambda path: captured.append(path) or object())
-    control = SessionControl()
-    clock = PausableClock(ManualClock())
-    sleeper = AdvancingSleeper(ManualClock())
-    entry = make_entry(3, pace_interval_ms=None)
-    cfg = LiveConfig(
-        "hearts",
-        0,
-        {"player_0": PlayerBinding("builtin-agent", name="cautious")},
-        None,
-        "/r",
-        None,
-        {"players": 1},
-    )
-    players = build_players(cfg, entry, control, clock, sleeper)
-    assert captured == [f"{DEFAULT_BUILTIN_AGENT_BASE}/hearts/cautious"]
-    assert isinstance(players["player_0"], AgentPlayer)
-
-
-def test_build_players_constructs_distinct_agents_for_repeated_paths(monkeypatch):
-    import game_sandbox_harness.live as live
-
-    constructed: list[object] = []
-    monkeypatch.setattr(live, "load_agent", lambda _path: constructed.append(object()) or constructed[-1])
-    entry = make_entry(1, pace_interval_ms=None)
     config = LiveConfig(
         "fake",
         0,
         {
-            "player_0": PlayerBinding("builtin-agent", "/agents/seat_0"),
-            "player_1": PlayerBinding("builtin-agent", "/agents/seat_0"),
+            "player_0": PlayerBinding("builtin-agent", path=str(tmp_path)),
+            "player_1": PlayerBinding("builtin-agent", path=str(tmp_path)),
         },
         None,
         "/r",
         None,
         {"players": 1},
     )
+    base = ManualClock(0)
     players = build_players(
         config,
-        entry,
+        make_entry(1, pace_interval_ms=None),
         SessionControl(),
-        PausableClock(ManualClock()),
-        AdvancingSleeper(ManualClock()),
+        PausableClock(base),
+        AdvancingSleeper(base),
     )
-    assert len(constructed) == 2
-    assert isinstance(players["player_0"], AgentPlayer)
-    assert isinstance(players["player_1"], AgentPlayer)
-    assert players["player_0"].agent is not players["player_1"].agent
+    left, right = players["player_0"], players["player_1"]
+    assert isinstance(left, AgentPlayer) and isinstance(right, AgentPlayer)
+    left.agent.reset(10, None)
+    right.agent.reset(20, None)
+    assert [left.agent.act(None), left.agent.act(None), right.agent.act(None)] == [11, 12, 21]
+    left.agent.reset(0, None)
+    assert [left.agent.act(None), right.agent.act(None)] == [1, 22]
+
+
+@pytest.mark.parametrize("explicit_path", [False, True])
+def test_build_players_builtin_agent_without_path_resolves_the_named_env_default(
+    tmp_path, monkeypatch, explicit_path
+):
+    import game_sandbox_harness.live as live
+
+    staged = tmp_path / "builtin"
+    agent = staged / "fake" / "naive"
+    agent.mkdir(parents=True)
+    _write_agent(
+        agent,
+        "class A:\n    def reset(self, seed, observation): pass\n    def act(self, observation): return 42\n",
+    )
+    monkeypatch.setattr(live, "DEFAULT_BUILTIN_AGENT_BASE", str(staged))
+    entry = make_entry(1, pace_interval_ms=None)
+    payload = _payload(tmp_path)
+    binding = {"kind": "builtin-agent", "name": "naive"}
+    if explicit_path:
+        binding["path"] = str(agent)
+    payload.update(
+        player_bindings={"player_0": binding},
+        players={"player_0": {"kind": "agent", "builtin_name": "naive", "label": "A"}},
+    )
+    config = parse_config([json.dumps(payload)], entry=entry)
+    _, _, recording = _run_config(entry, config)
+    assert _recorded_actions(recording) == [42]
 
 
 # --- the live loop ----------------------------------------------------------------------
 
 
-def _run_external(
-    tmp_path: Path,
-    n_steps: int,
-    pace_interval_ms: int | None,
-    *,
-    preload: list[str] | None = None,
-    sleeper: Any = None,
-    base: ManualClock | None = None,
-    on_step: Any = None,
-    human_timeout_ms: int | None = None,
-    with_overlay: bool = False,
-) -> tuple[Any, list[str], Path]:
-    """Wire a one external player live session over the tee store, run the loop, and emit the
-    result envelope exactly as ``main`` does. Returns (result, streamed_lines, recording_path)."""
-    base = base or ManualClock()
-    clock = PausableClock(base)
-    control = SessionControl(clock)
-    for line in preload or []:
-        control.handle_line(line)
-    streamed: list[str] = []
-    protocol = ProtocolStream(_ListSink(streamed))  # type: ignore[arg-type]
-    from game_sandbox_harness.live_io import build_tee_store
-
-    store = build_tee_store(str(tmp_path), protocol)
-    entry = make_entry(n_steps, pace_interval_ms=pace_interval_ms, on_step=on_step, with_overlay=with_overlay)
-    paced = pace_interval_ms is not None
-    sleeper = sleeper or AdvancingSleeper(base)
-    source = TransportSource(control, clock=clock, paced=paced, sleeper=sleeper)
-    player = ExternalPlayer(source, timeout_ms=human_timeout_ms)
-    with Episode(
-        entry,
-        {"player_0": player},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        store=store,
-        recording_id="r",
-        clock=clock,
-    ) as episode:
-        # The same opening-frame stream main does: turn-based only, streamed but never recorded.
-        opening = episode.opening_state()
-        if opening is not None:
-            protocol.emit_state(opening)
-        run_live_loop(
-            episode,
-            pace_interval_ms=pace_interval_ms,
-            control=control,
-            clock=clock,
-            sleeper=sleeper,
-        )
-    result = episode.result()
-    protocol.emit_envelope(result_envelope(result))
-    return result, streamed, tmp_path / "r" / "recording.jsonl"
-
-
-def test_paced_latched_input_drives_the_player_then_defaults(tmp_path: Path):
-    # One flap latched before the run: the first step takes it, later steps default (noop).
-    result, _streamed, recording = _run_external(
-        tmp_path,
-        n_steps=3,
-        pace_interval_ms=16,
-        preload=['{"kind": "input", "player": "player_0", "action": 1}'],
-    )
-    assert result.ticks == 3
-    assert result.reason == "terminated"
-    assert _recorded_actions(recording) == [FLAP, DEFAULT_ACTION, DEFAULT_ACTION]
-
-
-def test_paced_with_no_input_keeps_moving_on_defaults(tmp_path: Path):
-    result, _streamed, recording = _run_external(tmp_path, n_steps=4, pace_interval_ms=16)
-    assert result.ticks == 4
-    assert result.reason == "terminated"
-    assert _recorded_actions(recording) == [DEFAULT_ACTION] * 4
+@pytest.mark.parametrize("inputs,actions", [([], [-1, -1, -1]), ([0, 1], [1, -1, -1])])
+def test_paced_latched_input_drives_the_player_then_defaults(tmp_path, inputs, actions):
+    base = ManualClock(0)
+    starts = []
+    entry = make_entry(3, pace_interval_ms=20, on_step=lambda: starts.append(base.now_ms()))
+    control = SessionControl(PausableClock(base))
+    for action in inputs:
+        control.handle_line(json.dumps({"kind": "input", "player": "player_0", "action": action}))
+    config = parse_config([json.dumps(_payload(tmp_path))], entry=entry)
+    _, _, recording = _run_config(entry, config, base=base, control=control)
+    assert _recorded_actions(recording) == actions
+    assert starts == [20, 40, 60]
 
 
 class _LateFirstWakeSleeper(AdvancingSleeper):
@@ -859,30 +666,30 @@ def _simultaneous_run(
     }
     with Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=clock) as episode:
         assert episode.opening_state() is not None
-        run_live_loop(episode, pace_interval_ms=interval_ms, control=control, clock=clock, sleeper=sleeper)
+        run_live_loop(
+            episode, pace_interval_ms=interval_ms, control=control, clock=clock, sleeper=sleeper, slice_ms=1
+        )
         assert episode.result().ticks == 3
     return starts, actions_seen
 
 
-def test_simultaneous_live_cadence_keeps_a_fixed_rate_despite_tick_work():
-    # Tick zero gets a full input window. The 20 ms of work inside each tick does not stretch the period.
-    starts, _actions = _simultaneous_run([20, 20, 20])
-    assert starts == [50, 100, 150]
-
-
-def test_simultaneous_live_cadence_restarts_one_interval_after_an_overrun():
-    # Tick zero finishes at 120, past the 100 boundary, so the next tick waits a full interval.
-    starts, _actions = _simultaneous_run([70, 20, 20])
-    assert starts == [50, 170, 220]
-
-
-def test_simultaneous_live_cadence_never_catches_up_after_a_late_wakeup():
-    # Scheduled for 250, the first tick wakes at 800 and finishes at 820. The 500 boundary has passed,
-    # so the next tick runs at 1070 rather than at once.
-    starts, _actions = _simultaneous_run(
-        [20, 20, 20], interval_ms=250, sleeper_for=lambda base: _LateFirstWakeSleeper(base, 800)
+@pytest.mark.parametrize(
+    "work,interval,wake,starts",
+    [
+        ([20, 20, 20], 50, None, [50, 100, 150]),
+        ([70, 20, 20], 50, None, [50, 170, 220]),
+        ([50, 20, 20], 50, None, [50, 150, 200]),
+        ([49, 20, 20], 50, None, [50, 100, 150]),
+        ([20, 20, 20], 250, 800, [800, 1070, 1320]),
+    ],
+)
+def test_simultaneous_live_cadence_keeps_a_fixed_rate_despite_tick_work(work, interval, wake, starts):
+    actual, _ = _simultaneous_run(
+        work,
+        interval_ms=interval,
+        sleeper_for=(AdvancingSleeper if wake is None else lambda base: _LateFirstWakeSleeper(base, wake)),
     )
-    assert starts == [800, 1070, 1320]
+    assert actual == starts
 
 
 def test_simultaneous_live_input_sent_during_a_tick_is_used_by_the_next_tick():
@@ -893,264 +700,185 @@ def test_simultaneous_live_input_sent_during_a_tick_is_used_by_the_next_tick():
     assert [tick["player_2"] for tick in actions] == [0, 2, 0]
 
 
-def test_simultaneous_live_cadence_stays_paused_until_resume():
-    base = ManualClock()
+@pytest.mark.parametrize(
+    "mode,interval,starts",
+    [("sequential", 20, [50, 70]), ("sequential", None, [30, 30]), ("simultaneous", 50, [80, 130, 180])],
+)
+def test_simultaneous_live_cadence_stays_paused_until_resume(mode, interval, starts):
+    base = ManualClock(0)
     clock = PausableClock(base)
     control = SessionControl(clock)
-    paused_at_step: list[bool] = []
+    seen = []
+    if mode == "simultaneous":
 
-    class ObservedParallelEnv(ThreePlayerParallelEnv):
-        def step(self, actions):
-            paused_at_step.append(control.paused)
-            return super().step(actions)
+        class Observed(ThreePlayerParallelEnv):
+            def step(self, actions):
+                seen.append(base.now_ms())
+                return super().step(actions)
 
-    entry = replace(make_parallel_entry(), make=lambda _parameters: ObservedParallelEnv())
+        entry = make_parallel_entry(Observed)
+    else:
+        entry = make_entry(2, pace_interval_ms=interval, on_step=lambda: seen.append(base.now_ms()))
     control.pause()
-    sleeper = AdvancingSleeper(base, at=3, do=control.resume)
+    sleeper = AdvancingSleeper(base, at=6, do=control.resume)
     players = {
-        player: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
-        for player in entry.meta.human_players
+        p: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
+        for p in entry.meta.human_players
     }
-
-    with Episode(
-        entry,
-        players,
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=clock,
-    ) as episode:
+    with Episode(entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=clock) as episode:
         run_live_loop(
-            episode,
-            pace_interval_ms=50,
-            control=control,
-            clock=clock,
-            sleeper=sleeper,
+            episode, pace_interval_ms=interval, control=control, clock=clock, sleeper=sleeper, slice_ms=5
         )
-
-    assert episode.result().ticks == 3
-    assert paused_at_step == [False, False, False]
-    assert sleeper.calls >= 3
-
-
-def test_simultaneous_live_stop_prevents_the_next_joint_tick():
-    base = ManualClock()
-    clock = PausableClock(base)
-    control = SessionControl(clock)
-    control.handle_line('{"kind":"stop"}')
-    entry = make_parallel_entry()
-    sleeper = AdvancingSleeper(base)
-    players = {
-        player: ExternalPlayer(TransportSource(control, clock=clock, paced=True, sleeper=sleeper))
-        for player in entry.meta.human_players
-    }
-
-    with Episode(
-        entry,
-        players,
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=clock,
-    ) as episode:
-        run_live_loop(
-            episode,
-            pace_interval_ms=50,
-            control=control,
-            clock=clock,
-            sleeper=sleeper,
-        )
-
-    assert episode.result().ticks == 0
-    assert episode.result().reason == "stopped"
+    assert seen == starts
+    assert base.now_ms() - clock.now_ms() == 30
+    assert episode.result().reason in ("terminated", "truncated")
 
 
-def test_streamed_bytes_equal_stored_bytes_and_result_is_not_recorded(tmp_path: Path):
-    result, streamed, recording = _run_external(tmp_path, n_steps=2, pace_interval_ms=16)
-
-    # Every state line streamed is exactly the line on disk; the trailing result envelope is the
-    # only streamed line beyond the recording.
-    recording_bytes = recording.read_bytes()
-    streamed_text = "".join(streamed)
-    assert streamed_text.encode("utf-8").startswith(recording_bytes)
-
-    tail = streamed_text[len(recording_bytes.decode("utf-8")) :].strip()
-    envelope = json.loads(tail)
-    assert envelope["kind"] == "result"
-    assert envelope["ticks"] == result.ticks == 2
-    assert envelope["recording_id"] == "r"
-    # No recording line carries a kind.
-    for line in recording.read_text(encoding="utf-8").splitlines():
-        assert "kind" not in json.loads(line)
-
-
-def test_turn_based_opening_frame_streams_before_the_loop_but_is_not_recorded(tmp_path: Path):
-    # A turn-based env streams a pre-action opening frame (the deal) so a human who must act first
-    # sees the table; it is streamed only, never persisted, so the recording still begins at step 0.
-    # The clock command is how a browser says its person has the controls, and a turn-based move
-    # budget is only spent while it holds. Without it the loop would wait for them indefinitely.
-    result, streamed, recording = _run_external(
-        tmp_path,
-        n_steps=2,
-        pace_interval_ms=None,
-        human_timeout_ms=10,
-        with_overlay=True,
-        preload=['{"kind": "clock", "player": "player_0", "running": true}'],
-    )
-    assert result.ticks == 2
-
-    recording_lines = recording.read_text(encoding="utf-8").splitlines()
-    streamed_lines = "".join(streamed).strip().splitlines()
-    # Recording: header + 2 step frames. Stream: header + opening + 2 step frames + result envelope.
-    assert len(recording_lines) == 3
-    assert len(streamed_lines) == len(recording_lines) + 2
-
-    # The streamed opening frame sits right after the header: the dealt overlay, with no agent acted.
-    opening = json.loads(streamed_lines[1])
-    assert opening["tick"] == 0
-    assert opening["agents"] == {}
-    assert opening["overlay"] == {"i": 0}
-    # No recorded line is an actionless opening frame: every recorded state carries its acting agent.
-    for line in recording_lines[1:]:
-        assert json.loads(line)["agents"] != {}
-
-
-def test_run_starts_command_pump_after_header_and_turn_opening(monkeypatch, tmp_path: Path):
-    """The stdin reader begins only after a local client can render the opening table."""
+@pytest.mark.parametrize("mode", ["sequential", "simultaneous"])
+@pytest.mark.parametrize("when,ticks", [("before", 0), ("paused", 0), ("waiting", 0), ("hook", 1)])
+def test_simultaneous_live_stop_prevents_the_next_joint_tick(tmp_path, monkeypatch, mode, when, ticks):
     import game_sandbox_harness.live as live
-    from game_sandbox_harness.live_io import build_tee_store
 
-    base = ManualClock()
+    base = ManualClock(0)
     clock = PausableClock(base)
     control = SessionControl(clock)
-    streamed: list[str] = []
-    seen_when_pump_started: list[str] = []
 
-    def fake_command_pump(lines, received_control):
-        seen_when_pump_started.extend(streamed)
-        received_control.handle_line('{"kind":"stop"}')
+    def stop():
+        control.handle_line('{"kind":"stop"}')
 
-    monkeypatch.setattr(live, "start_command_pump", fake_command_pump)
-    config = LiveConfig(
-        "fake",
-        0,
-        {"player_0": PlayerBinding("external")},
-        None,
-        str(tmp_path),
-        "r",
-        {"players": 1},
-        players={"player_0": {"kind": "human", "label": "Human"}},
+    entry = make_parallel_entry() if mode == "simultaneous" else make_entry(3, pace_interval_ms=20)
+    if when == "before":
+        stop()
+    elif when == "paused":
+        control.pause()
+    sleeper = AdvancingSleeper(base, at=2, do=stop if when in ("paused", "waiting") else None)
+    payload = _payload(tmp_path)
+    if mode == "simultaneous":
+        payload.update(
+            env_id=entry.meta.env_id,
+            parameters={"players": 3},
+            player_bindings={p: {"kind": "external"} for p in entry.meta.human_players},
+            players={p: {"kind": "human", "label": p} for p in entry.meta.human_players},
+        )
+    if when == "hook":
+        _write_agent(
+            tmp_path,
+            "class A:\n"
+            "    def reset(self, seed, observation): pass\n"
+            "    def act(self, observation):\n"
+            "        self.stop()\n"
+            "        return 0\n",
+        )
+        load_agent = live.load_agent
+
+        def load_stopping_agent(path):
+            agent = load_agent(path)
+            agent.stop = stop
+            return agent
+
+        monkeypatch.setattr(live, "load_agent", load_stopping_agent)
+        payload["player_bindings"]["player_0"] = {"kind": "builtin-agent", "path": str(tmp_path)}
+        payload["players"]["player_0"] = {"kind": "agent", "submission_id": "local", "label": "A"}
+    config = parse_config([json.dumps(payload)], entry=entry)
+    _, frames, recording = _run_config(
+        entry, config, base=base, control=control, sleeper=sleeper, clock=clock
     )
-    protocol = ProtocolStream(_ListSink(streamed))  # type: ignore[arg-type]
+    assert frames[-1]["ticks"] == ticks
+    assert frames[-1]["reason"] == "stopped"
+    assert len(recording.read_text().splitlines()) == ticks + 1
+    if when == "hook":
+        state = json.loads(recording.read_text().splitlines()[1])
+        assert state["agents"]["player_0"]["action"] == 0
+        assert list(state["agents"]) == (
+            ["player_0", "player_1", "player_2"] if mode == "simultaneous" else ["player_0"]
+        )
 
+
+@pytest.mark.parametrize("mode", ["paced", "turn", "simultaneous"])
+def test_streamed_bytes_equal_stored_bytes_and_result_is_not_recorded(tmp_path, mode):
+    base = ManualClock(0)
+    starts = []
+    if mode == "simultaneous":
+
+        class Observed(ThreePlayerParallelEnv):
+            def step(self, actions):
+                starts.append(base.now_ms())
+                return super().step(actions)
+
+        entry = make_parallel_entry(Observed)
+    else:
+        entry = make_entry(
+            2, pace_interval_ms=20 if mode == "paced" else None, human_timeout_ms=5, with_overlay=True
+        )
+    payload = _payload(tmp_path)
+    payload.update(
+        env_id=entry.meta.env_id,
+        parameters={"players": len(entry.meta.human_players)},
+        player_bindings={p: {"kind": "external"} for p in entry.meta.human_players},
+        players={p: {"kind": "human", "label": p} for p in entry.meta.human_players},
+    )
+    config = parse_config([json.dumps(payload)], entry=entry)
+    clock = PausableClock(base)
+    control = SessionControl(clock)
+    for p in entry.meta.human_players:
+        control.handle_line(json.dumps({"kind": "clock", "player": p, "running": True}))
+    streamed = []
+
+    class OpeningSink(_ListSink):
+        def write(self, text):
+            super().write(text)
+            frame = json.loads(text)
+            if "tick" in frame and frame["agents"] == {}:
+                base.advance(30)
+
+    protocol = ProtocolStream(OpeningSink(streamed))
     assert (
-        live.run(
-            make_entry(1, pace_interval_ms=None, with_overlay=True),
+        run(
+            entry,
             config,
             protocol=protocol,
             control=control,
             clock=clock,
             sleeper=AdvancingSleeper(base),
             store=build_tee_store(str(tmp_path), protocol),
-            command_lines=(),
         )
         == 0
     )
+    wire = "".join(streamed).splitlines(keepends=True)
+    disk = (tmp_path / "r" / "recording.jsonl").read_bytes().decode().splitlines(keepends=True)
+    opening = mode != "paced"
+    assert [wire[0], *wire[2:-1]] == disk if opening else wire[:-1] == disk
+    if opening:
+        assert json.loads(wire[1])["agents"] == {}
+    ticks = 3 if mode == "simultaneous" else 2
+    assert json.loads(wire[-1]) == {
+        "kind": "result",
+        "ticks": ticks,
+        "scores": {p: 0.0 if mode == "simultaneous" else 2.0 for p in entry.meta.human_players},
+        "reason": "truncated" if mode == "simultaneous" else "terminated",
+        "step_timeouts": {p: 0 for p in entry.meta.human_players},
+        "recording_id": "r",
+        "failed_player": None,
+        "error": None,
+    }
+    assert all("kind" not in json.loads(line) for line in disk)
+    if mode == "simultaneous":
+        assert starts == [80, 130, 180]
 
-    assert len(seen_when_pump_started) == 2
-    assert json.loads(seen_when_pump_started[0])["environment"] == "fake"
-    opening = json.loads(seen_when_pump_started[1])
-    assert opening["tick"] == 0
-    assert opening["agents"] == {}
 
-
-def test_stop_command_ends_the_session_with_reason_stopped(tmp_path: Path):
-    result, streamed, _recording = _run_external(
-        tmp_path,
-        n_steps=100,
-        pace_interval_ms=16,
-        preload=['{"kind": "stop"}'],
-    )
-    assert result.ticks == 0
-    assert result.reason == "stopped"
-    # The result envelope still goes out.
-    assert json.loads("".join(streamed).strip().splitlines()[-1])["reason"] == "stopped"
-
-
-def test_pause_blocks_stepping_until_resume(tmp_path: Path):
-    base = ManualClock()
-    paused_samples: list[bool] = []
-    control_box: dict[str, SessionControl] = {}
-
-    def sample() -> None:
-        paused_samples.append(control_box["control"].paused)
-
-    # The sleeper resumes on its 3rd call, so the pause-wait holds for two slices first.
-    # We reach into the live wiring by reconstructing it here rather than via _run_external,
-    # because the resume has to call the same control the loop reads.
+def test_turn_based_blocks_for_input_then_steps(tmp_path):
+    base = ManualClock(0)
     clock = PausableClock(base)
     control = SessionControl(clock)
-    control_box["control"] = control
-    control.handle_line('{"kind": "pause"}')
-    sleeper = AdvancingSleeper(base, at=3, do=lambda: control.resume())
-
-    from game_sandbox_harness.live_io import build_tee_store
-
-    streamed: list[str] = []
-    store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
-    entry = make_entry(2, pace_interval_ms=16, on_step=sample)
-    source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
-    players = {"player_0": ExternalPlayer(source)}
-    with Episode(
-        entry,
-        players,
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        store=store,
-        recording_id="r",
-        clock=clock,
-    ) as episode:
-        run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
-
-    assert episode.result().ticks == 2
-    # No step ran while paused: every sampled pause-state at step time is False.
-    assert paused_samples == [False, False]
-    # The pause-wait actually waited before the first step (sleeper ran at least its 3 calls).
-    assert sleeper.calls >= 3
-
-
-def test_turn_based_blocks_for_input_then_steps(tmp_path: Path):
-    # No pace interval: the source blocks until an input arrives. Feed one mid-wait, then the
-    # env terminates after a single step.
-    base = ManualClock()
-    control_holder: dict[str, SessionControl] = {}
-    input_line = '{"kind": "input", "player": "player_0", "action": 5}'
     sleeper = AdvancingSleeper(
-        base,
-        at=2,
-        do=lambda: control_holder["c"].handle_line(input_line),
+        base, at=2, do=lambda: control.handle_line('{"kind":"input","player":"player_0","action":5}')
     )
-    clock = PausableClock(base)
-    control = SessionControl(clock)
-    control_holder["c"] = control
-
-    from game_sandbox_harness.live_io import build_tee_store
-
-    streamed: list[str] = []
-    store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
-    entry = make_entry(1, pace_interval_ms=None, human_timeout_ms=10_000)
-    source = TransportSource(control, clock=clock, paced=False, sleeper=sleeper, slice_ms=5)
-    with Episode(
-        entry,
-        {"player_0": ExternalPlayer(source, timeout_ms=10_000)},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        store=store,
-        recording_id="r",
-        clock=clock,
-    ) as episode:
-        run_live_loop(episode, pace_interval_ms=None, control=control, clock=clock, sleeper=sleeper)
-
-    assert episode.result().ticks == 1
-    assert _recorded_actions(tmp_path / "r" / "recording.jsonl") == [5]
+    entry = make_entry(1, pace_interval_ms=None)
+    config = parse_config([json.dumps(_payload(tmp_path))], entry=entry)
+    _, frames, recording = _run_config(entry, config, base=base, control=control, sleeper=sleeper)
+    assert _recorded_actions(recording) == [5]
+    assert frames[-1]["ticks"] == 1
+    assert base.now_ms() == 10
 
 
 # --- end-to-end human chat over the transport -------------------------------------------
@@ -1190,240 +918,104 @@ def _messages_in(recording_path: Path) -> list[list[dict]]:
     return out
 
 
-def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path: Path):
-    # The full wiring: parse config, build the external player's TransportSource, configure the chat
-    # gate from the effective messaging decision, feed a chat frame on stdin, and see it recorded.
-    base = ManualClock()
-    clock = PausableClock(base)
-    control = SessionControl(clock)
-    sleeper = AdvancingSleeper(base)
-    from game_sandbox_harness.live_io import build_tee_store
-
-    streamed: list[str] = []
-    store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
+@pytest.mark.parametrize(
+    "enabled,sender,cap,expected",
+    [
+        (True, "player_0", 80, [[{"from": "player_0", "to": None, "text": "hello table"}], []]),
+        (False, "player_0", 80, [[], []]),
+        (True, None, 80, [[], []]),
+        (True, "player_0", 5, [[], []]),
+    ],
+)
+def test_human_chat_frame_over_transport_lands_in_the_recording(tmp_path, enabled, sender, cap, expected):
     entry = _messaging_entry(2, messaging=True)
-    source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
-    with Episode(
-        entry,
-        {"player_0": ExternalPlayer(source, message_source=source)},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        store=store,
-        recording_id="r",
-        clock=clock,
-        messaging=None,
-        external_chat_player="player_0",
-    ) as episode:
-        control.configure_chat(episode.external_chat_sender)
-        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello table"}')
-        run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
-
-    # The broadcast the human queued was validated and recorded on the first stepped tick.
-    per_tick = _messages_in(tmp_path / "r" / "recording.jsonl")
-    assert per_tick[0] == [{"from": "player_0", "to": None, "text": "hello table"}]
-
-
-def test_explicit_null_chat_sender_does_not_fall_back_to_the_only_external_player():
-    base = ManualClock()
-    clock = PausableClock(base)
-    control = SessionControl(clock)
-    source = TransportSource(control, clock=clock, paced=True, sleeper=AdvancingSleeper(base))
-    entry = _messaging_entry(1, messaging=True)
-    episode = Episode(
-        entry,
-        {"player_0": ExternalPlayer(source, message_source=source)},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        clock=clock,
-        external_chat_player=None,
+    payload = _payload(tmp_path)
+    payload.update(
+        env_id="fake-chat", messaging_enabled=enabled, external_chat_player=sender, message_cap=cap
     )
-
-    assert episode.external_chat_sender is None
-    control.configure_chat(episode.external_chat_sender)
-    control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
-    assert control.take_chat("player_0") == []
-
-
-def test_human_chat_frame_is_dropped_when_messaging_disabled_by_config(tmp_path: Path):
-    base = ManualClock()
+    config = parse_config([json.dumps(payload)], entry=entry)
+    base = ManualClock(0)
     clock = PausableClock(base)
     control = SessionControl(clock)
-    sleeper = AdvancingSleeper(base)
-    from game_sandbox_harness.live_io import build_tee_store
-
-    streamed: list[str] = []
-    store = build_tee_store(str(tmp_path), ProtocolStream(_ListSink(streamed)))  # type: ignore[arg-type]
-    entry = _messaging_entry(2, messaging=True)
-    source = TransportSource(control, clock=clock, paced=True, sleeper=sleeper)
-    with Episode(
-        entry,
-        {"player_0": ExternalPlayer(source, message_source=source)},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        store=store,
-        recording_id="r",
-        clock=clock,
-        messaging=False,  # config disables what the metadata allowed
-    ) as episode:
-        control.configure_chat(episode.external_chat_sender)
-        control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
-        run_live_loop(episode, pace_interval_ms=16, control=control, clock=clock, sleeper=sleeper)
-
-    # Messaging off: no message line was ever written.
-    assert all(msgs == [] for msgs in _messages_in(tmp_path / "r" / "recording.jsonl"))
+    sleeper = AdvancingSleeper(
+        base,
+        at=1,
+        do=lambda: control.handle_line('{"kind":"chat","player":"player_0","to":null,"text":"hello table"}'),
+    )
+    _, _, recording = _run_config(entry, config, base=base, control=control, sleeper=sleeper)
+    assert _messages_in(recording) == expected
 
 
 # --- stdout hygiene, as a real subprocess over a real environment -----------------------
 
 
-def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path: Path):
-    """Run the live module against a real environment and classify every stdout protocol line.
-
-    Any stray prints from imported environment or agent code must land on stderr. Stdout carries
-    only the header and states, which have no top-level ``kind``, plus the trailing result envelope.
-    A ``stop`` on stdin ends the run promptly.
-    """
-    pytest.importorskip("flappy_bird", reason="environments package not installed")
-
-    config = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "seed": 0,
-        "player_bindings": {"player_0": {"kind": "external"}},
-        "players": {"player_0": {"kind": "human", "label": "Human"}},
-        "recording_dir": str(tmp_path),
-        "recording_id": "r",
-    }
-    proc = subprocess.run(
-        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(config)],
-        input='{"kind": "stop"}\n',
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    assert proc.returncode == 0, proc.stderr
-    out_lines = [line for line in proc.stdout.splitlines() if line.strip()]
-    assert out_lines, "the protocol stream should carry at least the header"
-
-    kinds: list[str | None] = []
-    for line in out_lines:
-        obj = json.loads(line)  # every stdout line must be valid JSON, never a banner
-        kinds.append(obj.get("kind"))
-    # Exactly one envelope, the trailing result; everything before it is a recording line.
-    assert kinds[-1] == "result"
-    assert all(kind is None for kind in kinds[:-1])
-    # The first protocol line is the recording header.
-    assert json.loads(out_lines[0])["environment"] == "flappy_bird"
-
-
-def test_module_subprocess_charges_a_crashing_agent_to_its_own_player(tmp_path: Path):
-    """A builtin-agent player whose ``act`` raises makes the container exit non-zero AND emit a final
-    ``result`` envelope naming the offending player, so workflow reduction charges the crash to that
-    player's seat instead of to every competitor sharing the container."""
-    pytest.importorskip("flappy_bird", reason="environments package not installed")
-
-    agent_dir = tmp_path / "agent"
-    agent_dir.mkdir()
-    (agent_dir / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}),
-        encoding="utf-8",
-    )
-    (agent_dir / "agent.py").write_text(
+def test_module_subprocess_keeps_stdout_clean_and_classifiable(tmp_path):
+    agent = tmp_path / "agent"
+    agent.mkdir()
+    _write_agent(
+        agent,
+        "import os\n"
+        "print('noise-import', flush=True)\n"
+        "os.write(1, b'noise-fd\\n')\n"
         "class A:\n"
-        "    def reset(self, seed, observation): pass\n"
+        "    def reset(self, seed, observation): print('noise-reset', flush=True)\n"
         "    def act(self, observation):\n"
-        "        raise RuntimeError('boom')\n",
-        encoding="utf-8",
-    )
-    config = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "seed": 0,
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
-        "players": {"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}},
-        "recording_dir": str(tmp_path),
-        "recording_id": "r",
-    }
-    proc = subprocess.run(
-        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(config)],
-        input="",
-        capture_output=True,
-        text=True,
-        timeout=60,
-    )
-
-    # A crashing agent fails the container (non-zero exit), but still names its player in a result line.
-    assert proc.returncode == 1, proc.stderr
-    results = [
-        obj
-        for line in proc.stdout.splitlines()
-        if line.strip()
-        for obj in [json.loads(line)]
-        if obj.get("kind") == "result"
-    ]
-    assert len(results) == 1, proc.stdout
-    assert results[0]["failed_player"] == "player_0"
-    # A crash is never reported as a natural ending, and it names the exception and the agent's own line.
-    assert results[0]["reason"] == "error"
-    assert results[0]["error"] == "RuntimeError: boom (agent.py:4 in act)"
-    # The backend log keeps the whole stack.
-    assert "Traceback (most recent call last)" in proc.stderr
-
-
-def test_module_subprocess_charges_a_reset_crash_to_its_own_player(tmp_path: Path):
-    """A builtin-agent player whose ``reset`` raises (the failure happens during ``start``, before the
-    loop) must still name its player and leave a readable recording, not look like an unowned
-    infrastructure fault with no result. The header is opened before participants reset, so the
-    container exits non-zero, emits a final ``result`` naming the player, and persists the recording."""
-    pytest.importorskip("flappy_bird", reason="environments package not installed")
-
-    agent_dir = tmp_path / "agent"
-    agent_dir.mkdir()
-    (agent_dir / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "A", "template_version": 1}),
-        encoding="utf-8",
-    )
-    (agent_dir / "agent.py").write_text(
-        "class A:\n"
-        "    def reset(self, seed, observation):\n"
-        "        raise RuntimeError('reset boom')\n"
-        "    def act(self, observation):\n"
+        "        print('noise-act', flush=True)\n"
         "        return 0\n",
-        encoding="utf-8",
     )
-    config = {
-        "env_id": "flappy_bird",
-        "parameters": {"players": 1, "pipe_gap": 100},
-        "seed": 0,
-        "player_bindings": {"player_0": {"kind": "builtin-agent", "path": str(agent_dir)}},
-        "players": {"player_0": {"kind": "agent", "submission_id": "local", "label": "Agent"}},
-        "recording_dir": str(tmp_path),
-        "recording_id": "r",
-    }
+    payload = _subprocess_payload(tmp_path, agent)
+    payload.update(headless=True, max_steps=1)
     proc = subprocess.run(
-        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(config)],
+        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(payload)],
         input="",
         capture_output=True,
         text=True,
         timeout=60,
     )
+    assert proc.returncode == 0, proc.stderr
+    for sentinel in ("noise-import", "noise-fd", "noise-reset", "noise-act"):
+        assert sentinel in proc.stderr
+        assert sentinel not in proc.stdout
+    frames = [json.loads(line) for line in proc.stdout.splitlines()]
+    assert frames[0]["environment"] == "flappy_bird"
+    assert frames[-1]["kind"] == "result"
+    assert frames[-1]["ticks"] == 1
+    assert all("kind" not in frame for frame in frames[:-1])
 
+
+@pytest.mark.parametrize("hook", ["reset", "act", "learn"])
+def test_module_subprocess_charges_a_crashing_agent_to_its_own_player(tmp_path, hook):
+    agent = tmp_path / "agent"
+    agent.mkdir()
+    bodies = {"reset": "pass", "act": "return 0", "learn": "pass"}
+    bodies[hook] = "raise RuntimeError('boom')"
+    _write_agent(
+        agent,
+        "class A:\n"
+        f"    def reset(self, seed, observation): {bodies['reset']}\n"
+        f"    def act(self, observation): {bodies['act']}\n"
+        f"    def learn(self, observation, action, reward, terminated): {bodies['learn']}\n",
+    )
+    payload = _subprocess_payload(tmp_path, agent)
+    payload["headless"] = True
+    proc = subprocess.run(
+        [sys.executable, "-m", "game_sandbox_harness.live", json.dumps(payload)],
+        input="",
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
     assert proc.returncode == 1, proc.stderr
-    results = [
-        obj
-        for line in proc.stdout.splitlines()
-        if line.strip()
-        for obj in [json.loads(line)]
-        if obj.get("kind") == "result"
-    ]
-    assert len(results) == 1, proc.stdout
-    assert results[0]["failed_player"] == "player_0"
-    assert results[0]["reason"] == "error"
-    assert results[0]["error"] == "RuntimeError: reset boom (agent.py:3 in reset)"
-    # The recording was opened before the reset crash, so a readable header is on disk: the
-    # orchestrator sees an attributable crash, not a recording-less infrastructure fault.
-    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    frames = [json.loads(line) for line in proc.stdout.splitlines()]
+    results = [f for f in frames if f.get("kind") == "result"]
+    assert len(results) == 1
+    result = results[0]
+    assert result["failed_player"] == "player_0"
+    assert result["reason"] == "error"
+    assert result["error"].startswith("RuntimeError: boom (agent.py:")
+    assert result["error"].endswith(f" in {hook})")
+    assert "Traceback (most recent call last)" in proc.stderr
+    header = json.loads((tmp_path / "r" / "recording.jsonl").read_text().splitlines()[0])
     assert header["environment"] == "flappy_bird"
 
 
@@ -1439,15 +1031,13 @@ def test_describe_failure_names_the_type_message_and_the_innermost_non_harness_l
     description = describe_failure(_raised(KeyError("evening")))
     assert description.startswith("KeyError: 'evening' (test_live.py:")
     assert description.endswith(" in _raised)")
-
-
-def test_describe_failure_omits_the_location_when_no_frame_is_outside_the_harness():
-    error = IllegalAgentActionError("player_1 returned an illegal action: 9")
-    assert describe_failure(error) == "IllegalAgentActionError: player_1 returned an illegal action: 9"
-
-
-def test_describe_failure_flattens_and_caps_the_message():
+    assert (
+        describe_failure(IllegalAgentActionError("player_1 returned an illegal action: 9"))
+        == "IllegalAgentActionError: player_1 returned an illegal action: 9"
+    )
     assert describe_failure(RuntimeError()) == "RuntimeError"
     assert describe_failure(RuntimeError("two\n  lines")) == "RuntimeError: two lines"
-    long = describe_failure(RuntimeError("x" * 1000))
-    assert long == "RuntimeError: " + "x" * 297 + "..."
+    message = describe_failure(RuntimeError("x" * 1000)).removeprefix("RuntimeError: ")
+    assert message.startswith("x" * 290)
+    assert len(message) <= 300
+    assert "\n" not in message

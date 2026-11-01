@@ -30,7 +30,7 @@ import sys
 import traceback
 import urllib.request
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO, Any, cast
 
@@ -728,6 +728,10 @@ def run(
     the live loop begins. Keeping that boundary here leaves the loop directly testable without a
     stdin reader and lets local clients attach before Windows starts the blocking reader thread.
     """
+    # ExternalPlayer's None timeout inherits metadata. Clear that fallback too when the live
+    # config explicitly disables the budget, without changing the shared environment entry.
+    if config.human_timeout_ms is None:
+        entry = replace(entry, meta=replace(entry.meta, human_timeout_ms=None))
     if config.start_paused:
         control.pause()
     episode: Episode | None = None

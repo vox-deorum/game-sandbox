@@ -7,11 +7,12 @@ import json
 import os
 import sys
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from typing import Any
 
 import pytest
 import websockets
 from support_parallel import make_entry as make_parallel_entry
+from websockets.exceptions import ConnectionClosed
 
 from game_sandbox_harness.environment import (
     BuiltinAgent,
@@ -21,6 +22,10 @@ from game_sandbox_harness.environment import (
     load_environment,
 )
 from game_sandbox_harness.local_server import LocalServer
+
+_HTTP_TIMEOUT = 5.0
+_SERVER_TIMEOUT = 5.0
+_STATE_HEADER = '{"schema_version":1,"environment":"fake"}'
 
 
 def _entry() -> EnvironmentEntry:
@@ -45,13 +50,23 @@ def _entry() -> EnvironmentEntry:
     return EnvironmentEntry(meta, lambda: object(), lambda _env, _player: 0)
 
 
+def _static_root(tmp_path: Path) -> Path:
+    root = tmp_path / "static"
+    root.mkdir()
+    (root / "local.html").write_text("local", encoding="utf-8")
+    return root
+
+
 async def _http(port: int, method: str, path: str) -> tuple[str, dict[str, str], bytes]:
-    reader, writer = await asyncio.open_connection("127.0.0.1", port)
-    writer.write(f"{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n".encode())
-    await writer.drain()
-    raw = await reader.read()
-    writer.close()
-    await writer.wait_closed()
+    reader, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", port), timeout=_HTTP_TIMEOUT)
+    try:
+        request = f"{method} {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+        writer.write(request.encode())
+        await asyncio.wait_for(writer.drain(), timeout=_HTTP_TIMEOUT)
+        raw = await asyncio.wait_for(reader.read(), timeout=_HTTP_TIMEOUT)
+    finally:
+        writer.close()
+        await asyncio.wait_for(writer.wait_closed(), timeout=_HTTP_TIMEOUT)
     if b"\r\n\r\n" not in raw:
         return raw.decode(), {}, b""
     head, body = raw.split(b"\r\n\r\n", 1)
@@ -60,40 +75,41 @@ async def _http(port: int, method: str, path: str) -> tuple[str, dict[str, str],
     return lines[0], headers, body
 
 
-def test_local_server_replays_paused_attach_state_and_rejects_traversal() -> None:
-    async def exercise() -> None:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            child = (
-                "import time; "
-                'print(\'{\\"schema_version\\":1,\\"environment\\":\\"fake\\"}\', flush=True); '
-                'print(\'{\\"schema_version\\":1,\\"tick\\":0,\\"agents\\":{},\\"timing\\":{}}\', flush=True); '  # noqa: E501
-                "time.sleep(1)"
-            )
-            async with LocalServer(
-                _entry(), command=[sys.executable, "-c", child], static_root=root, start_paused=True
-            ) as server:
-                assert server._server is not None  # noqa: SLF001 - loopback is a server boundary
-                assert server._server.sockets[0].getsockname()[0] == "127.0.0.1"  # noqa: SLF001
-                # Attach only once the server has both lines from the child. A socket that connects
-                # first is served by the live broadcast instead, which sends the same frames in a
-                # different order, so waiting on a fixed delay makes this assertion a race.
-                for _ in range(500):
-                    if server._header is not None and server._latest_state is not None:  # noqa: SLF001
-                        break
-                    await asyncio.sleep(0.01)
-                assert server._latest_state is not None  # noqa: SLF001 - the state attach replays
-                async with websockets.connect(
-                    f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
-                ) as socket:
-                    frames = [await socket.recv() for _ in range(4)]
-                assert frames[0].startswith('{"schema_version":1')
-                assert frames[2] == '{"awaiting_start":true,"kind":"session","status":"running"}'
-                assert frames[3] == '{"kind":"pause"}'
-                assert server._asset("/%2e%2e/secret") is None  # noqa: SLF001 - safety boundary
+async def _recv(socket):
+    return await asyncio.wait_for(socket.recv(), timeout=5)
 
-    asyncio.run(exercise())
+
+async def _attach(socket, *, paused=False, state=False, awaiting_start=False):
+    required = {"header", "session"}
+    if paused:
+        required.add("pause")
+    if state:
+        required.add("state")
+    frames = {}
+    async with asyncio.timeout(5):
+        while not required <= frames.keys():
+            raw = await socket.recv()
+            frame = json.loads(raw)
+            kind = "header" if "environment" in frame else "state" if "tick" in frame else frame["kind"]
+            frames[kind] = raw
+    assert json.loads(frames["session"]) == {
+        "kind": "session",
+        "status": "running",
+        "awaiting_start": awaiting_start,
+    }
+    if paused:
+        assert json.loads(frames["pause"]) == {"kind": "pause"}
+    return frames
+
+
+async def _until_closed(socket):
+    frames = []
+    async with asyncio.timeout(5):
+        try:
+            while True:
+                frames.append(json.loads(await socket.recv()))
+        except ConnectionClosed:
+            return frames
 
 
 def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_path: Path) -> None:
@@ -106,7 +122,7 @@ def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_
     pytest.importorskip("flappy_bird", reason="environments package not installed")
 
     async def exercise() -> None:
-        (tmp_path / "local.html").write_text("local", encoding="utf-8")
+        static_root = _static_root(tmp_path)
         config = {
             "env_id": "flappy_bird",
             "parameters": {"players": 1, "pipe_gap": 100},
@@ -126,88 +142,68 @@ def test_local_server_receives_real_paused_runner_header_before_any_command(tmp_
         async with LocalServer(
             load_environment("flappy_bird"),
             command=command,
-            static_root=tmp_path,
+            static_root=static_root,
             start_paused=True,
         ) as server:
             uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
-            async with websockets.connect(uri) as socket:
-                frames = [await asyncio.wait_for(socket.recv(), timeout=5) for _ in range(3)]
-
-        assert json.loads(frames[0])["environment"] == "flappy_bird"
-        assert frames[1] == '{"awaiting_start":true,"kind":"session","status":"running"}'
-        assert frames[2] == '{"kind":"pause"}'
+            async with websockets.connect(uri, close_timeout=1) as socket:
+                frames = await _attach(socket, paused=True, awaiting_start=True)
+                header = json.loads(frames["header"])
+                assert header["environment"] == "flappy_bird"
+                assert header["schema_version"] == 1
 
     asyncio.run(exercise())
 
 
-def test_local_server_consumes_start_gate_and_replays_later_pause_on_attach() -> None:
+def test_local_server_consumes_start_gate_and_replays_later_pause_on_attach(tmp_path: Path) -> None:
     async def exercise() -> None:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            child = (
-                "import json\n"
-                "import sys\n"
-                'print(\'{"schema_version":1,"environment":"fake"}\', flush=True)\n'
-                'print(\'{"schema_version":1,"tick":0,"agents":{},"timing":{}}\', flush=True)\n'
-                "for raw in sys.stdin:\n"
-                "    command = json.loads(raw)\n"
-                '    if command.get("kind") == "stop":\n'
-                '        print(\'{"kind":"result","reason":"stopped"}\', flush=True)\n'
-                "        break\n"
-                '    if command.get("kind") in ("input", "chat", "clock"):\n'
-                '        print(json.dumps({"schema_version": 1, "tick": 1, "agents": {}, '
-                '"received": command}), flush=True)\n'
-            )
-            async with LocalServer(
-                _entry(),
-                command=[sys.executable, "-c", child],
-                static_root=root,
-                start_paused=True,
-            ) as server:
-                for _ in range(500):
-                    if server._header is not None and server._latest_state is not None:  # noqa: SLF001
-                        break
-                    await asyncio.sleep(0.01)
-                uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
-                async with websockets.connect(uri) as first:
-                    initial = [await asyncio.wait_for(first.recv(), timeout=5) for _ in range(4)]
-                    assert json.loads(initial[2]) == {
-                        "kind": "session",
-                        "status": "running",
-                        "awaiting_start": True,
-                    }
-                    assert initial[3] == '{"kind":"pause"}'
+        static_root = _static_root(tmp_path)
+        child = (
+            "import json\n"
+            "import sys\n"
+            'print(\'{"schema_version":1,"environment":"fake"}\', flush=True)\n'
+            'print(\'{"schema_version":1,"tick":0,"agents":{},"timing":{}}\', flush=True)\n'
+            "for raw in sys.stdin:\n"
+            "    command = json.loads(raw)\n"
+            '    if command.get("kind") == "stop":\n'
+            '        print(\'{"kind":"result","reason":"stopped"}\', flush=True)\n'
+            "        break\n"
+            '    if command.get("kind") in ("input", "chat", "clock"):\n'
+            '        print(json.dumps({"schema_version": 1, "tick": 1, "agents": {}, "timing": {}, '
+            '"received": command}), flush=True)\n'
+        )
+        async with LocalServer(
+            _entry(),
+            command=[sys.executable, "-c", child],
+            static_root=static_root,
+            start_paused=True,
+        ) as server:
+            uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+            async with websockets.connect(uri, close_timeout=1) as first:
+                await _attach(first, paused=True, state=True, awaiting_start=True)
+                await first.send('{"kind":"input","player":"player_0","action":1}')
+                await first.send('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
+                await first.send('{"kind":"clock","player":"player_0","running":true}')
+                await first.send('{"kind":"resume"}')
+                assert json.loads(await _recv(first)) == {"kind": "resume"}
+                await first.send('{"kind":"input","player":"player_0","action":2}')
+                forwarded = json.loads(await _recv(first))
+                assert forwarded["received"] == {"kind": "input", "player": "player_0", "action": 2}
+                await first.send('{"kind":"pause"}')
+                assert json.loads(await _recv(first)) == {"kind": "pause"}
 
-                    await first.send('{"kind":"input","player":"player_0","action":1}')
-                    await first.send('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
-                    await first.send('{"kind":"clock","player":"player_0","running":true}')
-                    with pytest.raises(TimeoutError):
-                        await asyncio.wait_for(first.recv(), timeout=0.1)
-
-                    await first.send('{"kind":"resume"}')
-                    assert await asyncio.wait_for(first.recv(), timeout=5) == '{"kind":"resume"}'
-                    await first.send('{"kind":"input","player":"player_0","action":1}')
-                    forwarded = json.loads(await asyncio.wait_for(first.recv(), timeout=5))
-                    assert forwarded["received"] == {
-                        "kind": "input",
-                        "player": "player_0",
-                        "action": 1,
-                    }
-                    await first.send('{"kind":"pause"}')
-                    assert await asyncio.wait_for(first.recv(), timeout=5) == '{"kind":"pause"}'
-
-                async with websockets.connect(uri) as second:
-                    replay = [await asyncio.wait_for(second.recv(), timeout=5) for _ in range(4)]
-                    assert json.loads(replay[2]) == {
-                        "kind": "session",
-                        "status": "running",
-                        "awaiting_start": False,
-                    }
-                    assert replay[3] == '{"kind":"pause"}'
-                    await second.send('{"kind":"stop"}')
-                    assert json.loads(await asyncio.wait_for(second.recv(), timeout=5))["kind"] == "result"
-                    assert json.loads(await asyncio.wait_for(second.recv(), timeout=5))["status"] == "ended"
+            async with websockets.connect(uri, close_timeout=1) as second:
+                replay = await _attach(second, paused=True, state=True)
+                assert json.loads(replay["state"])["received"] == {
+                    "kind": "input",
+                    "player": "player_0",
+                    "action": 2,
+                }
+                await second.send('{"kind":"stop"}')
+                assert await _until_closed(second) == [
+                    {"kind": "result", "reason": "stopped"},
+                    {"kind": "session", "reason": "stopped", "status": "ended"},
+                ]
 
     asyncio.run(exercise())
 
@@ -216,7 +212,7 @@ def test_local_server_runs_the_injected_parallel_fixture_through_the_live_runner
     tmp_path: Path,
 ) -> None:
     async def exercise() -> None:
-        (tmp_path / "local.html").write_text("local", encoding="utf-8")
+        static_root = _static_root(tmp_path)
         recording_dir = tmp_path / "recordings"
         config = {
             "env_id": "three_player_parallel_test",
@@ -263,309 +259,406 @@ def test_local_server_runs_the_injected_parallel_fixture_through_the_live_runner
         async with LocalServer(
             make_parallel_entry(),
             command=command,
-            static_root=tmp_path,
+            static_root=static_root,
             start_paused=True,
         ) as server:
             uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
-            async with websockets.connect(uri) as socket:
-                initial = [await asyncio.wait_for(socket.recv(), timeout=5) for _ in range(4)]
-                assert json.loads(initial[0])["environment"] == "three_player_parallel_test"
-                assert initial[1] == '{"awaiting_start":true,"kind":"session","status":"running"}'
-                assert initial[2] == '{"kind":"pause"}'
-                assert json.loads(initial[3])["agents"] == {}
-
+            async with websockets.connect(uri, close_timeout=1) as socket:
+                initial = await _attach(socket, paused=True, state=True, awaiting_start=True)
+                assert json.loads(initial["state"])["agents"] == {}
                 await socket.send('{"kind":"resume"}')
-                assert await asyncio.wait_for(socket.recv(), timeout=5) == '{"kind":"resume"}'
-                states = [json.loads(await asyncio.wait_for(socket.recv(), timeout=5)) for _ in range(3)]
-                assert [list(state["agents"]) for state in states] == [
-                    ["player_0", "player_1", "player_2"],
-                    ["player_1", "player_2"],
-                    ["player_2"],
+                assert json.loads(await _recv(socket)) == {"kind": "resume"}
+                states = [await _recv(socket) for _ in range(3)]
+                result = json.loads(await _recv(socket))
+                assert await _until_closed(socket) == [
+                    {"kind": "session", "status": "ended", "reason": "truncated"},
                 ]
-                result = json.loads(await asyncio.wait_for(socket.recv(), timeout=5))
-                ended = json.loads(await asyncio.wait_for(socket.recv(), timeout=5))
-                assert result["kind"] == "result"
-                assert result["ticks"] == 3
-                assert ended == {
-                    "kind": "session",
-                    "status": "ended",
-                    "reason": "truncated",
-                }
             await asyncio.wait_for(server.wait(), timeout=5)
 
         recording = recording_dir / "parallel-local" / "recording.jsonl"
-        lines = [json.loads(line) for line in recording.read_text(encoding="utf-8").splitlines()]
-        assert len(lines) == 4
-        assert all("kind" not in line for line in lines)
+        assert recording.read_bytes() == ("\n".join([initial["header"], *states]) + "\n").encode()
+        assert [list(json.loads(line)["agents"]) for line in states] == [
+            ["player_0", "player_1", "player_2"],
+            ["player_1", "player_2"],
+            ["player_2"],
+        ]
+        assert result == {
+            "kind": "result",
+            "ticks": 3,
+            "scores": {"player_0": 0.0, "player_1": 0.0, "player_2": 0.0},
+            "reason": "truncated",
+            "step_timeouts": {"player_0": 0, "player_1": 0, "player_2": 0},
+            "recording_id": "parallel-local",
+            "failed_player": None,
+            "error": None,
+        }
 
     asyncio.run(exercise())
 
 
-def test_local_server_filters_annotated_broadcasts_for_the_controller_and_strips_for_watchers() -> None:
-    # A human-mode relay (controller players named) keeps a bounded broadcast only when a controlled
-    # player sent or heard it; a watch-style relay keeps every line. Both strip the live-only
-    # `recipients` annotation, and the stashed catch-up line a late socket receives is the same view.
-    header_line = '{"schema_version":1,"environment":"fake"}'
-    state = {
-        "schema_version": 1,
-        "tick": 0,
-        "agents": {},
-        "timing": {"started_at": 0, "duration_ms": 1},
-        "messages": [
-            {"from": "player_1", "to": None, "text": "near", "recipients": ["player_0"]},
-            {"from": "player_1", "to": None, "text": "far", "recipients": ["player_2"]},
-            {"from": "player_0", "to": None, "text": "mine", "recipients": ["player_2"]},
-            {"from": "player_1", "to": None, "text": "open"},
-        ],
-    }
-    state_line = json.dumps(state, separators=(",", ":"))
-    child = (
-        f"import time; print({header_line!r}, flush=True); print({state_line!r}, flush=True); time.sleep(1)"
+_FULL_MESSAGES: list[dict[str, Any]] = [
+    {"from": "player_1", "to": None, "text": "near", "recipients": ["player_0"]},
+    {"from": "player_1", "to": None, "text": "far", "recipients": ["player_2"]},
+    {"from": "player_0", "to": None, "text": "mine", "recipients": ["player_2"]},
+    {"from": "player_1", "to": None, "text": "open"},
+    {"from": "player_3", "to": "player_5", "text": "npc chatter"},
+    {"from": "player_0", "to": "player_5", "text": "from controller"},
+    {"from": "player_3", "to": "player_0", "text": "to controller"},
+]
+_ONE_CONTROLLER_EXPECTED: list[dict[str, Any]] = [
+    {"from": "player_1", "to": None, "text": "near"},
+    {"from": "player_0", "to": None, "text": "mine"},
+    {"from": "player_1", "to": None, "text": "open"},
+    {"from": "player_0", "to": "player_5", "text": "from controller"},
+    {"from": "player_3", "to": "player_0", "text": "to controller"},
+]
+_TWO_CONTROLLERS_EXPECTED: list[dict[str, Any]] = [
+    {"from": "player_1", "to": None, "text": "near"},
+    {"from": "player_1", "to": None, "text": "far"},
+    {"from": "player_0", "to": None, "text": "mine"},
+    {"from": "player_1", "to": None, "text": "open"},
+    {"from": "player_0", "to": "player_5", "text": "from controller"},
+    {"from": "player_3", "to": "player_0", "text": "to controller"},
+]
+_WATCHER_EXPECTED: list[dict[str, Any]] = [
+    {"from": "player_1", "to": None, "text": "near"},
+    {"from": "player_1", "to": None, "text": "far"},
+    {"from": "player_0", "to": None, "text": "mine"},
+    {"from": "player_1", "to": None, "text": "open"},
+    {"from": "player_3", "to": "player_5", "text": "npc chatter"},
+    {"from": "player_0", "to": "player_5", "text": "from controller"},
+    {"from": "player_3", "to": "player_0", "text": "to controller"},
+]
+_UNFILTERED_MESSAGES: list[dict[str, Any]] = [
+    {"from": "player_1", "to": None, "text": "open"},
+    {"from": "player_0", "to": "player_5", "text": "direct"},
+]
+_FILTERED_MESSAGES: list[dict[str, Any]] = [
+    {"from": "player_1", "to": None, "text": "far", "recipients": ["player_2"]},
+    {"from": "player_3", "to": "player_5", "text": "npc chatter"},
+]
+
+
+def _state_line(messages: list[dict[str, Any]]) -> str:
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "tick": 3,
+            "agents": {},
+            "timing": {"started_at": 0, "duration_ms": 1},
+            "messages": messages,
+        },
+        separators=(",", ":"),
     )
 
-    async def state_seen(controller_players: tuple[str, ...] | None) -> dict:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            async with LocalServer(
-                _entry(),
-                command=[sys.executable, "-c", child],
-                static_root=root,
-                controller_players=controller_players,
-            ) as server:
-                for _ in range(500):
-                    if server._latest_state is not None:  # noqa: SLF001 - the attach replays it
-                        break
-                    await asyncio.sleep(0.01)
-                assert server._latest_state is not None  # noqa: SLF001
-                async with websockets.connect(
-                    f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
-                ) as socket:
-                    frames = [str(await socket.recv()) for _ in range(2)]
-        return json.loads(frames[1])
 
+@pytest.mark.parametrize(
+    ("controllers", "messages", "expected", "hidden", "exact"),
+    [
+        pytest.param(
+            ("player_0",),
+            _FULL_MESSAGES,
+            _ONE_CONTROLLER_EXPECTED,
+            ("far", "npc chatter"),
+            False,
+            id="one-controller",
+        ),
+        pytest.param(
+            ("player_0", "player_2"),
+            _FULL_MESSAGES,
+            _TWO_CONTROLLERS_EXPECTED,
+            ("npc chatter",),
+            False,
+            id="two-controllers",
+        ),
+        pytest.param(
+            None,
+            _FULL_MESSAGES,
+            _WATCHER_EXPECTED,
+            (),
+            False,
+            id="watcher",
+        ),
+        pytest.param(
+            ("player_0",),
+            _UNFILTERED_MESSAGES,
+            _UNFILTERED_MESSAGES,
+            (),
+            True,
+            id="unfiltered-bytes",
+        ),
+        pytest.param(
+            ("player_0",),
+            _FILTERED_MESSAGES,
+            [],
+            ("far", "npc chatter"),
+            False,
+            id="fully-filtered",
+        ),
+    ],
+)
+def test_local_server_filters_annotated_broadcasts_for_the_controller_and_strips_for_watchers(
+    tmp_path: Path,
+    controllers: tuple[str, ...] | None,
+    messages: list[dict[str, Any]],
+    expected: list[dict[str, Any]],
+    hidden: tuple[str, ...],
+    exact: bool,
+) -> None:
     async def exercise() -> None:
-        controller_state = await state_seen(("player_0",))
-        assert controller_state["messages"] == [
-            {"from": "player_1", "to": None, "text": "near"},
-            {"from": "player_0", "to": None, "text": "mine"},
-            {"from": "player_1", "to": None, "text": "open"},
-        ]
-        watcher_state = await state_seen(None)
-        assert watcher_state["messages"] == [
-            {"from": "player_1", "to": None, "text": "near"},
-            {"from": "player_1", "to": None, "text": "far"},
-            {"from": "player_0", "to": None, "text": "mine"},
-            {"from": "player_1", "to": None, "text": "open"},
-        ]
+        static_root = _static_root(tmp_path)
+        state_line = _state_line(messages)
+        child = (
+            "import json\n"
+            "import sys\n"
+            f"print({_STATE_HEADER!r}, flush=True)\n"
+            "for raw in sys.stdin:\n"
+            '    if json.loads(raw).get("kind") == "resume":\n'
+            f"        print({state_line!r}, flush=True)\n"
+        )
+        async with LocalServer(
+            _entry(),
+            command=[sys.executable, "-c", child],
+            static_root=static_root,
+            controller_players=controllers,
+        ) as server:
+            uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+            async with websockets.connect(uri, close_timeout=1) as live:
+                await _attach(live)
+                await live.send('{"kind":"resume"}')
+                assert json.loads(await _recv(live)) == {"kind": "resume"}
+                live_state = await _recv(live)
+            async with websockets.connect(uri, close_timeout=1) as late:
+                replay = await _attach(late, state=True)
+
+        assert live_state == replay["state"]
+        assert "recipients" not in live_state
+        presented = json.loads(live_state)
+        assert presented.get("messages", []) == expected
+        presented.pop("messages", None)
+        assert presented == {
+            "schema_version": 1,
+            "tick": 3,
+            "agents": {},
+            "timing": {"started_at": 0, "duration_ms": 1},
+        }
+        for text in hidden:
+            assert text not in live_state
+        if exact:
+            assert live_state == state_line
 
     asyncio.run(exercise())
 
 
-def _unstarted_server(controller_players: tuple[str, ...] | None) -> LocalServer:
-    # `_present_state` and `__init__` never touch the filesystem or spawn the child, so a server
-    # built this way is safe to exercise without starting it.
-    return LocalServer(
-        _entry(),
-        command=[sys.executable, "-c", "pass"],
-        static_root=Path("."),
-        controller_players=controller_players,
-    )
+@pytest.mark.parametrize("case", ["asset", "metadata", "unsupported", "traversal", "symlink"])
+def test_local_server_http_routes_and_metadata_are_safe(tmp_path: Path, case: str) -> None:
+    static_root = _static_root(tmp_path)
+    (static_root / "app.js").write_text("console.log(1)", encoding="utf-8")
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret", encoding="utf-8")
+    if case == "symlink":
+        try:
+            os.symlink(outside, static_root / "escape.js")
+        except (NotImplementedError, OSError):
+            pytest.skip("symlink creation is unavailable on this platform")
 
-
-def test_present_state_returns_the_identical_string_for_an_unfiltered_line() -> None:
-    # A line with nothing to filter and nothing to strip is handed back as the same string object,
-    # pinning the passthrough fast path the docstring promises.
-    state = {
-        "schema_version": 1,
-        "tick": 0,
-        "agents": {},
-        "timing": {"started_at": 0, "duration_ms": 1},
-        "messages": [{"from": "player_1", "to": None, "text": "open"}],
-    }
-    line = json.dumps(state, separators=(",", ":"))
-    server = _unstarted_server(("player_0",))
-    assert server._present_state(line, state) is line  # noqa: SLF001
-
-
-def test_present_state_filters_targeted_messages_for_the_controller_and_keeps_them_for_watchers() -> None:
-    # A targeted line between two players neither controlled is invisible to the human-mode
-    # controller, matching the backend's own audience rule, but stays visible to a watch-style
-    # viewer. A targeted line to or from the controller stays visible either way.
-    state = {
-        "schema_version": 1,
-        "tick": 0,
-        "agents": {},
-        "timing": {"started_at": 0, "duration_ms": 1},
-        "messages": [
-            {"from": "player_3", "to": "player_5", "text": "npc chatter"},
-            {"from": "player_0", "to": "player_5", "text": "from controller"},
-            {"from": "player_3", "to": "player_0", "text": "to controller"},
-        ],
-    }
-    line = json.dumps(state, separators=(",", ":"))
-
-    controller_view = json.loads(_unstarted_server(("player_0",))._present_state(line, state))  # noqa: SLF001
-    assert controller_view["messages"] == [
-        {"from": "player_0", "to": "player_5", "text": "from controller"},
-        {"from": "player_3", "to": "player_0", "text": "to controller"},
-    ]
-
-    assert _unstarted_server(None)._present_state(line, state) is line  # noqa: SLF001
-
-
-def test_present_state_omits_the_messages_key_when_every_message_is_filtered() -> None:
-    # Once the controller filter empties the messages list, "messages" itself must be absent rather
-    # than present as an empty list, matching the recording format and the backend's own filter.
-    state = {
-        "schema_version": 1,
-        "tick": 0,
-        "agents": {},
-        "timing": {"started_at": 0, "duration_ms": 1},
-        "messages": [{"from": "player_3", "to": "player_5", "text": "npc chatter"}],
-    }
-    line = json.dumps(state, separators=(",", ":"))
-    presented = json.loads(_unstarted_server(("player_0",))._present_state(line, state))  # noqa: SLF001
-    assert "messages" not in presented
-
-
-def test_local_server_http_routes_and_metadata_are_safe() -> None:
     async def exercise() -> None:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            (root / "app.js").write_text("console.log(1)", encoding="utf-8")
-            outside = root.parent / "outside-local-server-test.txt"
-            outside.write_text("secret", encoding="utf-8")
-            link = root / "escape.js"
-            try:
-                os.symlink(outside, link)
-            except OSError:
-                link = root / "missing-link.js"
-            child = [sys.executable, "-c", "import time; time.sleep(1)"]
-            async with LocalServer(_entry(), command=child, static_root=root) as server:
-                status, headers, body = await _http(server.port, "GET", "/app.js")
-                assert status.startswith("HTTP/1.1 200")
-                assert headers["Content-Type"].startswith(("text/javascript", "application/javascript"))
-                assert headers["Content-Length"] == str(len(body))
+        child = [sys.executable, "-c", "import sys; sys.stdin.read()"]
+        async with LocalServer(_entry(), command=child, static_root=static_root) as server:
+            assert server._server is not None  # noqa: SLF001 - loopback is a server boundary
+            assert server._server.sockets[0].getsockname()[0] == "127.0.0.1"  # noqa: SLF001
+
+            if case == "asset":
+                status, headers, body = await _http(server.port, "GET", "/local.html")
+                assert status == "HTTP/1.1 200 OK"
+                assert headers["Content-Type"] == "text/html"
+                assert headers["Content-Length"] == "5"
                 assert headers["Cache-Control"] == "no-store"
+                assert headers["Connection"] == "close"
+                assert body == b"local"
+
+                status, headers, body = await _http(server.port, "GET", "/app.js")
+                assert status == "HTTP/1.1 200 OK"
+                assert headers["Content-Type"] in {"text/javascript", "application/javascript"}
+                assert headers["Content-Length"] == "14"
+                assert headers["Cache-Control"] == "no-store"
+                assert headers["Connection"] == "close"
+                assert body == b"console.log(1)"
 
                 head_status, head_headers, head_body = await _http(server.port, "HEAD", "/app.js")
-                assert head_status.startswith("HTTP/1.1 200")
+                assert head_status == "HTTP/1.1 200 OK"
+                assert head_headers["Content-Length"] == "14"
+                assert head_body == b""
+
+                missing_status, _missing_headers, missing_body = await _http(
+                    server.port, "GET", "/missing.js"
+                )
+                assert missing_status == "HTTP/1.1 404 Not Found"
+                assert missing_body == b""
+
+            elif case == "metadata":
+                status, headers, body = await _http(server.port, "GET", "/api/environments")
+                assert status == "HTTP/1.1 200 OK"
+                assert headers["Content-Type"] == "application/json"
+                assert headers["Content-Length"] == str(len(body))
+                assert headers["Cache-Control"] == "no-store"
+                (metadata,) = json.loads(body)
+                assert {
+                    key: metadata[key] for key in ("env_id", "display_name", "human_players", "renderer")
+                } == {
+                    "env_id": "fake",
+                    "display_name": "Fake",
+                    "human_players": ["player_0"],
+                    "renderer": "fake",
+                }
+
+                head_status, head_headers, head_body = await _http(server.port, "HEAD", "/api/environments")
+                assert head_status == "HTTP/1.1 200 OK"
                 assert head_headers["Content-Length"] == str(len(body))
                 assert head_body == b""
 
-                get_status, get_headers, get_body = await _http(server.port, "GET", "/api/environments")
-                assert get_status.startswith("HTTP/1.1 200")
-                assert get_headers["Content-Length"] == str(len(get_body))
-                assert json.loads(get_body) == [_entry().meta.to_json()]
+            elif case == "unsupported":
+                for method, path in (("POST", "/app.js"), ("DELETE", "/api/environments")):
+                    status, headers, body = await _http(server.port, method, path)
+                    assert status == "HTTP/1.1 405 Method Not Allowed"
+                    assert headers["Allow"] == "GET, HEAD"
+                    assert body == b""
 
-                env_head_status, env_head_headers, env_head_body = await _http(
-                    server.port, "HEAD", "/api/environments"
-                )
-                assert env_head_status.startswith("HTTP/1.1 200")
-                assert env_head_headers["Content-Length"] == str(len(get_body))
-                assert env_head_body == b""
+            elif case == "traversal":
+                for path in (
+                    "/outside.txt",
+                    "/%2e%2e/outside.txt",
+                    "/..%2foutside.txt",
+                    "/%2e%2e%5coutside.txt",
+                ):
+                    status, _headers, body = await _http(server.port, "GET", path)
+                    assert status == "HTTP/1.1 404 Not Found"
+                    assert body == b""
+                    assert b"secret" not in body
 
-                for method, path in (("POST", "/app.js"), ("GET", "/%2e%2e/secret"), ("GET", "/escape.js")):
-                    rejected, _headers, _body = await _http(server.port, method, path)
-                    assert not rejected.startswith("HTTP/1.1 200")
-            outside.unlink(missing_ok=True)
+            else:
+                status, _headers, body = await _http(server.port, "GET", "/escape.js")
+                assert status == "HTTP/1.1 404 Not Found"
+                assert body == b""
 
     asyncio.run(exercise())
 
 
-def test_local_server_ends_once_for_clean_and_failed_child_exit() -> None:
+def test_local_server_ends_once_for_clean_and_failed_child_exit(tmp_path: Path) -> None:
     async def exercise() -> None:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            for code, reason in ((0, "terminated"), (3, "error")):
-                async with LocalServer(
-                    _entry(),
-                    command=[sys.executable, "-c", f"import sys; sys.exit({code})"],
-                    static_root=root,
-                ) as server:
-                    await asyncio.wait_for(server.wait(), timeout=1)
-                    assert server._ended  # noqa: SLF001 - exactly-once lifecycle state
-                    assert server._status == "ended"  # noqa: SLF001
-                    assert server._end_reason == reason  # noqa: SLF001
+        static_root = _static_root(tmp_path)
+        for code, reason in ((0, "terminated"), (3, "error")):
+            child = (
+                "import sys\n"
+                'print(\'{"schema_version":1,"environment":"fake"}\', flush=True)\n'
+                "sys.stdin.readline()\n"
+                f"raise SystemExit({code})\n"
+            )
+            async with LocalServer(
+                _entry(),
+                command=[sys.executable, "-c", child],
+                static_root=static_root,
+            ) as server:
+                uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+                async with websockets.connect(uri, close_timeout=1) as live:
+                    await _attach(live)
+                    await live.send('{"kind":"resume"}')
+                    assert await _until_closed(live) == [
+                        {"kind": "resume"},
+                        {"kind": "session", "reason": reason, "status": "ended"},
+                    ]
+                await asyncio.wait_for(server.wait(), timeout=5)
+                async with websockets.connect(uri, close_timeout=1) as late:
+                    assert json.loads(await _recv(late)) == {"schema_version": 1, "environment": "fake"}
+                    assert json.loads(await _recv(late)) == {
+                        "kind": "session",
+                        "reason": reason,
+                        "status": "ended",
+                    }
 
     asyncio.run(exercise())
 
 
-def test_local_server_drains_runner_output_before_child_exit_fallback() -> None:
+def test_local_server_drains_runner_output_before_child_exit_fallback(tmp_path: Path) -> None:
     class DelayedOutputServer(LocalServer):
         async def _pump_output(self) -> None:
-            await asyncio.sleep(0.05)
+            # Force child exit before draining its buffered output.
+            assert self._child is not None
+            await self._child.wait()
             await super()._pump_output()
 
     async def exercise() -> None:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            child = (
-                'print(\'{"schema_version":1,"environment":"fake"}\', flush=True); '
-                'print(\'{"schema_version":1,"tick":3,"agents":{},"timing":{}}\', flush=True); '
-                'print(\'{"kind":"result","reason":"completed"}\', flush=True)'
-            )
-            async with DelayedOutputServer(
-                _entry(), command=[sys.executable, "-c", child], static_root=root
-            ) as server:
-                await asyncio.wait_for(server.wait(), timeout=1)
-                assert server._header is not None  # noqa: SLF001 - output-drain lifecycle boundary
-                assert server._latest_state is not None  # noqa: SLF001
-                assert server._end_reason == "completed"  # noqa: SLF001
+        static_root = _static_root(tmp_path)
+        child = (
+            'print(\'{"schema_version":1,"environment":"fake"}\', flush=True)\n'
+            'print(\'{"schema_version":1,"tick":3,"agents":{},"timing":{}}\', flush=True)\n'
+            'print(\'{"kind":"result","reason":"completed"}\', flush=True)\n'
+        )
+        async with DelayedOutputServer(
+            _entry(), command=[sys.executable, "-c", child], static_root=static_root
+        ) as server:
+            await asyncio.wait_for(server.wait(), timeout=_SERVER_TIMEOUT)
+            uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+            async with websockets.connect(uri, close_timeout=1) as late:
+                replay = [json.loads(await _recv(late)) for _ in range(3)]
+                assert replay == [
+                    {"schema_version": 1, "environment": "fake"},
+                    {"schema_version": 1, "tick": 3, "agents": {}, "timing": {}},
+                    {"kind": "session", "reason": "completed", "status": "ended"},
+                ]
 
     asyncio.run(exercise())
 
 
-def test_local_server_forwards_commands_and_orders_terminal_frames() -> None:
+def test_local_server_forwards_commands_and_orders_terminal_frames(tmp_path: Path) -> None:
     async def exercise() -> None:
-        with TemporaryDirectory() as raw:
-            root = Path(raw)
-            (root / "local.html").write_text("local", encoding="utf-8")
-            child = (
-                "import json\n"
-                "import sys\n"
-                'print(\'{\\"schema_version\\":1,\\"environment\\":\\"fake\\"}\', flush=True)\n'
-                "for raw in sys.stdin:\n"
-                '    if raw.strip() == \'{\\"kind\\":\\"stop\\"}\':\n'
-                "        break\n"
-                '    if json.loads(raw).get("kind") == "chat":\n'
-                '        message = {"schema_version": 1, "tick": 0, "agents": {},\n'
-                '                   "chat": json.loads(raw)}\n'
-                "        print(json.dumps(message), flush=True)\n"
-                'print(\'{\\"kind\\":\\"result\\",\\"reason\\":\\"stopped\\"}\', flush=True)\n'
-            )
-            async with LocalServer(
-                _entry(), command=[sys.executable, "-c", child], static_root=root
-            ) as server:
-                await asyncio.sleep(0.05)
-                uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
-                async with websockets.connect(uri) as first, websockets.connect(uri) as second:
-                    first_frames = [await first.recv() for _ in range(2)]
-                    second_frames = [await second.recv() for _ in range(2)]
-                    assert first_frames == second_frames
-                    assert first_frames[0].startswith('{"schema_version":1')
-                    assert first_frames[1] == '{"awaiting_start":false,"kind":"session","status":"running"}'
-                    await first.send('{"kind":"pause"}')
-                    assert await first.recv() == '{"kind":"pause"}'
-                    assert await second.recv() == '{"kind":"pause"}'
-                    await first.send('{"kind":"resume"}')
-                    assert await first.recv() == '{"kind":"resume"}'
-                    await first.send('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
-                    forwarded = json.loads(await first.recv())
-                    assert forwarded["chat"] == {
-                        "kind": "chat",
-                        "player": "player_0",
-                        "to": None,
-                        "text": "hello",
-                    }
-                    await first.send('{"kind":"stop"}')
-                    terminal = [await first.recv(), await first.recv()]
-                    assert terminal[0] == '{"kind":"result","reason":"stopped"}'
-                    assert terminal[1] == '{"kind":"session","reason":"stopped","status":"ended"}'
-                await server.wait()
+        static_root = _static_root(tmp_path)
+        child = (
+            "import json\n"
+            "import sys\n"
+            'print(\'{"schema_version":1,"environment":"fake"}\', flush=True)\n'
+            "for raw in sys.stdin:\n"
+            "    command = json.loads(raw)\n"
+            '    if command.get("kind") == "stop":\n'
+            "        break\n"
+            '    if command.get("kind") in ("chat", "input"):\n'
+            '        print(json.dumps({"schema_version": 1, "tick": 0, "agents": {}, "timing": {}, '
+            '"chat": command}), flush=True)\n'
+            'print(\'{"kind":"result","reason":"stopped"}\', flush=True)\n'
+        )
+        async with LocalServer(
+            _entry(), command=[sys.executable, "-c", child], static_root=static_root
+        ) as server:
+            uri = f"ws://127.0.0.1:{server.port}/api/sessions/local/ws"
+            async with (
+                websockets.connect(uri, close_timeout=1) as first,
+                websockets.connect(uri, close_timeout=1) as second,
+            ):
+                first_initial = await _attach(first)
+                second_initial = await _attach(second)
+                assert first_initial == second_initial
+                for kind in ("pause", "resume"):
+                    await first.send(json.dumps({"kind": kind}))
+                    for socket in (first, second):
+                        assert json.loads(await _recv(socket)) == {"kind": kind}
+
+                await first.send("not json")
+                await first.send('{"kind":"input","player":1}')
+                await first.send('{"kind":"chat","player":"player_0","to":null,"text":"hello"}')
+                first_state, second_state = await _recv(first), await _recv(second)
+                assert json.loads(first_state)["chat"] == {
+                    "kind": "chat",
+                    "player": "player_0",
+                    "to": None,
+                    "text": "hello",
+                }
+                assert first_state == second_state
+                await first.send('{"kind":"stop"}')
+                for socket in (first, second):
+                    assert await _until_closed(socket) == [
+                        {"kind": "result", "reason": "stopped"},
+                        {"kind": "session", "reason": "stopped", "status": "ended"},
+                    ]
+            await asyncio.wait_for(server.wait(), timeout=5)
 
     asyncio.run(exercise())
