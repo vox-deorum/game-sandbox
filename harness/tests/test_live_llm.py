@@ -1,48 +1,45 @@
-"""Official LLM credential ownership and tick markers in the live harness."""
+"""Official player credentials, attribution and verified proxy-time discounts."""
 
 from __future__ import annotations
 
 import json
 import os
+import sys
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, cast
 
 import pytest
+from support_parallel import make_entry as parallel_entry
 
+import game_sandbox_harness.live as live
 from game_sandbox_harness.clock import ManualClock
-from game_sandbox_harness.environment import (
-    BuiltinAgent,
-    EnvironmentEntry,
-    EnvironmentMeta,
-    PlayerBounds,
-    resolve_parameters,
-)
-from game_sandbox_harness.live import (
-    LiveConfig,
-    LiveConfigError,
-    LlmConfig,
-    PlayerBinding,
-    build_players,
-    parse_config,
-)
+from game_sandbox_harness.environment import BuiltinAgent, EnvironmentEntry, EnvironmentMeta, PlayerBounds
+from game_sandbox_harness.live import LiveConfigError, build_players, parse_config
 from game_sandbox_harness.live_io import PausableClock, SessionControl
 from game_sandbox_harness.recording.local import FolderRecordingStore
-from game_sandbox_harness.session import Episode, run_episode
+from game_sandbox_harness.session import run_episode
+
+
+@pytest.fixture(autouse=True)
+def _restore_credentials(monkeypatch):
+    # Register the variables so the runner's direct writes are undone after each test.
+    for name in ("OPENAI_BASE_URL", "OPENAI_API_KEY"):
+        monkeypatch.setenv(name, os.environ.get(name, ""))
 
 
 class _Sleeper:
     def sleep_ms(self, ms: int) -> None:
-        pass
+        pytest.fail("headless fixture tried to wait for input")
 
 
 class _Response:
     def __init__(self, body: bytes = b"") -> None:
         self._body = body
 
-    def __enter__(self) -> _Response:
+    def __enter__(self):
         return self
 
-    def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+    def __exit__(self, *args):
         pass
 
     def read(self) -> bytes:
@@ -50,44 +47,34 @@ class _Response:
 
 
 class _AlternatingEnv:
-    """A minimal two-player AEC environment that ends after a fixed number of acting turns."""
-
-    def __init__(self, turns: int, player_count: int = 2) -> None:
+    def __init__(self, turns: int, player_count: int) -> None:
         self._turns = turns
         self.possible_agents = [f"player_{index}" for index in range(player_count)]
 
-    def reset(self, seed: int | None = None, options: Any = None) -> None:
-        self.agents = list(self.possible_agents)
+    def reset(self, seed=None, options=None):
+        self.agents = self.possible_agents[:]
         self.agent_selection = "player_0"
-        self.rewards = {player_id: 0.0 for player_id in self.possible_agents}
-        self.terminations = {player_id: False for player_id in self.possible_agents}
-        self.truncations = {player_id: False for player_id in self.possible_agents}
+        self.rewards = dict.fromkeys(self.agents, 0.0)
+        self.terminations = dict.fromkeys(self.agents, False)
+        self.truncations = dict.fromkeys(self.agents, False)
         self._index = 0
 
-    def last(self) -> tuple[int, float, bool, bool, dict[str, Any]]:
-        player_id = self.agent_selection
-        return self._index, self.rewards[player_id], False, False, {}
-
-    def observe(self, player_id: str) -> int:
+    def observe(self, player_id):
         return self._index
 
-    def step(self, action: Any) -> None:
+    def last(self):
+        return self._index, self.rewards[self.agent_selection], False, False, {}
+
+    def step(self, action):
         self._index += 1
         if self._index == self._turns:
-            for player_id in self.possible_agents:
-                self.terminations[player_id] = True
+            self.terminations = dict.fromkeys(self.possible_agents, True)
             self.agents = []
-            return
-        self.agent_selection = self.possible_agents[self._index % 2]
+        else:
+            self.agent_selection = self.possible_agents[self._index % len(self.possible_agents)]
 
 
-def _entry(
-    turns: int = 4,
-    *,
-    messaging: bool = True,
-    step_limit_ms: int = 1000,
-    episode_limit_ms: int = 120_000,
-) -> EnvironmentEntry:
+def _entry(turns=4, *, messaging=True, step_limit_ms=1000, episode_limit_ms=120_000):
     return EnvironmentEntry(
         meta=EnvironmentMeta(
             env_id="fake",
@@ -112,892 +99,607 @@ def _entry(
     )
 
 
-def _payload(llm: object = None) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "env_id": "fake",
-        "parameters": {"players": 2},
-        "player_bindings": {
-            "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
-            "player_1": {"kind": "builtin-agent", "path": "/agents/1"},
-        },
-        "players": {
-            "player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"},
-            "player_1": {"kind": "agent", "submission_id": "local-1", "label": "Player 1"},
-        },
-        "recording_dir": "/recordings",
-    }
-    if llm is not None:
-        payload["llm"] = llm
-    return payload
-
-
-@pytest.fixture(autouse=True)
-def _resolve_fake_environment(monkeypatch: pytest.MonkeyPatch):
-    import game_sandbox_harness.live as live
-
-    monkeypatch.setattr(live, "load_environment", lambda _env_id: _entry())
-
-
-def _llm_block() -> dict[str, Any]:
+def _llm_block(count=2):
     return {
         "base_url": "http://proxy.example/v1",
         "tick_url": "http://marker.example/internal/tick",
-        "inflight_url": "http://marker.example/internal/inflight",
-        "keys": {"player_0": "key-0", "player_1": "key-1"},
+        "inflight_url": "http://timing.example/internal/inflight",
+        "keys": {f"player_{i}": f"key-{i}" for i in range(count)},
     }
 
 
-def test_parse_config_accepts_strict_llm_block_with_exact_agent_key_coverage():
-    config = parse_config([json.dumps(_payload(_llm_block()))])
-
-    assert config.llm == LlmConfig(
-        base_url="http://proxy.example/v1",
-        tick_url="http://marker.example/internal/tick",
-        inflight_url="http://marker.example/internal/inflight",
-        keys={"player_0": "key-0", "player_1": "key-1"},
-    )
-
-
-def test_parse_config_matches_backend_llm_launch_fixture_exactly(tmp_path: Path):
-    fixture_path = (
-        Path(__file__).resolve().parents[2] / "backend" / "test" / "fixtures" / "llm-launch-config.json"
-    )
-    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
-    payload = _payload()
-    payload["player_bindings"] = {
-        "player_0": {"kind": "builtin-agent", "path": "/agents/0"},
-        "player_1": {"kind": "external"},
+def _payload(llm=None, *, count=2):
+    return {
+        "env_id": "fake",
+        "seed": 9,
+        "parameters": {"players": count},
+        "player_bindings": {
+            f"player_{i}": {"kind": "builtin-agent", "path": f"/agents/{i}"} for i in range(count)
+        },
+        "players": {
+            f"player_{i}": {"kind": "agent", "submission_id": f"local-{i}", "label": f"Player {i}"}
+            for i in range(count)
+        },
+        "recording_dir": "/recordings",
+        "llm": llm,
     }
-    payload["players"] = {
-        "player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"},
-        "player_1": {"kind": "human", "label": "Human"},
-    }
-    # The backend hands keys to the container out-of-band through the mounted file named in the
-    # fixture, so point the harness at a real file for this agent player.
-    keys_file = tmp_path / "llm-keys.json"
-    keys_file.write_text(json.dumps({"player_0": "official-key"}), encoding="utf-8")
-    llm_block = cast("dict[str, Any]", dict(fixture["llm"]))
-    llm_block["keys_file"] = str(keys_file)
-    payload["llm"] = llm_block
-
-    config = parse_config([json.dumps(payload)])
-
-    assert config.llm is not None
-    assert config.llm.base_url == fixture["llm"]["base_url"]
-    assert config.llm.tick_url == fixture["llm"]["tick_url"]
-    assert config.llm.inflight_url == fixture["llm"]["inflight_url"]
-    assert config.llm.keys == {"player_0": "official-key"}
 
 
-def test_parse_config_reads_keys_from_a_keys_file(tmp_path: Path):
-    keys_file = tmp_path / "keys.json"
-    keys_file.write_text(
-        json.dumps({"player_0": "key-0", "player_1": "key-1"}),
-        encoding="utf-8",
-    )
-    llm = _llm_block()
-    llm.pop("keys")
-    llm["keys_file"] = str(keys_file)
-    config = parse_config([json.dumps(_payload(llm))])
-    assert config.llm == LlmConfig(
-        base_url="http://proxy.example/v1",
-        tick_url="http://marker.example/internal/tick",
-        inflight_url="http://marker.example/internal/inflight",
-        keys={"player_0": "key-0", "player_1": "key-1"},
-    )
-
-
-@pytest.mark.parametrize(
-    "llm",
-    [
-        [],
-        {"base_url": "http://proxy/v1", "tick_url": "http://tick", "keys": []},
-        {
-            "base_url": "",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a", "player_1": "b"},
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": 7,
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a", "player_1": "b"},
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "",
-            "keys": {"player_0": "a", "player_1": "b"},
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a"},
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a", "player_1": "b", "human": "c"},
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a", "player_1": ""},
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a", "player_1": "b"},
-            "derived_tick": True,
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys": {"player_0": "a", "player_1": "b"},
-            "keys_file": "/run/llm-keys.json",
-        },
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://tick",
-            "inflight_url": "http://inflight",
-            "keys_file": "",
-        },
-    ],
-)
-def test_parse_config_rejects_malformed_llm_blocks(llm: object):
-    with pytest.raises(LiveConfigError):
-        parse_config([json.dumps(_payload(llm))])
-
-
-def test_parse_config_rejects_an_unreadable_or_empty_keys_file(tmp_path: Path):
-    missing = tmp_path / "missing.json"
-    llm = _llm_block()
-    llm.pop("keys")
-    llm["keys_file"] = str(missing)
-    with pytest.raises(LiveConfigError):
-        parse_config([json.dumps(_payload(llm))])
-
-    empty = tmp_path / "empty.json"
-    empty.write_text("not json", encoding="utf-8")
-    llm = _llm_block()
-    llm.pop("keys")
-    llm["keys_file"] = str(empty)
-    with pytest.raises(LiveConfigError):
-        parse_config([json.dumps(_payload(llm))])
-
-
-def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(monkeypatch):
-    import game_sandbox_harness.live as live
-
-    events: list[tuple[Any, ...]] = []
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        if request.full_url.endswith("/inflight"):
-            return _Response(b'{"inflight_ms": 0}')
-        events.append(
-            (
-                "marker",
-                request.full_url,
-                request.get_header("Authorization"),
-                json.loads(request.data),
-                timeout,
-            )
-        )
-        return _Response()
-
-    class Agent:
-        def __init__(self, player_id: str) -> None:
-            self.player_id = player_id
-            self.client_key = os.environ.get("OPENAI_API_KEY")
-            events.append(
-                (
-                    "construct",
-                    player_id,
-                    os.environ.get("OPENAI_BASE_URL"),
-                    self.client_key,
-                )
-            )
-
-        def _hook(self, name: str) -> None:
-            events.append(
-                (
-                    "hook",
-                    self.player_id,
-                    name,
-                    os.environ.get("OPENAI_BASE_URL"),
-                    os.environ.get("OPENAI_API_KEY"),
-                    self.client_key,
-                )
-            )
-
-        def reset(self, seed: int, observation: Any) -> None:
-            self._hook("reset")
-
-        def act(self, observation: Any) -> int:
-            self._hook("act")
-            return 0
-
-        def chat(self, inbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            self._hook("chat")
-            return []
-
-        def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
-            self._hook("learn")
-
-    def load_agent(path: str) -> Agent:
-        player_id = "player_0" if path.endswith("0") else "player_1"
-        events.append(
-            (
-                "load",
-                player_id,
-                os.environ.get("OPENAI_BASE_URL"),
-                os.environ.get("OPENAI_API_KEY"),
-            )
-        )
-        return Agent(player_id)
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(live, "load_agent", load_agent)
-    monkeypatch.setenv("OPENAI_BASE_URL", "before-base")
-    monkeypatch.setenv("OPENAI_API_KEY", "before-key")
-    config = parse_config([json.dumps(_payload(_llm_block()))])
-    players = build_players(
-        config,
-        _entry(),
-        SessionControl(),
-        PausableClock(ManualClock()),
-        _Sleeper(),
-    )
-    with Episode(
-        _entry(), players, parameters=resolve_parameters(_entry().meta), seed=9, clock=ManualClock()
-    ) as episode:
-        while not episode.done:
-            episode.step_once()
-
-    markers = [event for event in events if event[0] == "marker"]
-    assert [event[3] for event in markers] == [
-        {"phase": "setup"},
-        {"phase": "setup"},
-        *({"tick": tick} for tick in range(4)),
-    ]
-    assert all(event[1] == "http://marker.example/internal/tick" for event in markers)
-    assert [event[2] for event in markers] == [
-        "Bearer key-0",
-        "Bearer key-1",
-        *(f"Bearer key-{tick % 2}" for tick in range(4)),
-    ]
-    assert all(event[4] == live._MARKER_TIMEOUT_SECONDS for event in markers)
-
-    participant_events = [event for event in events if event[0] in {"load", "construct", "hook"}]
-    for event in participant_events:
-        player_id = event[1]
-        expected_key = "key-0" if player_id == "player_0" else "key-1"
-        assert event[2 if event[0] != "hook" else 3] == "http://proxy.example/v1"
-        assert event[3 if event[0] != "hook" else 4] == expected_key
-        if event[0] == "hook":
-            assert event[5] == expected_key
-
-    # Reduce the trace to ownership boundaries and assert the full order. Credential activation runs
-    # before every hook, while each marker posts only before the first hook for its player and tick.
-    boundaries: list[tuple[Any, ...]] = []
-    for event in events:
-        if event[0] == "marker":
-            player_id = "player_0" if event[2] == "Bearer key-0" else "player_1"
-            boundaries.append(("marker", player_id, event[3]))
-        elif event[0] in {"load", "construct"}:
-            boundaries.append((event[0], event[1]))
-        elif event[0] == "hook":
-            boundaries.append(("hook", event[1], event[2]))
-
-    expected_boundaries: list[tuple[Any, ...]] = [
-        ("marker", "player_0", {"phase": "setup"}),
-        ("load", "player_0"),
-        ("construct", "player_0"),
-        ("marker", "player_1", {"phase": "setup"}),
-        ("load", "player_1"),
-        ("construct", "player_1"),
-        ("hook", "player_0", "reset"),
-        ("hook", "player_1", "reset"),
-    ]
-    for tick in range(4):
-        player_id = f"player_{tick % 2}"
-        expected_boundaries.append(("marker", player_id, {"tick": tick}))
-        expected_boundaries.extend(("hook", player_id, hook) for hook in ("act", "chat", "learn"))
-    assert boundaries == expected_boundaries
-
-    turn_hooks = [event[1:3] for event in events if event[0] == "hook" and event[2] != "reset"]
-    assert turn_hooks == [
-        ("player_0", "act"),
-        ("player_0", "chat"),
-        ("player_0", "learn"),
-        ("player_1", "act"),
-        ("player_1", "chat"),
-        ("player_1", "learn"),
-        ("player_0", "act"),
-        ("player_0", "chat"),
-        ("player_0", "learn"),
-        ("player_1", "act"),
-        ("player_1", "chat"),
-        ("player_1", "learn"),
-    ]
-
-
-def test_marker_scope_memoizes_per_player_across_interleaved_hook_phases(monkeypatch):
-    import game_sandbox_harness.live as live
-
-    posts: list[tuple[str, dict[str, object]]] = []
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        posts.append((request.get_header("Authorization"), json.loads(request.data)))
-        return _Response()
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    scope = live._LlmExecutionScope(
-        LlmConfig(
-            "http://proxy.example/v1",
-            "http://marker.example/internal/tick",
-            "http://marker.example/internal/inflight",
-            {"player_0": "key-0", "player_1": "key-1"},
-        )
-    )
-
-    # Parallel ticks can interleave players across phase boundaries. Each distinct player and tick
-    # posts once, even though turn() still restores credentials before every simulated hook.
-    scope.turn("player_0", 0)  # act
-    scope.turn("player_1", 0)  # act
-    scope.turn("player_0", 0)  # chat
-    scope.turn("player_1", 0)  # chat
-    scope.turn("player_0", 0)  # learn
-    scope.turn("player_1", 0)  # learn
-    scope.turn("player_0", 1)  # act
-
-    assert posts == [
-        ("Bearer key-0", {"tick": 0}),
-        ("Bearer key-1", {"tick": 0}),
-        ("Bearer key-0", {"tick": 1}),
-    ]
-
-
-def test_marker_scope_retries_a_failed_post_on_the_next_hook(monkeypatch):
-    import game_sandbox_harness.live as live
-
-    attempts = 0
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        nonlocal attempts
-        attempts += 1
-        if attempts == 1:
-            raise OSError("proxy down")
-        return _Response()
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    scope = live._LlmExecutionScope(
-        LlmConfig(
-            "http://proxy.example/v1",
-            "http://marker.example/internal/tick",
-            "http://marker.example/internal/inflight",
-            {"player_0": "key-0", "player_1": "key-1"},
-        )
-    )
-
-    scope.turn("player_0", 0)
-    scope.turn("player_0", 0)
-
-    assert attempts == 2
-
-
-def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatch, tmp_path: Path):
-    import game_sandbox_harness.live as live
-
-    clock = ManualClock()
-    proxy_ms = {"player_0": 0, "player_1": 0}
-    inflight_reads = 0
-
-    class WaitingAgent:
-        def __init__(self, player_id: str) -> None:
-            self._player_id = player_id
-
-        def reset(self, seed: int, observation: Any) -> None:
-            pass
-
-        def act(self, observation: Any) -> int:
-            # This deterministic advance represents the blocking model/proxy request, including any
-            # backend retry waits, that remains inside the participant's act hook.
-            clock.advance(800)
-            proxy_ms[self._player_id] += 700
-            return 0
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        nonlocal inflight_reads
-        if request.full_url.endswith("/inflight"):
-            inflight_reads += 1
-            player_id = "player_0" if request.headers["Authorization"] == "Bearer key-0" else "player_1"
-            return _Response(json.dumps({"inflight_ms": proxy_ms[player_id]}).encode())
-        return _Response()
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(
-        live,
-        "load_agent",
-        lambda path: WaitingAgent("player_0" if path.endswith("0") else "player_1"),
-    )
-    payload = _payload(_llm_block())
-    config = parse_config([json.dumps(payload)])
-    entry = _entry(turns=10, messaging=False, step_limit_ms=500, episode_limit_ms=1200)
+def _run(payload, entry, clock, tmp_path, *, cpu_clock_ms=lambda: 0):
+    config = parse_config([json.dumps(payload)], entry=entry)
     players = build_players(config, entry, SessionControl(), PausableClock(clock), _Sleeper())
-    store = FolderRecordingStore(tmp_path)
-
+    store = FolderRecordingStore(tmp_path / "recordings")
     result = run_episode(
         entry,
         players,
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
+        parameters=config.parameters,
+        seed=config.seed,
         store=store,
-        recording_id="model-wait",
+        recording_id="episode",
         clock=clock,
-        player_attribution={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-            "player_1": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-        },
+        cpu_clock_ms=cpu_clock_ms,
+        player_attribution=config.players,
+    )
+    return result, list(store.open("episode").steps())
+
+
+def _reply_snapshots(monkeypatch, snapshots):
+    readings = iter(snapshots)
+    requests = []
+
+    def urlopen(request, *, timeout):
+        if request.full_url == "http://timing.example/internal/inflight":
+            requests.append((request.get_method(), request.get_header("Authorization")))
+            try:
+                value = next(readings)
+            except StopIteration:
+                pytest.fail("unexpected extra proxy-time read")
+            if isinstance(value, Exception):
+                raise value
+            body = value if isinstance(value, bytes) else json.dumps({"inflight_ms": value}).encode()
+            return _Response(body)
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    return requests
+
+
+@pytest.fixture
+def probe_repos(monkeypatch, tmp_path):
+    """Real modules report credentials and the marker accepted by the fake proxy."""
+    monkeypatch.setattr(sys, "path", sys.path[:])
+    monkeypatch.setenv("OPENAI_BASE_URL", "student-base")
+    monkeypatch.setenv("OPENAI_API_KEY", "student-key")
+    markers = tmp_path / "markers.json"
+    markers.write_text("{}", encoding="utf-8")
+
+    def create(player_id, *, tamper=False):
+        root = tmp_path / player_id
+        root.mkdir()
+        (root / "manifest.json").write_text(
+            json.dumps({"entry_point": "llm_audit_probe", "class_name": "Agent", "template_version": 1}),
+            encoding="utf-8",
+        )
+        (root / "llm_audit_probe.py").write_text(
+            f"""import json
+import os
+from pathlib import Path
+
+LOG = Path({str(root / "trace.jsonl")!r})
+MARKERS = Path({str(markers)!r})
+CAPTURED = os.environ.get("OPENAI_API_KEY")
+
+def report(phase, client=None):
+    key = os.environ.get("OPENAI_API_KEY")
+    row = [phase, os.environ.get("OPENAI_BASE_URL"), key, CAPTURED, client,
+           json.loads(MARKERS.read_text(encoding="utf-8")).get(key)]
+    with LOG.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(row) + "\\n")
+
+report("import")
+
+class Agent:
+    def __init__(self):
+        self.client = os.environ.get("OPENAI_API_KEY")
+        report("construct", self.client)
+
+    def hook(self, name):
+        report(name, self.client)
+        if {tamper!r}:
+            os.environ["OPENAI_BASE_URL"] = "tampered-base"
+            os.environ["OPENAI_API_KEY"] = "tampered-key"
+
+    def reset(self, seed, observation):
+        self.hook("reset")
+
+    def act(self, observation):
+        self.hook("act")
+        return 1
+
+    def chat(self, inbox):
+        self.hook("chat")
+        return []
+
+    def learn(self, observation, action, reward, terminated):
+        self.hook("learn")
+""",
+            encoding="utf-8",
+        )
+        return root
+
+    yield create, markers
+    sys.modules.pop("llm_audit_probe", None)
+
+
+@pytest.mark.parametrize("mode", ["inline", "file", "backend-fixture"])
+def test_parse_config_matches_backend_llm_launch_fixture_exactly(mode, monkeypatch, tmp_path):
+    payload = _payload(_llm_block())
+    if mode != "inline":
+        block = payload["llm"]
+        if mode == "backend-fixture":
+            fixture = Path(__file__).resolve().parents[2] / "backend/test/fixtures/llm-launch-config.json"
+            block = json.loads(fixture.read_text(encoding="utf-8"))["llm"]
+            payload["player_bindings"]["player_1"] = {"kind": "external"}
+            payload["players"]["player_1"] = {"kind": "human", "label": "Human"}
+            keys = {"player_0": "key-0"}
+        else:
+            keys = block.pop("keys")
+        keys_file = tmp_path / "keys.json"
+        keys_file.write_text(json.dumps(keys), encoding="utf-8")
+        payload["llm"] = dict(block, keys_file=str(keys_file))
+
+    observations = []
+
+    def load_agent(path):
+        observations.append((os.environ.get("OPENAI_BASE_URL"), os.environ.get("OPENAI_API_KEY")))
+        return object()
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "before-base")
+    monkeypatch.setenv("OPENAI_API_KEY", "before-key")
+    monkeypatch.setattr(live, "load_agent", load_agent)
+    requests = []
+    monkeypatch.setattr(
+        live.urllib.request, "urlopen", lambda request, **kw: requests.append(request) or _Response()
+    )
+    config = parse_config([json.dumps(payload)], entry=_entry())
+    build_players(config, _entry(), SessionControl(), PausableClock(ManualClock()), _Sleeper())
+    if mode == "backend-fixture":
+        assert observations == [("http://llm-proxy:9472/v1", "key-0")]
+        assert [(r.full_url, r.get_header("Authorization")) for r in requests] == [
+            ("http://llm-proxy:9472/internal/tick", "Bearer key-0")
+        ]
+        assert config.llm.inflight_url == "http://llm-proxy:9472/internal/inflight"
+    else:
+        assert observations == [("http://proxy.example/v1", "key-0"), ("http://proxy.example/v1", "key-1")]
+        assert [(r.full_url, r.get_header("Authorization")) for r in requests] == [
+            ("http://marker.example/internal/tick", "Bearer key-0"),
+            ("http://marker.example/internal/tick", "Bearer key-1"),
+        ]
+        assert config.llm.inflight_url == "http://timing.example/internal/inflight"
+
+
+@pytest.mark.parametrize(
+    "field,value,cause",
+    [
+        (None, [], "must be an object"),
+        ("keys", [], "keys.*must be an object"),
+        ("base_url", "", "base_url.*non-empty string"),
+        ("tick_url", 7, "tick_url.*non-empty string"),
+        ("inflight_url", "", "inflight_url.*non-empty string"),
+        ("inflight_url", "DELETE", "missing.*inflight_url"),
+        ("keys", {"player_0": "a"}, "missing agent players.*player_1"),
+        ("keys", {"player_0": "a", "player_1": "b", "human": "c"}, "unknown or non-agent.*human"),
+        ("keys", {"player_0": "a", "player_1": ""}, "player_1.*non-empty string"),
+        ("derived_tick", True, "unknown.*derived_tick"),
+        ("keys_file", "/run/llm-keys.json", "exactly one.*both"),
+        ("keys", "DELETE", "exactly one.*neither"),
+    ],
+)
+def test_parse_config_rejects_malformed_llm_blocks(field, value, cause):
+    payload = _payload(_llm_block())
+    parse_config([json.dumps(payload)], entry=_entry())
+    if field is None:
+        payload["llm"] = value
+    elif value == "DELETE":
+        del payload["llm"][field]
+    else:
+        payload["llm"][field] = value
+    with pytest.raises(LiveConfigError, match=cause):
+        parse_config([json.dumps(payload)], entry=_entry())
+
+
+@pytest.mark.parametrize(
+    "contents,empty_path,cause",
+    [
+        (None, False, "could not be read"),
+        ("", False, "must contain a JSON object"),
+        ("not json", False, "must contain a JSON object"),
+        ("[]", False, "must contain a JSON object"),
+        ('{"player_0":"key-0","player_1":""}', False, "non-empty key strings"),
+        ('{"player_0":"key-0"}', False, "missing agent players.*player_1"),
+        (None, True, "keys_file.*non-empty path"),
+    ],
+)
+def test_parse_config_rejects_an_unreadable_or_empty_keys_file(contents, empty_path, cause, tmp_path):
+    path = tmp_path / "keys.json"
+    block = _llm_block()
+    keys = block.pop("keys")
+    path.write_text(json.dumps(keys), encoding="utf-8")
+    block["keys_file"] = str(path)
+    parse_config([json.dumps(_payload(block))], entry=_entry())
+    path.unlink()
+    if contents is not None:
+        path.write_text(contents, encoding="utf-8")
+    if empty_path:
+        block["keys_file"] = ""
+    with pytest.raises(LiveConfigError, match=cause):
+        parse_config([json.dumps(_payload(block))], entry=_entry())
+
+
+@pytest.mark.parametrize("stepping", ["sequential", "simultaneous"])
+def test_credentials_and_markers_cover_load_reset_and_every_acting_hook(
+    stepping, probe_repos, monkeypatch, tmp_path
+):
+    create, markers_file = probe_repos
+    entry = _entry() if stepping == "sequential" else parallel_entry(messaging=True)
+    entry = replace(entry, meta=replace(entry.meta, llm=True))
+    count = 2 if stepping == "sequential" else 3
+    payload = _payload(_llm_block(count), count=count)
+    payload["env_id"] = entry.meta.env_id
+    roots = [create(f"player_{i}", tamper=True) for i in range(count)]
+    for binding, root in zip(payload["player_bindings"].values(), roots, strict=True):
+        binding["path"] = str(root)
+    posts = []
+    markers = {}
+
+    def urlopen(request, *, timeout):
+        if request.full_url == "http://timing.example/internal/inflight":
+            return _Response(b'{"inflight_ms":0}')
+        key = request.get_header("Authorization").removeprefix("Bearer ")
+        marker = json.loads(request.data)
+        posts.append((request.full_url, request.get_method(), key, marker))
+        markers[key] = marker
+        markers_file.write_text(json.dumps(markers), encoding="utf-8")
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    result, steps = _run(payload, entry, ManualClock(), tmp_path)
+    expected_markers = (
+        [[{"tick": 0}, {"tick": 2}], [{"tick": 1}, {"tick": 3}]]
+        if stepping == "sequential"
+        else [[{"tick": 0}], [{"tick": 0}, {"tick": 1}], [{"tick": 0}, {"tick": 1}, {"tick": 2}]]
+    )
+    for root, key, ticks in zip(roots, ("key-0", "key-1", "key-2")[:count], expected_markers, strict=True):
+        trace = [json.loads(line) for line in (root / "trace.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert trace[:3] == [
+            ["import", "http://proxy.example/v1", key, key, None, {"phase": "setup"}],
+            ["construct", "http://proxy.example/v1", key, key, key, {"phase": "setup"}],
+            ["reset", "http://proxy.example/v1", key, key, key, {"phase": "setup"}],
+        ]
+        assert trace[3:] == [
+            [hook, "http://proxy.example/v1", key, key, key, marker]
+            for marker in ticks
+            for hook in ("act", "chat", "learn")
+        ]
+        assert [post for post in posts if post[2] == key] == [
+            ("http://marker.example/internal/tick", "POST", key, marker)
+            for marker in [{"phase": "setup"}, *ticks]
+        ]
+    assert result.ticks == (4 if stepping == "sequential" else 3)
+    assert result.reason == ("terminated" if stepping == "sequential" else "truncated")
+    assert [agent["action"] for step in steps for agent in step["agents"].values() if "action" in agent] == (
+        [1, 1, 1, 1] if stepping == "sequential" else [1, 1, 1, 1, 1, 1]
     )
 
-    steps = list(store.open("model-wait").steps())
-    decision_ms = [
+
+def test_model_wait_in_act_is_discounted_from_step_and_episode_limits(monkeypatch, tmp_path):
+    clock = ManualClock()
+    proxy_ms = {"Bearer key-0": 1000, "Bearer key-1": 2000}
+
+    class WaitingAgent:
+        def __init__(self, key, proxy_work):
+            self.key, self.proxy_work = key, proxy_work
+
+        def reset(self, seed, observation):
+            pass
+
+        def act(self, observation):
+            clock.advance(800)
+            proxy_ms[self.key] += self.proxy_work
+            return 1
+
+    def urlopen(request, *, timeout):
+        if request.full_url == "http://timing.example/internal/inflight":
+            return _Response(
+                json.dumps({"inflight_ms": proxy_ms[request.get_header("Authorization")]}).encode()
+            )
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+    agents = {"/agents/0": WaitingAgent("Bearer key-0", 700), "/agents/1": WaitingAgent("Bearer key-1", 600)}
+    monkeypatch.setattr(live, "load_agent", agents.__getitem__)
+    result, steps = _run(
+        _payload(_llm_block()),
+        _entry(turns=10, messaging=False, step_limit_ms=500, episode_limit_ms=1200),
+        clock,
+        tmp_path,
+    )
+    assert [
         agent["timing"]["decision_ms"]
         for step in steps
         for agent in step["agents"].values()
         if "timing" in agent
+    ] == [
+        100,
+        200,
+        100,
+        200,
+        100,
+        200,
+        100,
+        200,
+        100,
+        200,
     ]
-    assert decision_ms == [
-        100,
-        100,
-        100,
-        100,
-        100,
-        100,
-        100,
-        100,
-        100,
-        100,
+    assert [agent["action"] for step in steps for agent in step["agents"].values() if "action" in agent] == [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
     ]
+    assert (result.ticks, result.reason, result.failed_player) == (10, "terminated", None)
     assert result.step_timeouts == {"player_0": 0, "player_1": 0}
-    assert result.reason == "terminated"
-    assert result.failed_player is None
-    assert result.ticks == 10
-    # Setup now records each agent's initial baseline, then every action reuses its post-hook read.
-    assert inflight_reads == 14
 
 
-def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, capsys):
-    import game_sandbox_harness.live as live
-
-    calls: list[str] = []
+def test_marker_failure_logs_and_does_not_stop_agent_lifecycle(monkeypatch, tmp_path, capsys):
+    marker = {"phase": "setup"}
+    observed = []
+    failed = False
 
     class Agent:
-        def reset(self, seed: int, observation: Any) -> None:
-            calls.append("reset")
+        def reset(self, seed, observation):
+            observed.append(("reset", dict(marker)))
 
-        def act(self, observation: Any) -> int:
-            calls.append("act")
-            return 0
+        def act(self, observation):
+            observed.append(("act", dict(marker)))
+            return 1
 
-    def fail_marker(request: Any, *, timeout: float) -> _Response:
-        raise OSError("proxy down")
+        def chat(self, inbox):
+            observed.append(("chat", dict(marker)))
+            return []
 
-    monkeypatch.setattr(live.urllib.request, "urlopen", fail_marker)
+        def learn(self, observation, action, reward, terminated):
+            observed.append(("learn", dict(marker)))
+
+    requests = []
+
+    def urlopen(request, *, timeout):
+        nonlocal marker, failed
+        if request.full_url == "http://timing.example/internal/inflight":
+            return _Response(b'{"inflight_ms":0}')
+        payload = json.loads(request.data)
+        requests.append((request.get_header("Authorization"), payload))
+        if payload == {"tick": 0} and not failed:
+            failed = True
+            raise OSError("proxy down")
+        marker = payload
+        return _Response()
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
     monkeypatch.setattr(live, "load_agent", lambda path: Agent())
-    config = LiveConfig(
-        env_id="fake",
-        seed=1,
-        player_bindings={"player_0": PlayerBinding("builtin-agent", "/agents/0")},
-        human_timeout_ms=None,
-        recording_dir="/recordings",
-        recording_id=None,
-        parameters={"players": 1},
-        llm=LlmConfig(
-            "http://proxy/v1",
-            "http://marker/tick",
-            "http://marker/inflight",
-            {"player_0": "key-0"},
-        ),
-    )
-    one_player_entry = _entry(turns=1, messaging=False)
-
-    # This fixture environment still names two possible players, but only the selected player is needed
-    # for the single completed turn under test.
-    players = build_players(
-        config,
-        one_player_entry,
-        SessionControl(),
-        PausableClock(ManualClock()),
-        _Sleeper(),
-    )
-    with Episode(
-        one_player_entry,
-        players,
-        parameters=resolve_parameters(one_player_entry.meta),
-        seed=1,
-        clock=ManualClock(),
-    ) as episode:
-        episode.step_once()
-
-    assert calls == ["reset", "act"]
+    result, steps = _run(_payload(_llm_block(1), count=1), _entry(turns=1), ManualClock(), tmp_path)
+    assert observed == [
+        ("reset", {"phase": "setup"}),
+        ("act", {"phase": "setup"}),
+        ("chat", {"tick": 0}),
+        ("learn", {"tick": 0}),
+    ]
+    assert requests == [
+        ("Bearer key-0", {"phase": "setup"}),
+        ("Bearer key-0", {"tick": 0}),
+        ("Bearer key-0", {"tick": 0}),
+    ]
+    assert (result.ticks, result.reason, steps[0]["agents"]["player_0"]["action"]) == (1, "terminated", 1)
     diagnostic = capsys.readouterr().err
-    assert "LLM marker failed for player 'player_0': proxy down" in diagnostic
-    assert "key-0" not in diagnostic
-
-
-def test_proxy_snapshots_reuse_each_post_hook_baseline(monkeypatch, tmp_path: Path):
-    import game_sandbox_harness.live as live
-
-    clock = ManualClock()
-
-    class Agent:
-        def reset(self, seed: int, observation: Any) -> None:
-            pass
-
-        def act(self, observation: Any) -> int:
-            clock.advance(70)
-            return 0
-
-        def chat(self, inbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            clock.advance(50)
-            return []
-
-        def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
-            clock.advance(20)
-
-    snapshots = iter([0, 100, 150, 180, 500])
-    snapshot_calls = 0
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        nonlocal snapshot_calls
-        if request.full_url.endswith("/inflight"):
-            snapshot_calls += 1
-            return _Response(json.dumps({"inflight_ms": next(snapshots)}).encode())
-        return _Response()
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
-    payload = _payload(
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://marker/tick",
-            "inflight_url": "http://marker/inflight",
-            "keys": {"player_0": "key-0"},
-        }
-    )
-    payload["parameters"] = {"players": 1}
-    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
-    entry = _entry(turns=1, messaging=True)
-    players = build_players(
-        parse_config([json.dumps(payload)]),
-        entry,
-        SessionControl(),
-        PausableClock(clock),
-        _Sleeper(),
-    )
-    store = FolderRecordingStore(tmp_path)
-
-    run_episode(
-        entry,
-        players,
-        parameters={"players": 1},
-        seed=1,
-        store=store,
-        recording_id="separate-hooks",
-        clock=clock,
-        cpu_clock_ms=lambda: 0,
-        player_attribution={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-        },
-    )
-
-    timing = next(store.open("separate-hooks").steps())["agents"]["player_0"]["timing"]
-    assert timing == {"decision_ms": 20, "chat_ms": 20, "learn_ms": 0}
-    assert snapshot_calls == 5
-
-
-def test_failed_post_hook_snapshot_is_not_reused(monkeypatch, tmp_path: Path, capsys):
-    import game_sandbox_harness.live as live
-
-    clock = ManualClock()
-
-    class Agent:
-        def reset(self, seed: int, observation: Any) -> None:
-            pass
-
-        def act(self, observation: Any) -> int:
-            clock.advance(70)
-            return 0
-
-        def chat(self, inbox: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            clock.advance(50)
-            return []
-
-        def learn(self, observation: Any, action: Any, reward: float, terminated: bool) -> None:
-            clock.advance(20)
-
-    snapshots = iter([0, 100, 150, -1, 200, 210])
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        if request.full_url.endswith("/inflight"):
-            return _Response(json.dumps({"inflight_ms": next(snapshots)}).encode())
-        return _Response()
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
-    payload = _payload(
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://marker/tick",
-            "inflight_url": "http://marker/inflight",
-            "keys": {"player_0": "key-0"},
-        }
-    )
-    payload["parameters"] = {"players": 1}
-    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
-    entry = _entry(turns=1, messaging=True)
-    players = build_players(
-        parse_config([json.dumps(payload)]),
-        entry,
-        SessionControl(),
-        PausableClock(clock),
-        _Sleeper(),
-    )
-    store = FolderRecordingStore(tmp_path)
-
-    run_episode(
-        entry,
-        players,
-        parameters={"players": 1},
-        seed=1,
-        store=store,
-        recording_id="failed-snapshot",
-        clock=clock,
-        cpu_clock_ms=lambda: 0,
-        player_attribution={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-        },
-    )
-
-    timing = next(store.open("failed-snapshot").steps())["agents"]["player_0"]["timing"]
-    assert timing == {"decision_ms": 20, "chat_ms": 50, "learn_ms": 10}
-    assert "LLM in-flight snapshot failed for player 'player_0'" in capsys.readouterr().err
+    assert "LLM marker failed" in diagnostic and "player_0" in diagnostic and "proxy down" in diagnostic
+    assert "snapshot failed" not in diagnostic and "key-0" not in diagnostic
 
 
 @pytest.mark.parametrize(
-    ("snapshots", "expected_decision_ms", "expected_timeouts"),
-    [((0, 0, -1), 600, 1), ((0, 0, 1_000), 0, 0)],
+    "snapshots,work,cpu_ms,limits,timing,outcome",
+    [
+        pytest.param(
+            (0, 100, 150, 180, 500),
+            (70, 50, 20),
+            0,
+            (500, 120_000),
+            {"decision_ms": 20, "chat_ms": 20, "learn_ms": 0},
+            (1, 0, "terminated", None, False),
+            id="reuse-across-hooks",
+        ),
+        pytest.param(
+            (0, 100, 150, -1, 200, 210),
+            (70, 50, 20),
+            0,
+            (500, 120_000),
+            {"decision_ms": 20, "chat_ms": 50, "learn_ms": 10},
+            (1, 0, "terminated", None, True),
+            id="failed-post-read-recovers",
+        ),
+        pytest.param(
+            (0, -1, -1, 100, 130, 140),
+            (70, 50, 20),
+            0,
+            (500, 120_000),
+            {"decision_ms": 70, "chat_ms": 20, "learn_ms": 10},
+            (1, 0, "terminated", None, True),
+            id="failed-required-baseline",
+        ),
+        pytest.param(
+            (0, 100, 90, 90, 90),
+            (70, 50, 20),
+            0,
+            (500, 120_000),
+            {"decision_ms": 70, "chat_ms": 50, "learn_ms": 20},
+            (1, 0, "terminated", None, False),
+            id="decreasing-counter",
+        ),
+        pytest.param(
+            (0, 0, 1000, 1000, 1000),
+            (600, 0, 0),
+            0,
+            (500, 120_000),
+            {"decision_ms": 0, "chat_ms": 0, "learn_ms": 0},
+            (1, 0, "terminated", None, False),
+            id="discount-cannot-be-negative",
+        ),
+        pytest.param(
+            (0, 0, 100, 100, 100),
+            (100, 0, 0),
+            60,
+            (50, 50),
+            {"decision_ms": 60, "chat_ms": 0, "learn_ms": 0},
+            (0, 1, "episode_limit", "player_0", False),
+            id="cpu-floor",
+        ),
+        *[
+            pytest.param(
+                (0, 0, bad, 0, 0, 0),
+                (600, 0, 0),
+                0,
+                (500, 120_000),
+                {"decision_ms": 600, "chat_ms": 0, "learn_ms": 0},
+                (0, 1, "terminated", None, True),
+                id=label,
+            )
+            for label, bad in [
+                ("negative", -1),
+                ("transport-failure", OSError("counter unavailable")),
+                ("malformed-json", b"not json"),
+                ("non-object", b"[]"),
+                ("missing-counter", b"{}"),
+                ("boolean-counter", b'{"inflight_ms":true}'),
+                ("fractional-counter", b'{"inflight_ms":1.5}'),
+            ]
+        ],
+    ],
 )
-def test_proxy_discount_fails_closed_and_is_nonnegative(
-    monkeypatch,
-    tmp_path: Path,
-    snapshots: tuple[int, int],
-    expected_decision_ms: int,
-    expected_timeouts: int,
+def test_proxy_snapshots_reuse_each_post_hook_baseline(
+    snapshots, work, cpu_ms, limits, timing, outcome, monkeypatch, tmp_path, capsys
 ):
-    import game_sandbox_harness.live as live
-
-    clock = ManualClock()
+    clock, cpu = ManualClock(), ManualClock()
 
     class Agent:
-        def reset(self, seed: int, observation: Any) -> None:
+        def reset(self, seed, observation):
             pass
 
-        def act(self, observation: Any) -> int:
-            clock.advance(600)
-            return 0
-
-    snapshots = iter(snapshots)
-
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        if request.full_url.endswith("/inflight"):
-            return _Response(json.dumps({"inflight_ms": next(snapshots)}).encode())
-        return _Response()
-
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
-    monkeypatch.setattr(live, "load_agent", lambda path: Agent())
-    payload = _payload(
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://marker/tick",
-            "inflight_url": "http://marker/inflight",
-            "keys": {"player_0": "key-0"},
-        }
-    )
-    payload["parameters"] = {"players": 1}
-    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
-    entry = _entry(turns=1, messaging=False, step_limit_ms=500)
-    players = build_players(
-        parse_config([json.dumps(payload)]),
-        entry,
-        SessionControl(),
-        PausableClock(clock),
-        _Sleeper(),
-    )
-    store = FolderRecordingStore(tmp_path)
-
-    result = run_episode(
-        entry,
-        players,
-        parameters={"players": 1},
-        seed=1,
-        store=store,
-        recording_id="proxy-discount",
-        clock=clock,
-        cpu_clock_ms=lambda: 0,
-        player_attribution={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-        },
-    )
-
-    timing = next(store.open("proxy-discount").steps())["agents"]["player_0"]["timing"]
-    assert timing["decision_ms"] == expected_decision_ms
-    assert result.step_timeouts == {"player_0": expected_timeouts}
-
-
-def test_proxy_discount_cannot_erase_overlapping_agent_cpu(monkeypatch, tmp_path: Path):
-    import game_sandbox_harness.live as live
-
-    clock = ManualClock()
-    cpu_snapshots = iter([0.0, 0.0, 0.0, 60.0])
-    proxy_snapshots = iter([0, 0, 100])
-
-    class Agent:
-        def reset(self, seed: int, observation: Any) -> None:
-            pass
-
-        def act(self, observation: Any) -> int:
-            # Represents a background proxy request overlapping 60 ms of local agent CPU.
-            clock.advance(100)
+        def act(self, observation):
+            clock.advance(work[0])
+            cpu.advance(cpu_ms)
             return 1
 
-    def urlopen(request: Any, *, timeout: float) -> _Response:
-        if request.full_url.endswith("/inflight"):
-            return _Response(json.dumps({"inflight_ms": next(proxy_snapshots)}).encode())
-        return _Response()
+        def chat(self, inbox):
+            clock.advance(work[1])
+            return []
 
-    monkeypatch.setattr(live.urllib.request, "urlopen", urlopen)
+        def learn(self, observation, action, reward, terminated):
+            clock.advance(work[2])
+
+    requests = _reply_snapshots(monkeypatch, snapshots)
     monkeypatch.setattr(live, "load_agent", lambda path: Agent())
-    payload = _payload(
-        {
-            "base_url": "http://proxy/v1",
-            "tick_url": "http://marker/tick",
-            "inflight_url": "http://marker/inflight",
-            "keys": {"player_0": "key-0"},
-        }
+    result, steps = _run(
+        _payload(_llm_block(1), count=1),
+        _entry(turns=1, step_limit_ms=limits[0], episode_limit_ms=limits[1]),
+        clock,
+        tmp_path,
+        cpu_clock_ms=cpu.now_ms,
     )
-    payload["parameters"] = {"players": 1}
-    payload["player_bindings"] = {"player_0": {"kind": "builtin-agent", "path": "/agents/0"}}
-    payload["players"] = {"player_0": {"kind": "agent", "submission_id": "local-0", "label": "Player 0"}}
-    entry = _entry(turns=1, messaging=False, step_limit_ms=50)
-    players = build_players(
-        parse_config([json.dumps(payload)]),
-        entry,
-        SessionControl(),
-        PausableClock(clock),
-        _Sleeper(),
-    )
-    store = FolderRecordingStore(tmp_path)
-
-    result = run_episode(
-        entry,
-        players,
-        parameters={"players": 1},
-        seed=1,
-        store=store,
-        recording_id="overlapping-cpu",
-        clock=clock,
-        cpu_clock_ms=lambda: next(cpu_snapshots),
-        episode_limit_ms=50,
-        player_attribution={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-        },
-    )
-
-    step = next(store.open("overlapping-cpu").steps())
-    timing = step["agents"]["player_0"]["timing"]
-    assert timing["decision_ms"] == 60
-    assert step["agents"]["player_0"]["action"] == 0
-    assert result.step_timeouts == {"player_0": 1}
-    assert result.reason == "episode_limit"
-    assert result.failed_player == "player_0"
+    action, timeouts, reason, failed_player, diagnostic = outcome
+    assert steps[0]["agents"]["player_0"]["timing"] == timing
+    assert steps[0]["agents"]["player_0"]["action"] == action
+    assert (result.ticks, result.reason, result.failed_player) == (1, reason, failed_player)
+    assert result.step_timeouts == {"player_0": timeouts}
+    assert set(requests) == {("POST", "Bearer key-0")}
+    stderr = capsys.readouterr().err
+    assert ("LLM in-flight snapshot failed for player 'player_0'" in stderr) is diagnostic
+    assert "key-0" not in stderr
 
 
-def test_non_llm_players_do_not_touch_credentials_or_marker_transport(monkeypatch):
-    import game_sandbox_harness.live as live
+def test_non_llm_players_do_not_touch_credentials_or_marker_transport(probe_repos, monkeypatch, tmp_path):
+    create, _ = probe_repos
+    root = create("player_0")
+    payload = _payload(count=1)
+    payload["player_bindings"]["player_0"]["path"] = str(root)
+    requests = []
 
-    seen: list[tuple[str | None, str | None]] = []
+    def no_transport(request, **kwargs):
+        requests.append(request.full_url)
+        raise OSError("non-LLM session attempted a request")
+
+    monkeypatch.setattr(live.urllib.request, "urlopen", no_transport)
+    result, steps = _run(payload, _entry(turns=1), ManualClock(), tmp_path)
+    trace = [json.loads(line) for line in (root / "trace.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert trace == [
+        [phase, "student-base", "student-key", "student-key", client, None]
+        for phase, client in [
+            ("import", None),
+            ("construct", "student-key"),
+            ("reset", "student-key"),
+            ("act", "student-key"),
+            ("chat", "student-key"),
+            ("learn", "student-key"),
+        ]
+    ]
+    assert requests == []
+    assert (os.environ["OPENAI_BASE_URL"], os.environ["OPENAI_API_KEY"]) == ("student-base", "student-key")
+    assert (result.reason, steps[0]["agents"]["player_0"]["action"]) == ("terminated", 1)
+
+
+@pytest.mark.parametrize(
+    "snapshots,cpu_ms,budget,expected",
+    [
+        pytest.param(
+            (0, 90, 90, 90), 0, 10, (2, "episode_limit", "player_0", [1, 1]), id="discount-boundary"
+        ),
+        pytest.param((0, -1), 0, 10, (0, "episode_limit", "player_0", []), id="unavailable-reading"),
+        pytest.param((0, 100), 60, 50, (0, "episode_limit", "player_0", []), id="reset-cpu-floor"),
+    ],
+)
+def test_reset_proxy_discount_obeys_the_episode_budget(
+    snapshots, cpu_ms, budget, expected, monkeypatch, tmp_path, capsys
+):
+    clock, cpu = ManualClock(), ManualClock()
 
     class Agent:
-        def reset(self, seed: int, observation: Any) -> None:
-            seen.append((os.environ.get("OPENAI_BASE_URL"), os.environ.get("OPENAI_API_KEY")))
+        def reset(self, seed, observation):
+            self.actions = 0
+            clock.advance(100)
+            cpu.advance(cpu_ms)
 
-        def act(self, observation: Any) -> int:
-            seen.append((os.environ.get("OPENAI_BASE_URL"), os.environ.get("OPENAI_API_KEY")))
-            return 0
+        def act(self, observation):
+            self.actions += 1
+            if self.actions == 2:
+                clock.advance(1)
+                cpu.advance(1)
+            return 1
 
-    def no_marker(*args: Any, **kwargs: Any) -> _Response:
-        raise AssertionError("non-LLM path attempted a marker request")
-
-    monkeypatch.setenv("OPENAI_BASE_URL", "student-base")
-    monkeypatch.setenv("OPENAI_API_KEY", "student-key")
-    monkeypatch.setattr(live.urllib.request, "urlopen", no_marker)
+    _reply_snapshots(monkeypatch, snapshots)
     monkeypatch.setattr(live, "load_agent", lambda path: Agent())
-    config = LiveConfig(
-        env_id="fake",
-        seed=1,
-        player_bindings={"player_0": PlayerBinding("builtin-agent", "/agents/0")},
-        human_timeout_ms=None,
-        recording_dir="/recordings",
-        recording_id=None,
-        parameters={"players": 1},
+    result, steps = _run(
+        _payload(_llm_block(1), count=1),
+        _entry(turns=2, messaging=False, episode_limit_ms=budget),
+        clock,
+        tmp_path,
+        cpu_clock_ms=cpu.now_ms,
     )
-    entry = _entry(turns=1, messaging=False)
-    players = build_players(
-        config,
-        entry,
-        SessionControl(),
-        PausableClock(ManualClock()),
-        _Sleeper(),
-    )
-    with Episode(
-        entry, players, parameters=resolve_parameters(entry.meta), seed=1, clock=ManualClock()
-    ) as episode:
-        episode.step_once()
-
-    assert seen == [("student-base", "student-key"), ("student-base", "student-key")]
+    assert (result.ticks, result.reason, result.failed_player) == expected[:3]
+    assert result.step_timeouts == {"player_0": 0}
+    assert [step["agents"]["player_0"]["action"] for step in steps] == expected[3]
+    diagnostic = capsys.readouterr().err
+    assert ("snapshot failed" in diagnostic) is (snapshots[1] == -1)
