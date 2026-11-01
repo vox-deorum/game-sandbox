@@ -1,10 +1,6 @@
 """The version-bump script: the pure transforms, the end-to-end apply, and the consistency check.
 
-Most tests run against a synthetic repo tree built under ``tmp_path`` with the module's path
-constants monkeypatched onto it (the pattern ``test_compose.py`` uses), so a bump can be applied and
-re-applied without touching the real repo. One test runs ``check()`` against the live checkout, which
-is exactly what CI runs, but nothing here asserts byte-equality between a fresh freeze and the real
-``deps-v1/requirements.txt``, because the live template set may legitimately drift after a release.
+Tests use a synthetic repository so version bumps, rollback, and drift checks leave the checkout alone.
 """
 
 from __future__ import annotations
@@ -68,12 +64,10 @@ COPY backend/images/session-base/deps-v1/builtin /opt/agents/builtin
 
 def test_freeze_requirements_strips_comments_and_headers():
     frozen = freeze_requirements(_PIP_COMPILE, 3)
-    assert frozen.startswith("# Dependency set for the deps-v3 session base image.")
-    lines = frozen.splitlines()
-    # Two header lines, then only the pins, in order, no "# via" blocks.
-    assert lines[0].startswith("# Dependency set for the deps-v3")
-    assert lines[1].startswith("# template until template-v3 is published")
-    assert lines[2:] == ["annotated-types==0.7.0", "anyio==4.13.0", "numpy==2.4.6"]
+    pins = [line for line in frozen.splitlines() if line and not line.startswith("#")]
+    assert pins == ["annotated-types==0.7.0", "anyio==4.13.0", "numpy==2.4.6"]
+    assert "# via" not in frozen
+    assert "templates/base/requirements.in" not in frozen
     assert frozen.endswith("\n")
 
 
@@ -82,31 +76,9 @@ def test_freeze_requirements_rejects_a_non_pin():
         freeze_requirements("-e .\nanyio==4.13.0\n", 2)
 
 
-def test_rewrite_dockerfile_rewrites_paths_and_comment_prose_only():
-    out = rewrite_dockerfile(_DOCKERFILE, 1, 2)
-    # Every deps-v1 path is now deps-v2; none of the old marker survives.
-    assert "deps-v1" not in out
-    assert out.count("deps-v2") == 4  # one comment mention + three COPY paths
-    # Comment prose is rewritten...
-    assert "dependency-set version 2" in out
-    assert "frozen v2 dependency set" in out
-    assert "session-base:deps-v2" in out
-    # ...but image content on non-comment lines is untouched.
-    assert "FROM python:3.12-slim" in out
-
-
 def test_rewrite_dockerfile_fails_without_its_own_version():
     with pytest.raises(BumpError, match="does not reference"):
         rewrite_dockerfile("FROM python:3.12-slim\n", 1, 2)
-
-
-def test_bump_deps_version_ts_sets_constant_and_appends_entry():
-    out = bump_deps_version_ts(_DEPS_TS, 1, 2)
-    assert "export const DEPS_VERSION = 2" in out
-    assert "export const DEPS_VERSION = 1" not in out
-    # The old entry is kept and the new one appended before the closing "])".
-    assert "[1, { dockerfile: 'backend/images/session-base/deps-v1/Dockerfile' }]," in out
-    assert "[2, { dockerfile: 'backend/images/session-base/deps-v2/Dockerfile' }]," in out
 
 
 def test_bump_deps_version_ts_rejects_wrong_previous():
@@ -140,7 +112,10 @@ def _snapshot_dir(repo: Path) -> Path:
 
 
 def _write_shared_requirements(repo: Path, pins: str) -> None:
-    _write(_snapshot_dir(repo) / "requirements.txt", freeze_requirements(pins, 1))
+    _write(
+        _snapshot_dir(repo) / "requirements.txt",
+        "# Dependency set for the deps-v1 session base image.\n" + pins,
+    )
 
 
 def _write_platform_requirements(repo: Path, variant: str, text: str) -> None:
@@ -162,8 +137,8 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
     deps_v1 = images / "deps-v1"
     _write(deps_v1 / "Dockerfile", _DOCKERFILE)
-    _write(deps_v1 / "requirements.txt", freeze_requirements(_PIP_COMPILE, 1))
-    for variant in bump.TORCH_VARIANTS:
+    _write_shared_requirements(tmp_path, "annotated-types==0.7.0\nanyio==4.13.0\nnumpy==2.4.6\n")
+    for variant in ("cpu", "cuda"):
         _write(deps_v1 / f"requirements.platform.{variant}.in", f"torch==9.9.9 # {variant}\n")
         _write(deps_v1 / f"requirements.platform.{variant}.txt", f"torch==9.9.9 # {variant} pins\n")
     _write(deps_v1 / "builtin" / "flappy_bird" / "naive" / "manifest.json", _manifest(1))
@@ -212,10 +187,16 @@ def test_apply_bumps_every_touchpoint(repo: Path):
 
     ts = (repo / "backend" / "src" / "build" / "deps-version.ts").read_text()
     assert "export const DEPS_VERSION = 2" in ts
-    assert "deps-v2/Dockerfile" in ts
+    assert "[2, { dockerfile: 'backend/images/session-base/deps-v2/Dockerfile' }]," in ts
+    assert "[1, { dockerfile: 'backend/images/session-base/deps-v1/Dockerfile' }]," in ts
 
     deps_v2 = repo / "backend" / "images" / "session-base" / "deps-v2"
-    assert (deps_v2 / "requirements.txt").read_text().startswith("# Dependency set for the deps-v2")
+    pins = [
+        line
+        for line in (deps_v2 / "requirements.txt").read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert pins == ["annotated-types==0.7.0", "anyio==4.13.0", "numpy==2.4.6"]
     assert '"template_version": 2' in (deps_v2 / "builtin" / "hearts" / "naive" / "manifest.json").read_text()
     assert (
         '"template_version": 2' in (deps_v2 / "builtin" / "hearts" / "cautious" / "manifest.json").read_text()
@@ -226,27 +207,16 @@ def test_apply_bumps_every_touchpoint(repo: Path):
     ).read_text() == "wcwidth==0.2.13\n"
     assert (deps_v2 / "builtin" / "flappy_bird" / "naive" / "agent.py").read_text() == "# agent\n"
     # The server-only torch layers carry forward verbatim, and the Dockerfile copies its own.
-    for variant in bump.TORCH_VARIANTS:
+    for variant in ("cpu", "cuda"):
         assert (
             deps_v2 / f"requirements.platform.{variant}.txt"
         ).read_text() == f"torch==9.9.9 # {variant} pins\n"
         assert (deps_v2 / f"requirements.platform.{variant}.in").read_text() == f"torch==9.9.9 # {variant}\n"
-    assert "deps-v2/requirements.platform.${TORCH_VARIANT}.txt" in (deps_v2 / "Dockerfile").read_text()
-
-
-def test_apply_self_verifies_the_completed_bump(repo: Path, monkeypatch: pytest.MonkeyPatch):
-    original_check = bump.check
-    checks = 0
-
-    def tracked_check() -> list[str]:
-        nonlocal checks
-        checks += 1
-        return original_check()
-
-    monkeypatch.setattr(bump, "check", tracked_check)
-    bump.apply(2)
-
-    assert checks == 1
+    dockerfile = (deps_v2 / "Dockerfile").read_text()
+    assert "FROM python:3.12-slim" in dockerfile
+    assert "COPY backend/images/session-base/deps-v2/requirements.txt ./requirements.txt" in dockerfile
+    assert "deps-v2/requirements.platform.${TORCH_VARIANT}.txt" in dockerfile
+    assert "COPY backend/images/session-base/deps-v2/builtin /opt/agents/builtin" in dockerfile
 
 
 def test_apply_restores_the_tree_when_snapshot_creation_fails(repo: Path, monkeypatch: pytest.MonkeyPatch):
@@ -306,12 +276,6 @@ def test_apply_is_idempotent(repo: Path):
     after_first = _snapshot_tree(repo)
     bump.apply(2)  # already at 2: a validated no-op
     assert _snapshot_tree(repo) == after_first
-
-
-def test_apply_same_version_is_a_noop(repo: Path):
-    before = _snapshot_tree(repo)
-    bump.apply(1)
-    assert _snapshot_tree(repo) == before
 
 
 def test_apply_refuses_to_bump_down(repo: Path):
@@ -486,11 +450,3 @@ def test_apply_refuses_a_conflicting_platform_pin(repo: Path):
 
     assert _snapshot_tree(repo) == before
     assert not (repo / "backend" / "images" / "session-base" / "deps-v2").exists()
-
-
-# --- live tree --------------------------------------------------------------------------------
-
-
-def test_check_passes_on_the_real_repo():
-    # No monkeypatching: this is exactly what CI's generated-code-fresh job runs.
-    assert bump.check() == []

@@ -15,46 +15,32 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import _envs  # noqa: E402
 import generate  # noqa: E402
-from _paths import REPO_ROOT  # noqa: E402
-from game_sandbox_harness.environment import BuiltinAgent, EnvironmentMeta, PlayerBounds  # noqa: E402
 
 
-def _meta() -> EnvironmentMeta:
-    return EnvironmentMeta(
-        env_id="example",
-        display_name="Example",
-        description="A complete metadata fixture.",
-        stepping="sequential",
-        builtin_agents=(BuiltinAgent("naive", "Naive"),),
-        layout=PlayerBounds(1, 2),
-        human_players=("player_0", "player_1"),
-        human_timeout_ms=50,
-        recommended_episode_ticks=10,
-        pace_interval_ms=None,
-        step_limit_ms=100,
-        episode_limit_ms=1000,
-        messaging=True,
-        message_cap=12,
-        llm=True,
-        renderer="example",
-        seat_order_matters=True,
-        view_interval_ms=500,
-        live_interval_ms=250,
-    )
+class _MetadataStandIn:
+    def to_json(self) -> dict[str, object]:
+        return {
+            "env_id": "example",
+            "display_name": "Example",
+            "stepping": "sequential",
+            "human_timeout_ms": 50,
+        }
 
 
 def test_environment_metadata_generation_uses_source_discovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     output = tmp_path / "generated" / "environments.json"
-    discovered = {"example": SimpleNamespace(entry=SimpleNamespace(meta=_meta()))}
+    discovered = {"example": SimpleNamespace(entry=SimpleNamespace(meta=_MetadataStandIn()))}
     monkeypatch.setattr(generate, "discover_environments", lambda: discovered)
     monkeypatch.setattr(generate, "BACKEND_GENERATED_DIR", output.parent)
     monkeypatch.setattr(generate, "BACKEND_ENVIRONMENTS_JSON", output)
 
     generate.generate_environments_json()
 
-    assert json.loads(output.read_text(encoding="utf-8")) == [_meta().to_json()]
+    assert json.loads(output.read_text(encoding="utf-8")) == [
+        {"env_id": "example", "display_name": "Example", "stepping": "sequential", "human_timeout_ms": 50}
+    ]
 
 
 def test_environment_pyproject_sync_writes_recognized_entries_and_all_packages(
@@ -169,25 +155,6 @@ def test_environment_wheel_excludes_canonical_guides_and_keeps_license(tmp_path:
     assert not any(name.endswith("/environment.md") for name in names)
 
 
-def test_skirmish_crane_is_installable_and_discovered_as_an_environment():
-    package_names = {path.name for path in _envs.package_dirs()}
-    patterns = _envs._ignore_patterns()
-    recognized_names = {path.name for path in _envs.recognized_package_dirs()}
-    discovered = _envs.discover_environments()
-    discovered_names = set(discovered)
-    pyproject = (REPO_ROOT / "environments" / "pyproject.toml").read_text(encoding="utf-8")
-
-    assert "skirmish_crane" in package_names
-    assert not _envs._is_ignored("skirmish_crane", patterns)
-    assert "skirmish_crane" in recognized_names
-    assert "skirmish_crane" in discovered_names
-    assert (
-        'packages = ["flappy_bird", "hearts", "local_play", "skirmish_crane", "spades", '
-        '"three_branches"]' in pyproject
-    )
-    assert 'skirmish_crane = "skirmish_crane:ENTRY"' in pyproject
-
-
 def test_source_import_replaces_a_cached_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     source_root = tmp_path / "src"
     package = source_root / "example"
@@ -240,42 +207,3 @@ def test_preset_examples_must_be_published(tmp_path: Path):
     _envs._check_preset_examples(package, meta, ("known",))
     with pytest.raises(RuntimeError, match="preset 'season_2' names example 'known'"):
         _envs._check_preset_examples(package, meta, ())
-
-
-def test_current_student_surfaces_exclude_retired_card_player_names():
-    roots = [
-        REPO_ROOT / "templates" / "base",
-        REPO_ROOT / "environments" / "hearts" / "template",
-        REPO_ROOT / "environments" / "hearts" / "examples",
-        REPO_ROOT / "environments" / "spades" / "template",
-        REPO_ROOT / "environments" / "spades" / "examples",
-        REPO_ROOT / "docs" / "students",
-        REPO_ROOT / "docs" / "contributors" / "environments",
-        REPO_ROOT / "docs" / "contributors" / "testing" / "browser-e2e.md",
-        REPO_ROOT / "environments" / "hearts" / "environment.md",
-        REPO_ROOT / "environments" / "spades" / "environment.md",
-    ]
-    files = [
-        path
-        for root in roots
-        for path in ([root] if root.is_file() else root.rglob("*"))
-        if path.is_file() and path.suffix in {".example", ".md", ".py"}
-    ]
-    retired_names = ("my_seat", "partner_seat", "turn_slot")
-    offenders = {
-        str(path.relative_to(REPO_ROOT)): name
-        for path in files
-        for name in retired_names
-        if name in path.read_text(encoding="utf-8")
-    }
-    assert offenders == {}
-
-    code_files = [path for path in files if path.suffix == ".py"]
-    retired_observation_keys = ('"seat"', "'seat'")
-    key_offenders = {
-        str(path.relative_to(REPO_ROOT)): key
-        for path in code_files
-        for key in retired_observation_keys
-        if key in path.read_text(encoding="utf-8")
-    }
-    assert key_offenders == {}

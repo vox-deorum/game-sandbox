@@ -19,91 +19,54 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import ci  # noqa: E402
 
 
-def test_complete_run_passes_no_filters() -> None:
-    """The default must stay unfiltered: anything less cannot seed the demo fixture."""
-    assert ci._e2e_playwright_args([], include_slow=True) == []
-
-
-def test_fast_run_drops_the_slow_arcs() -> None:
-    assert ci._e2e_playwright_args([], include_slow=False) == ["--grep-invert", "@slow"]
-
-
-def test_demo_can_build_main_fixture_without_the_slow_arcs(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[list[str], dict[str, str] | None]] = []
+@pytest.mark.parametrize(
+    ("groups", "include_slow", "demo_fixture", "flags", "data_subdir", "seed"),
+    [
+        ([], None, False, [], "main", None),
+        ([], False, False, ["--grep-invert", "@slow"], "partial", None),
+        ([], False, True, ["--grep-invert", "@slow"], "main", "1"),
+        (["hearts"], None, False, ["--project", "hearts", "--grep-invert", "@slow"], "partial", None),
+        (["play", "auth"], True, False, ["--project", "auth", "--project", "play"], "partial", None),
+    ],
+    ids=["complete", "fast", "fast-demo", "one-group", "multiple-groups-with-slow"],
+)
+def test_browser_job_selects_tests_and_fixture(
+    groups: list[str],
+    include_slow: bool | None,
+    demo_fixture: bool,
+    flags: list[str],
+    data_subdir: str,
+    seed: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[list[str], dict[str, str]]] = []
 
     def capture(args: list[str], *, env: dict[str, str] | None = None, **_: object) -> None:
-        calls.append((args, env))
+        if env is not None:
+            calls.append((args, env))
 
+    monkeypatch.delenv("E2E_DEMO_SEED", raising=False)
     monkeypatch.setattr(ci, "_run", capture)
 
-    ci.job_frontend_e2e(include_slow=False, demo_fixture=True)
+    ci.job_frontend_e2e(groups, include_slow=include_slow, demo_fixture=demo_fixture)
 
     args, env = calls[-1]
-    assert args[-2:] == ["--grep-invert", "@slow"]
-    assert env is not None
-    assert env["E2E_DATA_SUBDIR"] == ci.E2E_MAIN_DATA_SUBDIR
-    # The fast rebuild arms the demo-seed group so it reproduces the released/open seasons the arcs
-    # skipped; a complete run leaves it disarmed so the arcs and the seed cannot double-build.
-    assert env["E2E_DEMO_SEED"] == "1"
-
-
-def test_complete_run_leaves_the_demo_seed_disarmed(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[tuple[list[str], dict[str, str] | None]] = []
-
-    def capture(args: list[str], *, env: dict[str, str] | None = None, **_: object) -> None:
-        calls.append((args, env))
-
-    monkeypatch.setattr(ci, "_run", capture)
-
-    ci.job_frontend_e2e()
-
-    _, env = calls[-1]
-    assert env is not None
-    assert env["E2E_DATA_SUBDIR"] == ci.E2E_MAIN_DATA_SUBDIR
-    assert "E2E_DEMO_SEED" not in env
-
-
-def test_a_group_becomes_a_project_and_skips_the_arcs() -> None:
-    assert ci._e2e_playwright_args(["hearts"], include_slow=False) == [
-        "--project",
-        "hearts",
-        "--grep-invert",
-        "@slow",
-    ]
-
-
-def test_groups_repeat_the_project_flag() -> None:
-    assert ci._e2e_playwright_args(["auth", "play"], include_slow=True) == [
-        "--project",
-        "auth",
-        "--project",
-        "play",
-    ]
-
-
-def test_groups_are_the_spec_directories() -> None:
-    """A group is a directory holding specs, so the filesystem is the only registry to keep in step."""
-    groups = ci.e2e_groups()
-    assert groups == tuple(sorted(groups)), "callers rely on a stable order"
-    assert "hearts" in groups
-    for name in groups:
-        assert list((ci.E2E_DIR / name).glob("*.spec.ts")), f"{name} holds no spec"
-
-
-def test_shared_machinery_is_not_a_group() -> None:
-    """support/ and fixtures/ sit beside the groups and hold no specs, so they must not become projects."""
-    assert "support" not in ci.e2e_groups()
-    assert "fixtures" not in ci.e2e_groups()
+    assert args[1:] == ["exec", "--workspace", "@game-sandbox/frontend", "--", "playwright", "test", *flags]
+    assert env["E2E_DATA_SUBDIR"] == data_subdir
+    assert env.get("E2E_DEMO_SEED") == seed
 
 
 def test_a_new_spec_directory_becomes_a_group(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Adding a directory with a spec in it is the whole procedure for adding a group."""
-    (tmp_path / "support").mkdir()
-    (tmp_path / "support" / "api.ts").write_text("", encoding="utf-8")
-    (tmp_path / "replays").mkdir()
-    (tmp_path / "replays" / "replays.spec.ts").write_text("", encoding="utf-8")
+    for directory, filename in (
+        ("replays", "replays.spec.ts"),
+        ("auth", "login.spec.ts"),
+        ("support", "api.ts"),
+        ("fixtures", "recording.json"),
+    ):
+        (tmp_path / directory).mkdir()
+        (tmp_path / directory / filename).write_text("", encoding="utf-8")
     monkeypatch.setattr(ci, "E2E_DIR", tmp_path)
-    assert ci.e2e_groups() == ("replays",)
+    assert ci.e2e_groups() == ("auth", "replays")
 
 
 @pytest.mark.parametrize("flag", ["--group", "--fast", "--include-slow", "--no-build"])

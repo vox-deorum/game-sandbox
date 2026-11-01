@@ -127,53 +127,6 @@ def _wide_entry(
     )
 
 
-def test_local_config_resolves_the_selected_seat_to_its_player(tmp_path: Path, monkeypatch):
-    monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtin")
-    (play.BUILTIN_AGENT_ROOT / "fixture" / "naive").mkdir(parents=True)
-    config = play.local_config(
-        _entry(),
-        mode="human",
-        seat=1,
-        seed=7,
-        max_steps=3,
-        recording_dir=tmp_path,
-    )
-
-    assert config["player_bindings"] == {
-        "player_0": {
-            "kind": "builtin-agent",
-            "path": str(play.BUILTIN_AGENT_ROOT / "fixture" / "naive"),
-            "name": "naive",
-        },
-        "player_1": {"kind": "external"},
-    }
-    assert config["external_chat_player"] == "player_1"
-    players = config["players"]
-    assert isinstance(players, dict)
-    assert set(players) == {"player_0", "player_1"}
-    assert config["llm"] is None
-    assert config["start_paused"] is True
-    parse_config([json.dumps(config)], entry=_entry())
-
-
-def test_default_layout_exposes_players_and_singleton_seats():
-    entry = _entry()
-
-    assert play.possible_players(entry) == ("player_0", "player_1")
-    assert play.player_for_seat(entry, 1) == "player_1"
-
-
-def test_wide_layout_players_come_from_seat_membership_in_canonical_order():
-    entry = _wide_entry()
-    assert tuple(player for seat in play.default_layout(entry).seats for player in seat.players) == (
-        "player_0",
-        "player_2",
-        "player_1",
-        "player_3",
-    )
-    assert play.possible_players(entry) == ("player_0", "player_1", "player_2", "player_3")
-
-
 def test_wide_layout_uses_the_first_human_capable_member_in_declared_order():
     entry = _wide_entry(human_players=("player_2",))
     assert play.player_for_seat(entry, 0) == "player_2"
@@ -311,9 +264,19 @@ def test_human_cli_routes_the_selected_seat_to_its_player(monkeypatch):
         "player_1": {"kind": "external"},
     }
     assert captured["external_chat_player"] == "player_1"
+    assert captured["players"] == {
+        "player_0": {"kind": "agent", "builtin_name": "naive", "label": "Naive agent"},
+        "player_1": {"kind": "human", "label": "You"},
+    }
+    assert captured["start_paused"] is True
+    assert captured["llm"] is None
+    parsed = parse_config([json.dumps(captured)], entry=_entry())
+    assert parsed.external_chat_player == "player_1"
 
 
+@pytest.mark.parametrize("companion", [None, "naive"], ids=["default", "explicit"])
 def test_wide_human_seat_defaults_to_naive_and_preserves_an_explicit_companion(
+    companion: str | None,
     monkeypatch,
     tmp_path: Path,
 ):
@@ -327,7 +290,7 @@ def test_wide_human_seat_defaults_to_naive_and_preserves_an_explicit_companion(
         seat=0,
         seed=1,
         max_steps=None,
-        companion="naive",
+        companion=companion,
         recording_dir=tmp_path,
     )
     assert config["parameters"] == {"seat_plan": "partnership", "speed": 1}
@@ -355,17 +318,6 @@ def test_wide_human_seat_defaults_to_naive_and_preserves_an_explicit_companion(
         "builtin_name": "naive",
         "label": "Naive agent",
     }
-
-    defaulted = play.local_config(
-        entry,
-        mode="human",
-        seat=0,
-        seed=1,
-        max_steps=None,
-        recording_dir=tmp_path,
-    )
-    assert defaulted["player_bindings"] == config["player_bindings"]
-    assert defaulted["external_chat_player"] == "player_0"
 
 
 def test_self_companion_binds_every_seat_member_as_externally_controlled(

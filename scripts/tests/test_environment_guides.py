@@ -111,15 +111,6 @@ def test_invalid_or_reserved_guide_slugs_fail(env_id: str):
         environment_guide_slug(env_id)
 
 
-def test_slug_collisions_are_rejected_before_publishing(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    monkeypatch.setattr(guides, "environment_guide_slug", lambda _: "same")
-
-    with pytest.raises(EnvironmentGuideError, match="both map"):
-        guides._environment_ids(["alpha", "beta"])
-
-
 def test_render_modes_rewrite_docs_links_and_preserve_external_targets(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

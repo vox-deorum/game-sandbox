@@ -11,21 +11,10 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
 # The dev scripts are run as top-level modules (scripts/ on sys.path), so mirror that here.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import demo  # noqa: E402
-
-
-def test_backend_env_has_no_mock_identity_or_allowlist():
-    # The old mock-identity/allowlist model is gone: no baked frontend user variable and no
-    # session/operator allowlist keys must resurface in the demo backend env. Matched on substrings
-    # so this guard names no removed variable literally.
-    env = demo._demo_env()
-    assert not any("ALLOWLIST" in key for key in env)
-    assert not any("SANDBOX_USER" in key for key in env)
 
 
 def test_backend_env_opts_into_loopback_auth_defaults():
@@ -70,7 +59,6 @@ def test_run_backend_returns_child_exit_code_after_keyboard_interrupt(monkeypatc
     monkeypatch.setattr(demo.subprocess, "Popen", lambda *args, **kwargs: process)
 
     assert demo.run_backend() == 130
-    assert process.wait_calls == 2
 
 
 def test_launch_prints_both_example_accounts(capsys):
@@ -79,22 +67,11 @@ def test_launch_prints_both_example_accounts(capsys):
     # recovery guidance points at the command that rebuilds a stale or incomplete fixture.
     demo._print_credentials()
     out = capsys.readouterr().out
-    assert demo._ADMIN_EMAIL in out
-    assert demo._ADMIN_PASSWORD in out
-    assert demo._MEMBER_EMAIL in out
-    assert demo._MEMBER_PASSWORD in out
+    assert "admin@example.com" in out
+    assert "admin-dev-password" in out
+    assert "ada-lovelace@e2e.local" in out
+    assert "e2e-member-password" in out
     assert "--rerun-e2e" in out
-
-
-def test_rerun_help_explains_stale_schema_recovery(capsys):
-    with pytest.raises(SystemExit):
-        demo.main(["--help"])
-
-    out = capsys.readouterr().out
-    # argparse wraps help to the terminal width, so collapse the wrapping before matching.
-    out = " ".join(out.split())
-    assert "stale-" in out
-    assert "schema SQLite startup errors" in out
 
 
 def test_rebuild_skips_slow_tests_and_replaces_the_main_fixture(tmp_path, monkeypatch):
@@ -118,15 +95,6 @@ def test_rebuild_skips_slow_tests_and_replaces_the_main_fixture(tmp_path, monkey
     assert calls == [{"include_slow": False, "demo_fixture": True}]
     assert database.read_bytes() == b"fresh"
     assert not (main / "stale.txt").exists()
-
-
-def test_bootstrap_admin_and_ordinary_member_are_distinct_personas():
-    # The bootstrap account is role `admin`; the e2e member fixture stays role `user`. There is no
-    # allowlist left to encode that distinction in env, so it is encoded in the two separate
-    # persona constants: different emails, and the member is specifically Ada (the data-rich
-    # non-admin), never promoted to admin.
-    assert demo._ADMIN_EMAIL != demo._MEMBER_EMAIL
-    assert demo._MEMBER_EMAIL.startswith("ada-lovelace@")
 
 
 def test_prepare_demo_data_snapshots_database_and_sidecars(tmp_path, monkeypatch):

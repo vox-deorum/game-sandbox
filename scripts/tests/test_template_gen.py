@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -48,134 +50,114 @@ def _meta() -> EnvironmentMeta:
     )
 
 
-def test_write_env_package_copies_modules_and_renders_uniform_inits(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("has_overlay_static", [True, False], ids=["static-overlay", "no-static-overlay"])
+def test_write_env_package_exports_metadata_and_hooks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, has_overlay_static: bool
 ):
     source = tmp_path / "source"
     package = source / "example"
     package.mkdir(parents=True)
-    (package / "env.py").write_text("VALUE = 1\n", encoding="utf-8")
-    (package / "overlay.py").write_text("VALUE = 2\n", encoding="utf-8")
+    env_source = "def make_env(): return 'example'\ndef default_action(env, player): return 7\n"
+    (package / "env.py").write_text(env_source, encoding="utf-8")
+    overlay_source = "def extract_overlay(env): return {'score': 3}\n"
+    if has_overlay_static:
+        overlay_source += "def extract_overlay_static(env): return {'width': 10}\n"
+    (package / "overlay.py").write_text(overlay_source, encoding="utf-8")
     monkeypatch.setattr(template_gen, "ENVIRONMENT_PACKAGES_DIR", source)
     dest = tmp_path / "sandbox" / "env"
-    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py", "example/overlay.py"))
-
-    template_gen.write_env_package("example", spec, _meta(), dest)
-
-    assert (dest / "example" / "env.py").read_text(encoding="utf-8") == "VALUE = 1\n"
-    rendered = (dest / "__init__.py").read_text(encoding="utf-8")
-    assert "from sandbox.harness.environment import (" in rendered
-    for name in (
-        "BuiltinAgent",
-        "EnvParameter",
-        "EnvParameterChoice",
-        "EnvironmentMeta",
-        "PlayerBounds",
-        "SeatDeclaration",
-    ):
-        assert f"    {name}," in rendered
-    assert "META = EnvironmentMeta(" in rendered
-    assert '"layout": PlayerBounds(min=1, max=2),' in rendered
-    assert "\"builtin_agents\": (BuiltinAgent(name='naive', label='Naive'),)," in rendered
-    for field in _meta().to_json():
-        assert f'"{field}"' in rendered
-    assert 'PLAYER_ID = "player_0"' in rendered
-    assert '"PLAYER_ID",' in rendered
-    assert '"META",' in rendered
-    assert "extract_overlay_static" in rendered
-    assert rendered.startswith("# GAME-SANDBOX-GENERATED-ENV: scripts/compose.py\n")
-
-
-@pytest.mark.parametrize(
-    ("has_overlay_static", "expected"),
-    [
-        (True, "from .overlay import extract_overlay, extract_overlay_static"),
-        (False, "extract_overlay_static = None"),
-    ],
-)
-def test_rendered_inner_init_always_exports_the_static_overlay_hook(
-    has_overlay_static: bool, expected: str
-) -> None:
     spec = TemplateEnvironmentSpec(
-        "Example", "example", ("example/env.py",), has_overlay_static=has_overlay_static
+        "Example",
+        "example",
+        ("example/env.py", "example/overlay.py"),
+        player_id="player_1",
+        has_overlay_static=has_overlay_static,
     )
-
-    rendered = template_gen._render_inner_init(spec)
-
-    assert expected in rendered
-    assert '"extract_overlay_static"' in rendered
-
-
-def test_rendered_metadata_constructs_declared_seats() -> None:
-    meta = EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "layout": SeatPlans(
-                (
-                    SeatPlan(
-                        key="duo",
-                        title="Duo",
-                        seats=(
-                            SeatDeclaration(players=(0,), restricted_builtin="naive"),
-                            SeatDeclaration((1,)),
-                        ),
+    meta = replace(
+        _meta(),
+        layout=SeatPlans(
+            (
+                SeatPlan(
+                    "duo",
+                    "Duo",
+                    (
+                        SeatDeclaration((0,), restricted_builtin="naive"),
+                        SeatDeclaration((1,)),
                     ),
-                )
-            ),
-        }
-    )
-    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py",))
-
-    rendered = template_gen._render_sandbox_init("example", spec, meta)
-
-    assert "SeatDeclaration(players=(0,), restricted_builtin='naive')" in rendered
-    assert "SeatDeclaration(players=(1,), restricted_builtin=None)" in rendered
-
-
-def test_rendered_metadata_imports_and_preserves_preset_tuples() -> None:
-    meta = EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "presets": (
-                EnvPreset("starter", "Starter", {}),
-                EnvPreset("faster", "Faster", {"players": 2}),
-            ),
-        }
-    )
-    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py",))
-
-    rendered = template_gen._render_sandbox_init("example", spec, meta)
-
-    assert "    EnvPreset," in rendered
-    assert (
-        "\"presets\": (EnvPreset(name='starter', title='Starter', values={}, llm=False, example=None), "
-        "EnvPreset(" in rendered
-    )
-    assert "name='faster', title='Faster', values={'players': 2}, llm=False, example=None" in rendered
-
-
-def test_render_declaration_tuple_uses_evaluable_dataclass_representation() -> None:
-    parameters = (
-        EnvParameter(
-            name="mode",
-            title="Player's mode",
-            description="Select one mode.",
-            type="choice",
-            default="normal",
-            choices=(EnvParameterChoice(value="normal", label="Normal"),),
+                ),
+            )
         ),
+        parameters=(
+            EnvParameter(
+                name="mode",
+                title="Player's mode",
+                description="Select one mode.",
+                type="choice",
+                default="normal",
+                choices=(EnvParameterChoice("normal", "Normal"),),
+            ),
+        ),
+        presets=(EnvPreset("starter", "Starter", {}), EnvPreset("faster", "Faster", {"mode": "normal"})),
     )
+    template_gen.write_env_package("example", spec, meta, dest)
+    template_gen.write_harness(tmp_path / "sandbox" / "harness")
+    (tmp_path / "sandbox" / "__init__.py").write_text("", encoding="utf-8")
 
-    rendered = template_gen._render_declaration_tuple("parameters", parameters)
-
-    assert rendered == repr(parameters)
-    assert (
-        eval(  # noqa: S307 - the generator output is built only from validated dataclass values
-            rendered,
-            {"EnvParameter": EnvParameter, "EnvParameterChoice": EnvParameterChoice},
-        )
-        == parameters
-    )
+    assert (dest / "example" / "env.py").read_text(encoding="utf-8") == env_source
+    # Keep imports of this generated package local to this test.
+    for name in list(sys.modules):
+        if name == "sandbox" or name.startswith("sandbox."):
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    try:
+        generated = importlib.import_module("sandbox.env")
+        assert generated.ENV_ID == "example"
+        assert generated.PLAYER_ID == "player_1"
+        assert generated.make_env() == "example"
+        assert generated.default_action(None, "player_1") == 7
+        assert generated.extract_overlay(None) == {"score": 3}
+        if has_overlay_static:
+            assert generated.extract_overlay_static(None) == {"width": 10}
+        else:
+            assert generated.extract_overlay_static is None
+        actual = generated.META
+        expected = {
+            "env_id": "example",
+            "display_name": "Example",
+            "description": "A complete metadata fixture.",
+            "stepping": "sequential",
+            "human_players": ("player_0", "player_1"),
+            "human_timeout_ms": 50,
+            "recommended_episode_ticks": 10,
+            "pace_interval_ms": None,
+            "step_limit_ms": 100,
+            "episode_limit_ms": 1000,
+            "messaging": True,
+            "message_cap": 12,
+            "llm": True,
+            "renderer": "example",
+            "seat_order_matters": True,
+            "view_interval_ms": 500,
+            "live_interval_ms": 250,
+        }
+        assert {field: getattr(actual, field) for field in expected} == expected
+        assert [(agent.name, agent.label) for agent in actual.builtin_agents] == [("naive", "Naive")]
+        (plan,) = actual.layout.plans
+        assert (plan.key, plan.title) == ("duo", "Duo")
+        assert [(seat.players, seat.restricted_builtin) for seat in plan.seats] == [
+            ((0,), "naive"),
+            ((1,), None),
+        ]
+        (parameter,) = actual.parameters
+        assert (parameter.name, parameter.title, parameter.default) == ("mode", "Player's mode", "normal")
+        assert [(choice.value, choice.label) for choice in parameter.choices] == [("normal", "Normal")]
+        assert [(preset.name, preset.title, preset.values) for preset in actual.presets] == [
+            ("starter", "Starter", {}),
+            ("faster", "Faster", {"mode": "normal"}),
+        ]
+    finally:
+        for name in list(sys.modules):
+            if name == "sandbox" or name.startswith("sandbox."):
+                del sys.modules[name]
 
 
 def test_write_harness_replaces_existing_contents_and_skips_caches(tmp_path: Path):
@@ -196,29 +178,16 @@ def test_write_base_helpers_copies_canonical_sources(tmp_path: Path, monkeypatch
     helper = source / "local_play" / "card_utils.py"
     helper.parent.mkdir(parents=True)
     helper.write_text("VALUE = 1\n", encoding="utf-8")
-    monkeypatch.setattr(template_gen, "ENVIRONMENT_PACKAGES_DIR", source)
-    monkeypatch.setattr(template_gen, "TEMPLATE_BASE_MODULES", {"card_utils.py": "local_play/card_utils.py"})
-    spec = TemplateEnvironmentSpec("Example", "example", ("example/env.py",))
-
-    template_gen.write_base_helpers(tmp_path / "sandbox", spec)
-
-    assert (tmp_path / "sandbox" / "card_utils.py").read_text(encoding="utf-8") == "VALUE = 1\n"
-
-
-def test_write_base_helpers_also_copies_env_sandbox_modules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    source = tmp_path / "source"
     env_module = source / "example" / "cards.py"
     env_module.parent.mkdir(parents=True)
     env_module.write_text("VALUE = 2\n", encoding="utf-8")
     monkeypatch.setattr(template_gen, "ENVIRONMENT_PACKAGES_DIR", source)
-    monkeypatch.setattr(template_gen, "TEMPLATE_BASE_MODULES", {})
+    monkeypatch.setattr(template_gen, "TEMPLATE_BASE_MODULES", {"card_utils.py": "local_play/card_utils.py"})
     spec = TemplateEnvironmentSpec(
-        "Example",
-        "example",
-        ("example/env.py",),
-        env_sandbox_modules={"cards.py": "example/cards.py"},
+        "Example", "example", ("example/env.py",), env_sandbox_modules={"cards.py": "example/cards.py"}
     )
 
     template_gen.write_base_helpers(tmp_path / "sandbox", spec)
 
+    assert (tmp_path / "sandbox" / "card_utils.py").read_text(encoding="utf-8") == "VALUE = 1\n"
     assert (tmp_path / "sandbox" / "cards.py").read_text(encoding="utf-8") == "VALUE = 2\n"

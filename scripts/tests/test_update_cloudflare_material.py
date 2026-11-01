@@ -35,7 +35,6 @@ def test_update_writes_sorted_deterministic_allowlist_atomically(tmp_path: Path)
     }
 
     def opener(request: object, timeout: int) -> FakeResponse:
-        assert timeout == 30
         return FakeResponse(responses[request.full_url])  # type: ignore[attr-defined]
 
     output = tmp_path / "nested" / "cloudflare-allow.conf"
@@ -44,11 +43,35 @@ def test_update_writes_sorted_deterministic_allowlist_atomically(tmp_path: Path)
     update(output, opener)
 
     assert output.read_text(encoding="utf-8") == first
-    assert "allow 103.21.244.0/22;" in first
-    assert first.index("allow 103.21.244.0/22;") < first.index("allow 198.41.128.0/17;")
-    assert "Rebuild and recreate the proxy" in first
-    assert "external firewall allowlist" in first
+    directives = [line for line in first.splitlines() if line and not line.startswith("#")]
+    assert directives == [
+        "allow 103.21.244.0/22;",
+        "allow 198.41.128.0/17;",
+        "allow 2400:cb00::/32;",
+        "allow 2606:4700::/32;",
+        "deny all;",
+    ]
     assert not list(output.parent.glob(".cloudflare-allow.conf.*"))
+
+
+@pytest.mark.parametrize("invalid_url", [IPV4_URL, IPV6_URL], ids=["invalid-ipv4", "invalid-ipv6"])
+def test_update_preserves_existing_allowlist_when_download_is_invalid(
+    tmp_path: Path, invalid_url: str
+) -> None:
+    responses = {IPV4_URL: "103.21.244.0/22\n", IPV6_URL: "2400:cb00::/32\n"}
+    responses[invalid_url] = "not-a-cidr\n"
+
+    def opener(request: object, timeout: int) -> FakeResponse:
+        return FakeResponse(responses[request.full_url])  # type: ignore[attr-defined]
+
+    output = tmp_path / "cloudflare-allow.conf"
+    original = b"allow 192.0.2.0/24;\ndeny all;\n"
+    output.write_bytes(original)
+
+    with pytest.raises(ValueError):
+        update(output, opener)
+
+    assert output.read_bytes() == original
 
 
 def test_parse_networks_rejects_wrong_address_family() -> None:

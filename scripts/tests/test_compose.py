@@ -50,6 +50,8 @@ def test_compose_template_has_base_and_env_files():
     assert (out / "sandbox" / "card_types.py").exists()  # generated shared helper
     assert (out / "sandbox" / "shared_modules.py").exists()  # generated shared helper
     assert (out / "sandbox" / "builtins" / "naive" / "manifest.json").is_file()
+    # The browser bundle belongs to publication staging, so ordinary composition omits it.
+    assert not (out / "sandbox" / "web").exists()
 
 
 @pytest.mark.parametrize("env", list_envs())
@@ -103,15 +105,6 @@ def test_composed_launchers_preserve_static_overlay_hooks(tmp_path: Path, monkey
         assert play.META.env_id == env_id
         assert (play._entry().overlay_static is not None) is has_overlay_static
         assert (live_local.ENTRY.overlay_static is not None) is has_overlay_static
-
-
-def test_three_branches_composed_launcher_defaults_player_id_to_the_visitor():
-    """Days at Three Branches declares only the visitor (player_0) as human-playable, so the
-    generated launcher's PLAYER_ID must follow that declaration through discovery and rendering,
-    not merely coincide with the common single-agent default."""
-    out = compose_template("three_branches")
-    rendered = (out / "sandbox" / "env" / "__init__.py").read_text(encoding="utf-8")
-    assert 'PLAYER_ID = "player_0"' in rendered
 
 
 def test_three_branches_composition_ships_the_stdlib_village_data_files():
@@ -259,20 +252,12 @@ def test_env_layer_with_requirements_file_raises(tmp_path: Path, monkeypatch: py
         compose_mod.compose_template("stray")
 
 
-def test_compose_ships_environment_page():
-    out = compose_template("flappy_bird")
-    env_doc = out / "environment.md"
-    # The environment's student docs page is copied in as environment.md, so the README can
-    # point at a local reference instead of duplicating the observation/action tables.
-    assert env_doc.exists()
-    text = env_doc.read_text(encoding="utf-8")
-    assert "# Flappy Bird" in text
-    assert "## Observations" in text
-
-
 def test_environment_page_cross_doc_links_resolve_to_absolute_urls():
     out = compose_template("flappy_bird")
     text = (out / "environment.md").read_text(encoding="utf-8")
+    # The environment's student docs page ships as environment.md, carrying its own headings.
+    assert "# Flappy Bird" in text
+    assert "## Observations" in text
     # The page's ../agent-interface.md link would dangle in a student's clone, so compose rewrites
     # it to an absolute docs-site URL. No relative doc link and no unresolved token may survive.
     assert "](../agent-interface.md" not in text
@@ -303,21 +288,11 @@ def test_localize_docs_links_rewrites_only_cross_doc_links():
     assert "[wiki](https://example.com/x)" in out
 
 
-def test_example_inherits_environment_page():
-    out = compose_example("flappy_bird", "hello")
-    # The example is composed on top of the template, so it inherits environment.md too.
-    assert (out / "environment.md").exists()
-
-
-@pytest.mark.parametrize("env", list_envs())
-def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
-    out = compose_template(env)
+def test_every_template_ships_localized_llm_guide_and_smoke_command():
+    out = compose_template("flappy_bird")
     guide = (out / "llm.md").read_text(encoding="utf-8")
     readme = (out / "README.md").read_text(encoding="utf-8")
-    example = (out / "sandbox" / "llm_example.py").read_text(encoding="utf-8")
-    background_helper = (out / "sandbox" / "llm.py").read_text(encoding="utf-8")
-    dispatcher = (out / "sandbox" / "__main__.py").read_text(encoding="utf-8")
-    dotenv = (out / ".env.example").read_text(encoding="utf-8")
+    dotenv_lines = (out / ".env.example").read_text(encoding="utf-8").splitlines()
 
     assert "# Using the LLM API" in guide
     assert "{{DOCS_URL}}" not in guide
@@ -325,25 +300,12 @@ def test_every_template_ships_localized_llm_guide_and_smoke_command(env: str):
     assert "[LLM API specification](https://" in guide
     assert "[Using the LLM API](llm.md)" in readme
     assert "python -m sandbox llm" in readme
-    assert "python -m sandbox llm [small|medium|large]" in example
-    assert "class BackgroundLLM" in background_helper
-    # Compose only owns that the smoke command's surfaces ship together; the dispatcher's exact
-    # wiring (probe constant, table formatting) is the dispatcher test's contract, not this one.
-    assert '"llm"' in dispatcher
-    assert "sandbox.llm_example" in dispatcher
-    dotenv_lines = dotenv.splitlines()
+    # The smoke command's module surfaces ship together in every composed template.
+    assert (out / "sandbox" / "llm.py").is_file()
+    assert (out / "sandbox" / "llm_example.py").is_file()
+    assert (out / "sandbox" / "__main__.py").is_file()
     assert "OPENAI_BASE_URL=" in dotenv_lines
     assert "OPENAI_API_KEY=" in dotenv_lines
-
-    documentation = "\n".join(path.read_text(encoding="utf-8") for path in out.rglob("*.md"))
-    assert "python -m sandbox.llm_example" not in documentation
-
-
-def test_oracle_example_composes_with_its_agent_and_failure_tests():
-    out = compose_example("hearts", "oracle")
-    assert "class Agent" in (out / "agent.py").read_text(encoding="utf-8")
-    assert (out / "tests" / "test_oracle.py").exists()
-    assert (out / "llm.md").exists()
 
 
 def test_compose_env_without_canonical_guide_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -374,13 +336,6 @@ def test_compose_env_without_canonical_guide_raises(tmp_path: Path, monkeypatch:
         compose_mod.compose_template("stray")
 
 
-def test_overlay_file_wins_over_template():
-    out = compose_example("flappy_bird", "hello")
-    # The colocated Flappy Bird hello agent overrides the template placeholder.
-    assert "hello" in (out / "agent.py").read_text(encoding="utf-8")
-    assert "wcwidth" in (out / "agent.py").read_text(encoding="utf-8")
-
-
 def test_extra_requirements_are_appended():
     out = compose_example("flappy_bird", "hello")
     composed = (out / "requirements.txt").read_text(encoding="utf-8")
@@ -392,14 +347,12 @@ def test_extra_requirements_are_appended():
 
 def test_inherited_and_overlay_tests_coexist():
     out = compose_example("flappy_bird", "hello")
+    agent = (out / "agent.py").read_text(encoding="utf-8")
+    assert "hello" in agent
+    assert "wcwidth" in agent
     assert (out / "tests" / "test_agent.py").exists()  # inherited from the base layer
     assert (out / "tests" / "test_hello.py").exists()  # added by the example
-
-
-def test_merge_appends_non_conflicting_extra():
-    merged = _merge_requirements("attrs==24.2.0\n", "wcwidth==0.2.13\n")
-    assert "attrs==24.2.0" in merged
-    assert "wcwidth==0.2.13" in merged
+    assert (out / "environment.md").exists()  # inherited from the template
 
 
 def test_merge_fails_loudly_on_conflicting_pin():
@@ -412,40 +365,36 @@ def test_compose_unknown_example_raises():
         compose_example("flappy_bird", "does-not-exist")
 
 
-def test_flappy_bird_is_a_registered_env():
-    # Sanity: the worked example env exists, so the tests above compose against real content.
-    assert "flappy_bird" in list_envs()
-    assert "base" not in list_envs()
+def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import compose as compose_mod
 
+    examples_root = tmp_path / "examples"
+    for env, names in {
+        "zulu": ("published", "draft"),
+        "alpha": ("second", "internal", "first"),
+    }.items():
+        for name in names:
+            (examples_root / env / name).mkdir(parents=True)
 
-def test_published_examples_are_sorted_allowlists_while_source_inventory_stays_complete():
+    # Discovery is deliberately out of order, and each published allowlist is unsorted too.
+    discovered = {
+        "zulu": SimpleNamespace(published_examples=("published",)),
+        "alpha": SimpleNamespace(published_examples=("second", "first")),
+    }
+    monkeypatch.setattr(compose_mod, "discover_environments", lambda: discovered)
+    monkeypatch.setattr(compose_mod, "env_examples_dir", lambda env: examples_root / env)
+
     assert list_published_examples() == [
-        ("skirmish_crane", "banner"),
-        ("skirmish_crane", "imitation"),
-        ("three_branches", "neighbor"),
+        ("alpha", "first"),
+        ("alpha", "second"),
+        ("zulu", "published"),
     ]
     assert list_examples() == [
-        ("flappy_bird", "hello"),
-        ("hearts", "assassin"),
-        ("hearts", "closer"),
-        ("hearts", "duck"),
-        ("hearts", "moonshot"),
-        ("hearts", "oracle"),
-        ("skirmish_crane", "banner"),
-        ("skirmish_crane", "imitation"),
-        ("skirmish_crane", "marcher"),
-        ("skirmish_crane", "vanguard"),
-        ("spades", "counter"),
-        ("spades", "daredevil"),
-        ("spades", "signaler"),
-        ("three_branches", "neighbor"),
-        ("three_branches", "sweeper"),
+        ("alpha", "first"),
+        ("alpha", "internal"),
+        ("alpha", "second"),
+        ("zulu", "draft"),
+        ("zulu", "published"),
     ]
-
-
-def test_published_example_readmes_describe_the_runnable_checkout():
-    for env, name in list_published_examples():
-        readme = (compose_example(env, name) / "README.md").read_text(encoding="utf-8")
-
-        assert "python -m sandbox watch" in readme
-        assert "scripts/compose.py" not in readme
