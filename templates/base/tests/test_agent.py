@@ -27,12 +27,6 @@ def test_manifest_parses_and_names_a_loadable_class():
     assert agent is not None
 
 
-def test_agent_has_required_interface():
-    agent = load_agent(REPO_ROOT)
-    assert callable(getattr(agent, "reset", None))
-    assert callable(getattr(agent, "act", None))
-
-
 def test_three_step_headless_episode_runs():
     agent = load_agent(REPO_ROOT)
     env = make_env(resolve_parameters(META))

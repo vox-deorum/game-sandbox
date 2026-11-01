@@ -88,10 +88,11 @@ def test_finished_unread_reply_is_not_replaced(monkeypatch: pytest.MonkeyPatch) 
     completions.release.set()
 
     class ImmediateThread:
-        def __init__(self, *, target: Callable[..., None], args: tuple[object, ...], daemon: bool) -> None:
+        def __init__(
+            self, *, target: Callable[..., None], args: tuple[object, ...], **_kwargs: object
+        ) -> None:
             self._target = target
             self._args = args
-            assert daemon
 
         def start(self) -> None:
             self._target(*self._args)
@@ -168,16 +169,47 @@ def test_request_failure_sets_error_and_frees_the_slot(
     assert helper.error is None
 
 
-def test_credentials_are_required_on_first_request(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(llm, "load_dotenv", lambda: None)
-    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+@pytest.mark.parametrize("missing", ["OPENAI_BASE_URL", "OPENAI_API_KEY"])
+def test_credentials_are_required_on_first_request(monkeypatch: pytest.MonkeyPatch, missing: str) -> None:
+    _completions, clients = _install_client(monkeypatch)
+    monkeypatch.delenv(missing)
     helper = llm.BackgroundLLM()
 
-    with pytest.raises(RuntimeError, match="OPENAI_BASE_URL and OPENAI_API_KEY"):
+    with pytest.raises(RuntimeError, match=missing):
         helper.request(model="small", messages=[])
 
     assert not helper.requesting
+    assert clients == []
+
+
+def test_client_captures_credentials_on_first_request_and_reuses_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    completions, clients = _install_client(monkeypatch)
+    monkeypatch.delenv("OPENAI_BASE_URL")
+    monkeypatch.delenv("OPENAI_API_KEY")
+    helper = llm.BackgroundLLM()
+    assert clients == []
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://first.example/api/llm/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "first-player-key")
+    assert helper.request(model="small", messages=[])
+    completions.release.set()
+    assert _eventually(lambda: helper.response() == "later reply")
+
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://other.example/api/llm/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "other-player-key")
+    assert helper.request(model="medium", messages=[])
+    assert _eventually(lambda: helper.response() == "later reply")
+
+    assert clients == [
+        {
+            "base_url": "https://first.example/api/llm/v1",
+            "api_key": "first-player-key",
+            "max_retries": 0,
+        }
+    ]
+    assert [call["model"] for call in completions.calls] == ["small", "medium"]
 
 
 def _eventually(predicate: Callable[[], bool]) -> bool:

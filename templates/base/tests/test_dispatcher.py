@@ -1,17 +1,20 @@
-"""Focused tests for the dependency-aware ``python -m sandbox`` dispatcher."""
+"""Tests for the dependency-aware sandbox command."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from sandbox import __main__ as dispatcher
 
 
-def test_help_lists_llm(capsys):
+def test_help_lists_commands(capsys):
     assert dispatcher.main(["--help"]) == 0
     output = capsys.readouterr().out
-    assert "llm      smoke-test small, medium, or large (default: small)" in output
+    commands = {line.split()[0] for line in output.splitlines() if line.split()}
+    assert {"play", "watch", "eval", "test", "llm", "setup"} <= commands
     assert "season.json" in output
 
 
@@ -25,77 +28,80 @@ def test_setup_help_prints_usage_instead_of_installing(capsys, monkeypatch):
     assert "usage: python -m sandbox setup" in capsys.readouterr().out
 
 
-def test_llm_dispatches_with_its_probe_and_forwards_arguments(monkeypatch):
-    seen: list[tuple[list[str], str]] = []
-
-    monkeypatch.setattr(dispatcher, "_run", lambda args, probe: seen.append((args, probe)) or 0)
-
-    assert dispatcher.main(["llm", "--example-flag", "value"]) == 0
-    assert seen == [(["-m", "sandbox.llm_example", "--example-flag", "value"], "import openai, dotenv")]
-
-
-def test_browser_commands_dispatch_their_positional_modes(monkeypatch):
-    seen: list[tuple[list[str], str]] = []
-    monkeypatch.setattr(dispatcher, "_run", lambda args, probe: seen.append((args, probe)) or 0)
-
-    assert dispatcher.main([]) == 0
-    assert dispatcher.main(["play", "--seed", "7"]) == 0
-    assert dispatcher.main(["watch", "--seed", "8"]) == 0
-
-    assert seen == [
-        (["-m", "sandbox.play", "human"], dispatcher._RUNTIME_PROBE),
-        (["-m", "sandbox.play", "human", "--seed", "7"], dispatcher._RUNTIME_PROBE),
-        (["-m", "sandbox.play", "agent", "--seed", "8"], dispatcher._RUNTIME_PROBE),
-    ]
-
-
-def test_retired_human_command_is_rejected(capsys):
-    assert dispatcher.main(["human"]) == 2
-    error = capsys.readouterr().err
-    assert "unknown command 'human'" in error
-    assert "play     control a player in your browser" in error
-
-
-def test_current_interpreter_without_llm_dependencies_uses_setup(tmp_path: Path, monkeypatch):
-    missing_venv = tmp_path / "missing-python"
-    probes: list[tuple[str, str]] = []
-
-    monkeypatch.setattr(dispatcher, "_venv_python", lambda: missing_venv)
-    monkeypatch.setattr(
-        dispatcher,
-        "_has_runtime",
-        lambda python, probe: probes.append((python, probe)) or False,
-    )
-    monkeypatch.setattr(dispatcher, "setup", lambda: "repaired-python")
-
-    assert dispatcher._runtime_python(dispatcher._LLM_PROBE) == "repaired-python"
-    assert probes == [(sys.executable, "import openai, dotenv")]
-
-
-def test_stale_venv_without_llm_dependencies_is_repaired(tmp_path: Path, monkeypatch):
-    stale_python = tmp_path / "python"
-    stale_python.touch()
-    probes: list[tuple[str, str]] = []
-
-    monkeypatch.setattr(dispatcher, "_venv_python", lambda: stale_python)
-    monkeypatch.setattr(
-        dispatcher,
-        "_has_runtime",
-        lambda python, probe: probes.append((python, probe)) or False,
-    )
-    monkeypatch.setattr(dispatcher, "setup", lambda: "repaired-python")
-
-    assert dispatcher._runtime_python(dispatcher._LLM_PROBE) == "repaired-python"
-    assert probes == [(str(stale_python), "import openai, dotenv")]
-
-
-def test_current_compatible_interpreter_does_not_bootstrap(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize(
+    ("arguments", "command"),
+    [
+        ([], ["-m", "sandbox.play", "human"]),
+        (["--seed", "6"], ["-m", "sandbox.play", "human", "--seed", "6"]),
+        (["play", "--seed", "7"], ["-m", "sandbox.play", "human", "--seed", "7"]),
+        (["watch", "--seed", "8"], ["-m", "sandbox.play", "agent", "--seed", "8"]),
+        (["eval", "--episodes", "2"], ["-m", "sandbox.evaluate", "--episodes", "2"]),
+        (["test", "-k", "mine"], ["-m", "pytest", "-k", "mine"]),
+        (["llm", "medium"], ["-m", "sandbox.llm_example", "medium"]),
+    ],
+)
+def test_commands_launch_with_arguments_and_return_the_child_status(
+    monkeypatch, tmp_path, arguments, command
+):
+    monkeypatch.setattr(dispatcher, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(dispatcher, "_venv_python", lambda: tmp_path / "missing-python")
     monkeypatch.setattr(dispatcher, "_has_runtime", lambda python, probe: True)
+    launches = []
 
-    def unexpected_setup() -> str:
-        raise AssertionError("setup called")
+    def run(args, **kwargs):
+        launches.append((args, kwargs["cwd"]))
+        return SimpleNamespace(returncode=7)
 
-    monkeypatch.setattr(dispatcher, "setup", unexpected_setup)
+    monkeypatch.setattr(dispatcher.subprocess, "run", run)
 
-    assert dispatcher._runtime_python(dispatcher._LLM_PROBE) == sys.executable
+    assert dispatcher.main(arguments) == 7
+    assert launches == [([sys.executable, *command], str(tmp_path))]
+
+
+def test_unknown_command_fails_without_launching(monkeypatch, capsys):
+    monkeypatch.setattr(dispatcher.subprocess, "run", lambda *a, **k: pytest.fail("command launched"))
+    monkeypatch.setattr(dispatcher, "setup", lambda: pytest.fail("dependencies installed"))
+
+    assert dispatcher.main(["unknown-command"])
+    assert "unknown-command" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("venv_exists", "missing", "expected"),
+    [
+        (False, "openai", "repaired"),
+        (False, "dotenv", "repaired"),
+        (True, "openai", "repaired"),
+        (True, "dotenv", "repaired"),
+        (False, None, "current"),
+        (True, None, "project"),
+    ],
+)
+def test_llm_launch_uses_a_compatible_runtime(monkeypatch, tmp_path: Path, venv_exists, missing, expected):
+    project_python = tmp_path / "project-python"
+    if venv_exists:
+        project_python.touch()
+    monkeypatch.setattr(dispatcher, "_venv_python", lambda: project_python)
+    monkeypatch.setattr(dispatcher, "REPO_ROOT", tmp_path)
+    launches = []
+
+    def run(args, **kwargs):
+        if args[1] == "-c":
+            missing_llm = missing is not None and missing in args[2]
+            return SimpleNamespace(returncode=1 if missing_llm else 0)
+        launches.append(args)
+        return SimpleNamespace(returncode=0)
+
+    def setup():
+        if missing is None:
+            pytest.fail("a compatible runtime was reinstalled")
+        return "repaired-python"
+
+    monkeypatch.setattr(dispatcher.subprocess, "run", run)
+    monkeypatch.setattr(dispatcher, "setup", setup)
+
+    assert dispatcher.main(["llm", "large"]) == 0
+    python = {"repaired": "repaired-python", "current": sys.executable, "project": str(project_python)}[
+        expected
+    ]
+    assert launches == [[python, "-m", "sandbox.llm_example", "large"]]

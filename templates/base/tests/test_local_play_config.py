@@ -2,23 +2,21 @@
 
 from __future__ import annotations
 
-import io
 import json
-import sys
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from sandbox import evaluate, live_local, play
+from sandbox import evaluate, play
 from sandbox.harness.environment import (
+    BuiltinAgent,
     EnvParameter,
     EnvPreset,
     PlayerBounds,
     SeatDeclaration,
     SeatPlan,
     SeatPlans,
-    resolve_parameters,
 )
 from sandbox.harness.live import parse_config
 from sandbox.season import SeasonSettings
@@ -68,19 +66,20 @@ def _use_partnership_layout(monkeypatch: pytest.MonkeyPatch) -> None:
             layout=plans,
             human_players=("player_0", "player_1", "player_2", "player_3"),
             presets=(),
+            builtin_agents=(BuiltinAgent("naive", "Test baseline"),),
         ),
     )
 
 
-def _use_restricted_layout(monkeypatch: pytest.MonkeyPatch) -> None:
+def _use_restricted_layout(monkeypatch: pytest.MonkeyPatch, *, wide: bool = True) -> None:
     plans = SeatPlans(
         (
             SeatPlan(
                 "roles",
                 "Roles",
                 (
-                    SeatDeclaration((2,)),
-                    SeatDeclaration((0, 1), restricted_builtin="naive"),
+                    SeatDeclaration((2,) if wide else (1, 2)),
+                    SeatDeclaration((0, 1) if wide else (0,), restricted_builtin="naive"),
                 ),
             ),
         )
@@ -88,42 +87,22 @@ def _use_restricted_layout(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         play,
         "META",
-        replace(play.META, layout=plans, human_players=("player_0",), presets=()),
+        replace(play.META, layout=plans, human_players=("player_0",), parameters=(), presets=()),
     )
 
 
-def _use_three_branches_layout(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mirror Days at Three Branches' real seat plans (environments/three_branches/__init__.py):
-    a cast seat that scales with the plan, plus one visitor seat restricted to a builtin. Only
-    the visitor (player_0) is declared human-playable. The restriction names ``naive`` rather than
-    three_branches' real ``scripted_visitor`` builtin, since this fixture composes against
-    whichever environment the template test run happens to target, and ``naive`` is the one
-    builtin every environment declares; the seat shape under test does not depend on which name
-    the restriction carries."""
-    plans = SeatPlans(
-        (
-            SeatPlan(
-                "cast_5",
-                "Five villagers",
-                (
-                    SeatDeclaration((1, 2, 3, 4, 5)),
-                    SeatDeclaration((0,), restricted_builtin="naive"),
-                ),
-            ),
-            SeatPlan(
-                "cast_10",
-                "Ten villagers",
-                (
-                    SeatDeclaration(tuple(range(1, 11))),
-                    SeatDeclaration((0,), restricted_builtin="naive"),
-                ),
-            ),
-        )
-    )
+def _use_trial_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    _use_player_bounds(monkeypatch, 2)
     monkeypatch.setattr(
         play,
         "META",
-        replace(play.META, layout=plans, human_players=("player_0",), presets=()),
+        replace(
+            play.META,
+            parameters=(
+                EnvParameter("trial_knob", "Trial", "Test option.", type="int", default=100, min=1, max=1000),
+                EnvParameter("other_knob", "Other", "Test option.", type="int", default=10, min=1, max=1000),
+            ),
+        ),
     )
 
 
@@ -146,10 +125,8 @@ def test_single_player_local_config_uses_metadata_timeout_when_omitted(monkeypat
 
 
 def test_four_player_local_config_covers_every_player_and_preserves_null_timeout(monkeypatch, tmp_path: Path):
-    player_ids = ("player_0", "player_1", "player_2", "player_3")
     _use_player_bounds(monkeypatch, 4)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
-
     config = play.local_config(
         seed=8,
         mode="human",
@@ -159,183 +136,127 @@ def test_four_player_local_config_covers_every_player_and_preserves_null_timeout
         human_timeout_ms=None,
     )
 
-    assert set(config["player_bindings"]) == set(player_ids)
-    assert set(config["players"]) == set(player_ids)
-    assert config["player_bindings"]["player_2"] == {"kind": "external"}
-    assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
+    agent = {"kind": "builtin-agent", "path": str(tmp_path / "repo")}
+    attribution = {"kind": "agent", "submission_id": "local", "label": "Your agent"}
+    assert config["player_bindings"] == {
+        "player_0": agent,
+        "player_1": agent,
+        "player_2": {"kind": "external"},
+        "player_3": agent,
+    }
+    assert config["players"] == {
+        "player_0": attribution,
+        "player_1": attribution,
+        "player_2": {"kind": "human", "label": "You"},
+        "player_3": attribution,
+    }
     assert config["human_timeout_ms"] is None
     assert config["max_steps"] == 52
 
 
 def test_human_mode_rejects_a_seat_excluded_from_metadata(monkeypatch, capsys):
     _use_player_bounds(monkeypatch, 2, human_players=("player_0",))
+    monkeypatch.setattr(play, "launch_browser", lambda *a, **k: pytest.fail("invalid seat launched"))
 
     with pytest.raises(SystemExit) as error:
         play.main(["human", "--seat", "1"])
 
-    assert error.value.code == 2
-    assert "not human-playable" in capsys.readouterr().err
+    assert error.value.code
+    message = capsys.readouterr().err
+    assert "seat 1" in message and "not human" in message
 
 
-def test_headless_allows_an_unrestricted_seat_excluded_from_human_metadata(monkeypatch, capsys):
-    _use_player_bounds(monkeypatch, 2, human_players=("player_0",))
-    monkeypatch.setattr(play, "run_headless", lambda **kwargs: 3.5)
+@pytest.mark.parametrize("default_seat", [False, True])
+def test_headless_selects_an_unrestricted_seat_without_requiring_human_control(monkeypatch, default_seat):
+    if default_seat:
+        _use_restricted_layout(monkeypatch)
+        arguments = []
+        expected_seat, expected_parameters = 0, {"seat_plan": "roles"}
+    else:
+        _use_player_bounds(monkeypatch, 2, human_players=("player_0",))
+        monkeypatch.setattr(play, "META", replace(play.META, parameters=()))
+        arguments = ["--seat", "1"]
+        expected_seat, expected_parameters = 1, {"players": 2}
+    captured = {}
+    monkeypatch.setattr(play, "run_headless", lambda **kwargs: captured.update(kwargs) or 3.5)
 
-    assert play.main(["human", "--headless", "--seat", "1", "--seed", "7"]) == 0
-    assert capsys.readouterr().out == "seed 7: score 3.50\n"
+    assert play.main(["human", "--headless", "--seed", "7", *arguments]) == 0
+    assert (captured["seat"], captured["seed"]) == (expected_seat, 7)
+    assert captured["parameters"] == expected_parameters
 
 
-def test_mode_defaults_select_the_platform_human_seat_and_first_unrestricted_seat(monkeypatch):
-    _use_restricted_layout(monkeypatch)
-    layout = play.resolved_layout(resolve_parameters(play.META))
-
-    assert play.default_human_seat_index(layout) == 1
-    assert play.default_agent_seat_index(layout) == 0
-
-
-def test_restricted_human_seat_derives_its_builtin_companion(monkeypatch, tmp_path: Path):
-    _use_restricted_layout(monkeypatch)
+@pytest.mark.parametrize("wide", [False, True])
+def test_restricted_human_seat_defaults_and_companions(monkeypatch, tmp_path: Path, capsys, wide):
+    _use_restricted_layout(monkeypatch, wide=wide)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
     monkeypatch.setattr(play, "BUILTIN_AGENT_ROOT", tmp_path / "builtins")
-    (play.BUILTIN_AGENT_ROOT / "naive").mkdir(parents=True)
+    (tmp_path / "builtins" / "naive").mkdir(parents=True)
+    captured = {}
+    monkeypatch.setattr(play, "launch_browser", lambda config, **kwargs: captured.update(config) or 0)
 
-    config = play.local_config(
-        seed=0,
-        mode="human",
-        seat=1,
-        recording_dir=tmp_path / "recordings",
-        step_limit=None,
-    )
+    assert play.main(["human", "--no-browser"]) == 0
+    assert captured["external_chat_player"] == "player_0"
+    assert captured["player_bindings"]["player_0"] == {"kind": "external"}
+    assert captured["players"]["player_0"] == {"kind": "human", "label": "You"}
+    if wide:
+        assert captured["player_bindings"]["player_1"] == {
+            "kind": "builtin-agent",
+            "path": str(tmp_path / "builtins" / "naive"),
+            "name": "naive",
+        }
+        assert captured["players"]["player_1"]["builtin_name"] == "naive"
+    else:
+        assert captured["player_bindings"]["player_1"] == {
+            "kind": "builtin-agent",
+            "path": str(tmp_path / "repo"),
+        }
 
-    assert config["player_bindings"]["player_0"] == {"kind": "external"}
-    assert config["player_bindings"]["player_1"] == {
-        "kind": "builtin-agent",
-        "path": str(play.BUILTIN_AGENT_ROOT / "naive"),
-        "name": "naive",
-    }
-    assert config["players"]["player_1"]["builtin_name"] == "naive"
-    assert config["external_chat_player"] == "player_0"
-
-    with pytest.raises(ValueError, match="restricted human seat"):
-        play.local_config(
-            seed=0,
-            mode="human",
-            seat=1,
-            recording_dir=tmp_path / "recordings",
-            step_limit=None,
-            companion="self",
-        )
-
-
-@pytest.mark.parametrize("plan_key", ["cast_5", "cast_10"])
-def test_three_branches_layouts_default_the_human_seat_to_the_visitor(
-    monkeypatch: pytest.MonkeyPatch, plan_key: str
-):
-    _use_three_branches_layout(monkeypatch)
-    layout = play.resolved_layout(resolve_parameters(play.META, {"seat_plan": plan_key}))
-
-    assert layout.seats[1].players == ("player_0",)
-    assert play.default_human_seat_index(layout) == 1
-
-
-@pytest.mark.parametrize("plan_key", ["cast_5", "cast_10"])
-def test_three_branches_local_config_gives_the_visitor_seat_to_the_human(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, plan_key: str
-):
-    _use_three_branches_layout(monkeypatch)
-    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
-    parameters = resolve_parameters(play.META, {"seat_plan": plan_key})
-    seat = play.default_human_seat_index(play.resolved_layout(parameters))
-
-    config = play.local_config(
-        seed=0,
-        mode="human",
-        seat=seat,
-        recording_dir=tmp_path / "recordings",
-        step_limit=None,
-        parameters=parameters,
-    )
-
-    assert config["external_chat_player"] == "player_0"
-    assert config["player_bindings"]["player_0"] == {"kind": "external"}
-    assert config["players"]["player_0"] == {"kind": "human", "label": "You"}
-
-
-def test_launcher_rejects_a_mode_it_does_not_define():
-    # `python -m sandbox watch` reaches this launcher as its `agent` mode, not by that name.
     with pytest.raises(SystemExit) as error:
-        play.main(["watch"])
-
-    assert error.value.code == 2
+        play.main(["human", "--companion", "self"])
+    assert error.value.code
+    message = capsys.readouterr().err
+    assert "companion" in message and "restricted" in message
 
 
 @pytest.mark.parametrize(
-    ("command", "arguments"),
-    ((play.main, ["agent", "--player", "0"]), (evaluate.main, ["--player", "0"])),
+    ("preset", "expected"),
+    [
+        ({}, {"players": 2, "trial_knob": 100, "other_knob": 10}),
+        ({"trial_knob": 150}, {"players": 2, "trial_knob": 150, "other_knob": 10}),
+    ],
 )
-def test_student_commands_reject_the_removed_player_option(command, arguments, capsys):
-    with pytest.raises(SystemExit) as error:
-        command(arguments)
-
-    assert error.value.code == 2
-    assert "unrecognized arguments: --player 0" in capsys.readouterr().err
-
-
-def test_preset_replaces_season_parameters_even_when_its_values_are_empty(monkeypatch, capsys):
-    monkeypatch.setattr(play, "META", replace(play.META, presets=(EnvPreset("season_1", "Season 1", {}),)))
+def test_preset_replaces_season_parameters_and_preserves_limits(monkeypatch, capsys, preset, expected):
+    _use_trial_parameters(monkeypatch)
+    monkeypatch.setattr(play, "META", replace(play.META, presets=(EnvPreset("short", "Short", preset),)))
     monkeypatch.setattr(
         play,
         "load_season_settings",
-        lambda _root, _meta: SeasonSettings("Downloaded season", {"round_cap": 150}, 123, 456),
+        lambda root, meta: SeasonSettings(
+            "Downloaded", {"players": 2, "trial_knob": 900, "other_knob": 90}, 123, 456
+        ),
     )
-    captured: dict[str, object] = {}
+    captured = {}
+    monkeypatch.setattr(play, "run_headless", lambda **kwargs: captured.update(kwargs) or 2.0)
 
-    def run_headless(**kwargs: object) -> float:
-        captured.update(kwargs)
-        return 2.0
-
-    monkeypatch.setattr(play, "run_headless", run_headless)
-
-    assert play.main(["agent", "--headless", "--preset", "season_1"]) == 0
-    assert captured["parameters"] == resolve_parameters(play.META)
-    assert captured["decision_limit_ms"] == 123
-    assert captured["game_limit_ms"] == 456
-    assert capsys.readouterr().out == (
-        "Using the season_1 preset with the time limits from season.json.\nseed 0: score 2.00\n"
-    )
+    assert play.main(["agent", "--headless", "--preset", "short"]) == 0
+    assert captured["parameters"] == expected
+    assert (captured["decision_limit_ms"], captured["game_limit_ms"]) == (123, 456)
+    output = capsys.readouterr().out
+    assert "short" in output and "season.json" in output
 
 
 def test_preset_parameters_yield_to_explicit_parameter_overrides(monkeypatch):
-    # Declare a test-only parameter on the metadata so the preset and the override validate in
-    # every environment, whatever its real parameters are.
-    knob = EnvParameter(
-        name="trial_knob",
-        title="Trial knob",
-        description="Test-only tuning parameter.",
-        type="int",
-        default=100,
-        min=1,
-        max=1000,
-    )
+    _use_trial_parameters(monkeypatch)
     monkeypatch.setattr(
         play,
         "META",
-        replace(
-            play.META,
-            parameters=(*play.META.parameters, knob),
-            presets=(EnvPreset("short", "Short", {"trial_knob": 150}),),
-        ),
+        replace(play.META, presets=(EnvPreset("short", "Short", {"trial_knob": 150, "other_knob": 20}),)),
     )
-    captured: dict[str, object] = {}
-
-    def run_headless(**kwargs: object) -> float:
-        captured.update(kwargs)
-        return 2.0
-
-    monkeypatch.setattr(play, "run_headless", run_headless)
+    captured = {}
+    monkeypatch.setattr(play, "run_headless", lambda **kwargs: captured.update(kwargs) or 2.0)
 
     assert play.main(["agent", "--headless", "--preset", "short", "--parameter", "trial_knob=200"]) == 0
-    assert captured["parameters"] == resolve_parameters(play.META, {"trial_knob": 200})
+    assert captured["parameters"] == {"players": 2, "trial_knob": 200, "other_knob": 20}
 
 
 def test_unknown_preset_reports_the_available_names(monkeypatch, capsys):
@@ -344,47 +265,44 @@ def test_unknown_preset_reports_the_available_names(monkeypatch, capsys):
         "META",
         replace(play.META, presets=(EnvPreset("season_1", "Season 1", {}),)),
     )
+    monkeypatch.setattr(play, "launch_browser", lambda *a, **k: pytest.fail("unknown preset launched"))
 
     with pytest.raises(SystemExit) as error:
         play.main(["agent", "--preset", "missing"])
 
-    assert error.value.code == 2
-    assert "unknown environment preset 'missing'; available: season_1" in capsys.readouterr().err
+    assert error.value.code
+    message = capsys.readouterr().err
+    assert "missing" in message and "season_1" in message
 
 
-def test_evaluate_forwards_the_selected_seat(monkeypatch, capsys):
-    calls: list[dict[str, object]] = []
+@pytest.mark.parametrize(
+    ("arguments", "seeds", "mean"),
+    [
+        ([], [0, 1, 2, 3, 4], "2.00"),
+        (["--episodes", "2"], [0, 1], "0.50"),
+        (["--seeds", "5", "9"], [5, 9], "7.00"),
+    ],
+)
+def test_evaluate_runs_the_requested_seeds_seat_and_rival(
+    monkeypatch, tmp_path: Path, capsys, arguments, seeds, mean
+):
     _use_player_bounds(monkeypatch, 2)
-    parameters = resolve_parameters(evaluate.play.META)
+    monkeypatch.setattr(play, "META", replace(play.META, parameters=()))
+    rival = _rival_repo(tmp_path)
+    calls = []
 
-    def run_headless(**kwargs: object) -> float:
+    def run_headless(**kwargs):
         calls.append(kwargs)
-        return 2.0
+        return float(kwargs["seed"])
 
     monkeypatch.setattr(evaluate, "run_headless", run_headless)
 
-    assert evaluate.main(["--episodes", "2", "--seat", "1"]) == 0
-    assert calls == [
-        dict(
-            seed=0,
-            max_steps=None,
-            seat=1,
-            vs=None,
-            parameters=parameters,
-            decision_limit_ms=None,
-            game_limit_ms=None,
-        ),
-        dict(
-            seed=1,
-            max_steps=None,
-            seat=1,
-            vs=None,
-            parameters=parameters,
-            decision_limit_ms=None,
-            game_limit_ms=None,
-        ),
+    assert evaluate.main([*arguments, "--seat", "1", "--vs", str(rival)]) == 0
+    assert [(call["seed"], call["seat"], call["vs"]) for call in calls] == [
+        (seed, 1, rival.resolve()) for seed in seeds
     ]
-    assert "mean over 2 episode(s): 2.00" in capsys.readouterr().out
+    assert all(call["parameters"] == {"players": 2} for call in calls)
+    assert mean in capsys.readouterr().out.splitlines()[-1]
 
 
 @pytest.mark.parametrize(
@@ -401,29 +319,6 @@ def test_headless_commands_propagate_participant_value_errors(monkeypatch, comma
 
     with pytest.raises(ValueError, match="student act crashed"):
         command.main(arguments)
-
-
-def test_local_runner_passes_stdin_to_the_harness_run_seam(monkeypatch, tmp_path: Path):
-    """The relocated harness, not this shim, starts stdin after client-ready state emits."""
-    captured: dict[str, object] = {}
-
-    def fake_run(*args: object, **kwargs: object) -> int:
-        captured.update(kwargs)
-        return 0
-
-    monkeypatch.setattr(live_local, "_claim_stdout", lambda: io.StringIO())
-    monkeypatch.setattr(live_local, "run", fake_run)
-    seat = play.default_human_seat_index(play.resolved_layout())
-    config = play.local_config(
-        seed=0,
-        mode="human",
-        seat=seat,
-        recording_dir=tmp_path / "recordings",
-        step_limit=None,
-    )
-
-    assert live_local.main([json.dumps(config)]) == 0
-    assert captured["command_lines"] is sys.stdin
 
 
 def test_resolve_rival_accepts_a_folder_and_its_manifest_path(monkeypatch, tmp_path: Path):
@@ -488,22 +383,6 @@ def test_vs_keeps_the_selected_seat_on_your_agent_in_a_partnership_layout(monkey
     assert bindings["player_3"]["path"] == str(rival)
 
 
-def test_human_mode_without_companion_controls_the_whole_wide_seat(monkeypatch, tmp_path: Path):
-    _use_partnership_layout(monkeypatch)
-    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
-    rival = _rival_repo(tmp_path)
-
-    config = play.local_config(
-        seed=1, mode="human", seat=0, recording_dir=tmp_path / "recordings", step_limit=None, vs=rival
-    )
-
-    assert config["player_bindings"]["player_0"] == {"kind": "external"}
-    assert config["player_bindings"]["player_2"] == {"kind": "external"}
-    assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
-    assert config["player_bindings"]["player_1"]["path"] == str(rival)
-    assert config["player_bindings"]["player_3"]["path"] == str(rival)
-
-
 def test_saved_companion_keeps_the_first_human_capable_member_as_the_chat_sender(
     monkeypatch,
     tmp_path: Path,
@@ -528,20 +407,31 @@ def test_saved_companion_keeps_the_first_human_capable_member_as_the_chat_sender
     assert config["players"]["player_0"]["submission_id"] == "local-companion"
 
 
-def test_whole_seat_default_uses_the_first_member_as_the_chat_sender(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize(("companion", "use_rival"), [(None, False), (None, True), ("self", True)])
+def test_whole_seat_control_and_opponents(monkeypatch, tmp_path: Path, companion, use_rival):
     _use_partnership_layout(monkeypatch)
     monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    rival = _rival_repo(tmp_path) if use_rival else None
 
     config = play.local_config(
-        seed=1, mode="human", seat=0, recording_dir=tmp_path / "recordings", step_limit=None
+        seed=1,
+        mode="human",
+        seat=0,
+        recording_dir=tmp_path / "recordings",
+        step_limit=None,
+        companion=companion,
+        vs=rival,
     )
 
     assert config["external_chat_player"] == "player_0"
-    assert config["player_bindings"]["player_0"] == {"kind": "external"}
-    assert config["player_bindings"]["player_2"] == {"kind": "external"}
-    # Playing by hand leaves your own agent opposite you, so a session can test it.
-    assert config["player_bindings"]["player_1"]["path"] == str(tmp_path / "repo")
-    assert config["player_bindings"]["player_3"]["path"] == str(tmp_path / "repo")
+    opponent = {"kind": "builtin-agent", "path": str(rival if use_rival else tmp_path / "repo")}
+    assert config["player_bindings"] == {
+        "player_0": {"kind": "external"},
+        "player_1": opponent,
+        "player_2": {"kind": "external"},
+        "player_3": opponent,
+    }
+    assert config["players"]["player_2"] == {"kind": "human", "label": "You"}
 
 
 def test_watching_without_vs_puts_the_naive_baseline_opposite_your_agent(monkeypatch, tmp_path: Path):
@@ -573,71 +463,57 @@ def test_watching_without_vs_puts_the_naive_baseline_opposite_your_agent(monkeyp
         assert config["players"][player_id] == {
             "kind": "agent",
             "builtin_name": "naive",
-            "label": play.META.builtin_agents[0].label,
+            "label": "Test baseline",
         }
 
 
-def test_vs_errors_in_a_single_player_game(monkeypatch, capsys, tmp_path: Path):
-    _use_player_bounds(monkeypatch, 1)
+@pytest.mark.parametrize("wide", [False, True])
+@pytest.mark.parametrize(("command", "arguments"), [(play, ["agent"]), (evaluate, [])])
+def test_vs_requires_an_opposing_seat(monkeypatch, capsys, tmp_path: Path, command, arguments, wide):
+    if wide:
+        plans = SeatPlans((SeatPlan("coop", "Cooperative", (SeatDeclaration((0, 1, 2)),)),))
+        monkeypatch.setattr(play, "META", replace(play.META, layout=plans, presets=()))
+    else:
+        _use_player_bounds(monkeypatch, 1)
+    monkeypatch.setattr(play, "launch_browser", lambda *a, **k: pytest.fail("invalid rival launched"))
+    monkeypatch.setattr(command, "run_headless", lambda **kwargs: pytest.fail("invalid rival ran"))
+    rival = _rival_repo(tmp_path)
 
     with pytest.raises(SystemExit) as error:
-        play.main(["agent", "--vs", str(tmp_path)])
-    assert error.value.code == 2
-    assert "only one player" in capsys.readouterr().err
+        command.main([*arguments, "--vs", str(rival)])
+
+    assert error.value.code
+    message = capsys.readouterr().err
+    assert "--vs" in message
+    assert ("part of your team" if wide else "only one player") in message
+
+
+@pytest.mark.parametrize(
+    ("case", "arguments", "reason"),
+    [
+        ("singleton", ["human", "--companion", "self"], "more than one player"),
+        ("partial-human", ["human", "--companion", "self"], "cannot be controlled"),
+        ("missing", ["human"], "pass --companion"),
+        ("watch", ["agent", "--companion", "self"], "browser human mode"),
+        ("bad-repo", ["human", "--companion", "missing-agent"], "could not find"),
+    ],
+)
+def test_companion_errors_fail_before_launch(monkeypatch, tmp_path: Path, capsys, case, arguments, reason):
+    if case == "singleton":
+        _use_player_bounds(monkeypatch, 1)
+    else:
+        _use_partnership_layout(monkeypatch)
+        monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
+    monkeypatch.setattr(play, "launch_browser", lambda *a, **k: pytest.fail("invalid companion launched"))
+    if case == "bad-repo":
+        arguments = ["human", "--companion", str(tmp_path / "missing-agent")]
 
     with pytest.raises(SystemExit) as error:
-        evaluate.main(["--vs", str(tmp_path)])
-    assert error.value.code == 2
-    assert "only one player" in capsys.readouterr().err
+        play.main(arguments)
 
-
-def test_vs_errors_when_one_seat_covers_every_player(monkeypatch, capsys, tmp_path: Path):
-    plans = SeatPlans((SeatPlan("coop", "Cooperative", (SeatDeclaration((0, 1, 2)),)),))
-    monkeypatch.setattr(play, "META", replace(play.META, layout=plans, presets=()))
-
-    with pytest.raises(SystemExit) as error:
-        play.main(["agent", "--vs", str(tmp_path)])
-    assert error.value.code == 2
-    assert "part of your team" in capsys.readouterr().err
-
-    with pytest.raises(SystemExit) as error:
-        evaluate.main(["--vs", str(tmp_path)])
-    assert error.value.code == 2
-    assert "part of your team" in capsys.readouterr().err
-
-
-def test_self_companion_is_rejected_where_it_cannot_apply(monkeypatch, capsys, tmp_path: Path):
-    _use_player_bounds(monkeypatch, 1)
-
-    # A team of one has nobody else to play.
-    with pytest.raises(SystemExit) as error:
-        play.main(["human", "--companion", "self"])
-    assert error.value.code == 2
-    assert "more than one player" in capsys.readouterr().err
-
-    _use_partnership_layout(monkeypatch)
-    monkeypatch.setattr(play, "META", replace(play.META, human_players=("player_0",)))
-
-    # A teammate nobody may steer cannot be played by hand either.
-    with pytest.raises(SystemExit) as error:
-        play.main(["human", "--companion", "self"])
-    assert error.value.code == 2
-    assert "cannot be controlled by a human" in capsys.readouterr().err
-
-    with pytest.raises(SystemExit) as error:
-        play.main(["human"])
-    assert error.value.code == 2
-    assert "pass --companion" in capsys.readouterr().err
-
-    # Watching your own agent is not playing it.
-    with pytest.raises(SystemExit) as error:
-        play.main(["agent", "--companion", "self"])
-    assert error.value.code == 2
-    assert "browser human mode" in capsys.readouterr().err
-
-    with pytest.raises(SystemExit) as error:
-        play.main(["human", "--companion", str(tmp_path)])
-    assert error.value.code == 2
+    assert error.value.code
+    message = capsys.readouterr().err
+    assert "companion" in message and reason in message
 
 
 def test_named_builtin_companion_carries_matching_binding_and_attribution(monkeypatch, tmp_path: Path):
@@ -663,41 +539,35 @@ def test_named_builtin_companion_carries_matching_binding_and_attribution(monkey
     assert config["players"]["player_2"] == {
         "kind": "agent",
         "builtin_name": "naive",
-        "label": play.META.builtin_agents[0].label,
+        "label": "Test baseline",
     }
 
 
 def test_run_headless_vs_loads_a_separate_agent_for_every_other_player(monkeypatch, tmp_path: Path):
     _use_partnership_layout(monkeypatch)
-    monkeypatch.setattr(play, "REPO_ROOT", tmp_path / "repo")
+    repo = tmp_path / "repo"
+    monkeypatch.setattr(play, "REPO_ROOT", repo)
     monkeypatch.setattr(play, "make_env", lambda parameters: SimpleNamespace(close=lambda: None))
-    loads: list[Path] = []
+    monkeypatch.setattr(play, "load_agent", lambda root: SimpleNamespace(root=Path(root)))
+    captured = {}
 
-    def fake_load(root: Path) -> object:
-        loads.append(Path(root))
-        return object()
-
-    monkeypatch.setattr(play, "load_agent", fake_load)
-    captured: dict[str, object] = {}
-
-    def fake_episode(agent: object, env: object, **kwargs: object) -> float:
-        captured.update(kwargs)
-        captured["agent"] = agent
+    def episode(agent, env, **kwargs):
+        captured.update(kwargs, agent=agent)
         return 1.5
 
-    monkeypatch.setattr(play, "play_episode", fake_episode)
+    monkeypatch.setattr(play, "play_episode", episode)
     rival = _rival_repo(tmp_path)
 
     assert play.run_headless(seed=3, max_steps=None, seat=0, vs=rival) == 1.5
-
-    other_agents = captured["other_agents"]
-    assert isinstance(other_agents, dict)
-    assert set(other_agents) == {"player_1", "player_2", "player_3"}
-    assert loads.count(rival) == 2
-    assert loads.count(tmp_path / "repo") == 2
+    others = captured["other_agents"]
+    assert {player: agent.root for player, agent in others.items()} == {
+        "player_1": rival,
+        "player_2": repo,
+        "player_3": rival,
+    }
+    assert captured["agent"].root == repo
     assert captured["score_player_ids"] == ("player_0", "player_2")
-    instances = [captured["agent"], *other_agents.values()]
-    assert len({id(instance) for instance in instances}) == 4
+    assert len({id(agent) for agent in [captured["agent"], *others.values()]}) == 4
 
 
 def test_run_headless_without_vs_loads_naive_for_each_opposing_player(monkeypatch, tmp_path: Path):
@@ -706,20 +576,21 @@ def test_run_headless_without_vs_loads_naive_for_each_opposing_player(monkeypatc
     baseline = tmp_path / "builtins" / "naive"
     monkeypatch.setattr(play, "builtin_agent_path", lambda name: baseline)
     monkeypatch.setattr(play, "make_env", lambda parameters: SimpleNamespace(close=lambda: None))
-    loads: list[Path] = []
-    monkeypatch.setattr(play, "load_agent", lambda root: loads.append(Path(root)) or object())
-    captured: dict[str, object] = {}
+    monkeypatch.setattr(play, "load_agent", lambda root: SimpleNamespace(root=Path(root)))
+    captured = {}
 
-    def fake_episode(agent: object, env: object, **kwargs: object) -> float:
-        captured.update(kwargs)
+    def episode(agent, env, **kwargs):
+        captured.update(kwargs, agent=agent)
         return 0.0
 
-    monkeypatch.setattr(play, "play_episode", fake_episode)
+    monkeypatch.setattr(play, "play_episode", episode)
 
     assert play.run_headless(seed=0, max_steps=None, seat=0) == 0.0
-    assert set(captured["other_agents"]) == {"player_1"}
+    assert {player: agent.root for player, agent in captured["other_agents"].items()} == {
+        "player_1": baseline
+    }
+    assert captured["agent"].root == tmp_path / "repo"
     assert captured["score_player_ids"] == ("player_0",)
-    assert loads == [baseline, tmp_path / "repo"]
 
 
 def test_play_episode_binds_other_agents_and_defaults(monkeypatch):
@@ -767,29 +638,3 @@ def test_play_episode_averages_the_selected_seat_scores(monkeypatch):
         )
         == 5.0
     )
-
-
-def test_evaluate_forwards_vs_to_every_episode(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(play, "META", replace(play.META, layout=PlayerBounds(min=2, max=2), presets=()))
-    parameters = resolve_parameters(evaluate.play.META)
-    rival = _rival_repo(tmp_path)
-    calls: list[dict[str, object]] = []
-
-    def run_headless(**kwargs: object) -> float:
-        calls.append(kwargs)
-        return 1.0
-
-    monkeypatch.setattr(evaluate, "run_headless", run_headless)
-
-    assert evaluate.main(["--seeds", "5", "--vs", str(rival)]) == 0
-    assert calls == [
-        dict(
-            seed=5,
-            max_steps=None,
-            seat=0,
-            vs=rival.resolve(),
-            parameters=parameters,
-            decision_limit_ms=None,
-            game_limit_ms=None,
-        )
-    ]

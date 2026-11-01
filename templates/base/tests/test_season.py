@@ -11,6 +11,20 @@ from sandbox import evaluate, play
 from sandbox.harness.environment import EnvParameter, PlayerBounds, resolve_parameters
 from sandbox.season import SeasonSettings, load_season_settings
 
+_ENV_ID = "synthetic_env"
+
+_SYNTHETIC_META = replace(
+    play.META,
+    env_id=_ENV_ID,
+    layout=PlayerBounds(min=1, max=1),
+    human_players=("player_0",),
+    presets=(),
+    parameters=(
+        EnvParameter("speed", "Speed", "Movement speed.", type="int", default=3, min=1, max=9),
+        EnvParameter("goal", "Goal", "Score needed to win.", type="int", default=7, min=1, max=20),
+    ),
+)
+
 
 def _write_settings(root: Path, document: object) -> None:
     (root / "season.json").write_text(json.dumps(document), encoding="utf-8")
@@ -20,137 +34,143 @@ def test_load_season_settings_keeps_current_behavior_when_the_file_is_absent(tmp
     assert load_season_settings(tmp_path, play.META) is None
 
 
-def test_load_season_settings_reads_the_downloaded_values(tmp_path: Path):
+def test_load_season_settings_reads_a_complete_handwritten_parameter_map(tmp_path: Path):
     _write_settings(
         tmp_path,
         {
-            "env_id": play.META.env_id,
+            "env_id": _ENV_ID,
             "season": "Spring practice",
-            "parameters": {},
+            "parameters": {"speed": 5},
             "decision_limit_ms": 50,
             "game_limit_ms": 3_000,
         },
     )
 
-    settings = load_season_settings(tmp_path, play.META)
+    settings = load_season_settings(tmp_path, _SYNTHETIC_META)
 
     assert settings is not None
     assert settings.label == "Spring practice"
-    assert settings.parameters == resolve_parameters(play.META)
+    assert settings.parameters == {"players": 1, "speed": 5, "goal": 7}
     assert settings.decision_limit_ms == 50
     assert settings.game_limit_ms == 3_000
 
 
 @pytest.mark.parametrize(
-    ("document", "message"),
+    ("document", "expected"),
     [
-        ("not JSON", "not valid JSON"),
+        ("not JSON", ("season.json", "JSON")),
         (
-            {"env_id": play.META.env_id, "season": "Here", "game_limit_mss": 3_000},
-            "unknown field 'game_limit_mss'",
+            {"env_id": _ENV_ID, "season": "Here", "game_limit_mss": 3_000},
+            ("season.json", "game_limit_mss"),
         ),
-        ({"env_id": "other", "season": "Elsewhere"}, "for environment"),
-        ({"env_id": play.META.env_id, "season": ""}, "nonempty string"),
-        ({"env_id": play.META.env_id, "season": "Here", "parameters": []}, "parameters"),
+        ({"env_id": "other", "season": "Elsewhere"}, ("other", _ENV_ID)),
+        ({"env_id": _ENV_ID, "season": "  "}, ("season", "nonempty")),
+        ({"env_id": _ENV_ID, "season": "Here", "parameters": []}, ("season.json", "parameters")),
         (
-            {"env_id": play.META.env_id, "season": "Here", "parameters": {"unknown": 1}},
-            "unknown environment parameter",
-        ),
-        (
-            {"env_id": play.META.env_id, "season": "Here", "parameters": {"pipe_gap": 1}},
-            "pipe_gap",
+            {"env_id": _ENV_ID, "season": "Here", "parameters": {"unknown": 1}},
+            ("parameters", "unknown"),
         ),
         (
-            {"env_id": play.META.env_id, "season": "Here", "decision_limit_ms": 0},
-            "decision_limit_ms",
+            {"env_id": _ENV_ID, "season": "Here", "parameters": {"speed": "fast"}},
+            ("parameters", "speed"),
+        ),
+        (
+            {"env_id": _ENV_ID, "season": "Here", "parameters": {"speed": 99}},
+            ("parameters", "speed"),
+        ),
+        (
+            {"env_id": _ENV_ID, "season": "Here", "decision_limit_ms": 0},
+            ("season.json", "decision_limit_ms"),
+        ),
+        (
+            {"env_id": _ENV_ID, "season": "Here", "game_limit_ms": -5},
+            ("season.json", "game_limit_ms"),
         ),
     ],
 )
-def test_load_season_settings_rejects_invalid_files(tmp_path: Path, document: object, message: str):
+def test_load_season_settings_rejects_invalid_files(
+    tmp_path: Path, document: object, expected: tuple[str, ...]
+):
     path = tmp_path / "season.json"
     path.write_text(document if isinstance(document, str) else json.dumps(document), encoding="utf-8")
 
-    with pytest.raises(ValueError, match=message):
-        load_season_settings(tmp_path, play.META)
+    with pytest.raises(ValueError) as error:
+        load_season_settings(tmp_path, _SYNTHETIC_META)
+
+    message = str(error.value)
+    assert all(fragment in message for fragment in expected)
 
 
-def test_play_cli_overrides_season_parameters_and_limits_once(monkeypatch, capsys):
-    meta = replace(
-        play.META,
-        parameters=(
-            *play.META.parameters,
-            EnvParameter(
-                name="test_option",
-                title="Test option",
-                description="A test-only option.",
-                type="int",
-                default=100,
-                min=50,
-                max=200,
-            ),
-        ),
-    )
-    monkeypatch.setattr(play, "META", meta)
-    settings = SeasonSettings(
-        "Spring practice",
-        resolve_parameters(meta, {"test_option": 120}),
-        50,
-        3_000,
-    )
-    monkeypatch.setattr(play, "load_season_settings", lambda root, meta: settings)
-    monkeypatch.setattr(play, "possible_players", lambda parameters=None: ("player_0",))
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(play, "run_headless", lambda **kwargs: captured.update(kwargs) or 1.0)
+@pytest.mark.parametrize(
+    ("main", "extra_args"),
+    [(play.main, ["--headless"]), (evaluate.main, ["--episodes", "1"])],
+    ids=["play", "evaluate"],
+)
+def test_cli_overrides_season_parameters_and_limits(monkeypatch, capsys, main, extra_args):
+    settings = SeasonSettings("Spring practice", {"players": 1, "speed": 2, "goal": 4}, 50, 3_000)
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(play, "META", _SYNTHETIC_META)
+    monkeypatch.setattr(play, "load_season_settings", lambda *_args: settings)
+    monkeypatch.setattr(evaluate, "load_season_settings", lambda *_args: settings)
+    monkeypatch.setattr(play, "run_headless", lambda **kwargs: calls.append(kwargs) or 1.0)
+    monkeypatch.setattr(evaluate, "run_headless", lambda **kwargs: calls.append(kwargs) or 1.0)
 
     assert (
-        play.main(
+        main(
             [
-                "agent",
-                "--headless",
+                *extra_args,
                 "--parameter",
-                "test_option=140",
+                "speed=5",
+                "--parameter",
+                "goal=9",
                 "--decision-limit-ms",
                 "70",
                 "--game-limit-ms",
-                "4",
+                "4000",
             ]
         )
         == 0
     )
 
-    assert captured["parameters"] == resolve_parameters(meta, {"test_option": 140})
-    assert captured["decision_limit_ms"] == 70
-    assert captured["game_limit_ms"] == 4
-    assert capsys.readouterr().out.count("Using Spring practice settings from season.json.") == 1
+    assert len(calls) == 1
+    assert calls[0]["parameters"] == {"players": 1, "speed": 5, "goal": 9}
+    assert calls[0]["decision_limit_ms"] == 70
+    assert calls[0]["game_limit_ms"] == 4_000
+    assert "Spring practice" in capsys.readouterr().out
 
 
-def test_play_browser_passes_season_limits_to_the_local_runner(monkeypatch, capsys):
-    settings = SeasonSettings("Spring practice", resolve_parameters(play.META), 50, 3_000)
-    monkeypatch.setattr(play, "load_season_settings", lambda root, meta: settings)
-    monkeypatch.setattr(play, "possible_players", lambda parameters: ("player_0",))
-    captured: dict[str, object] = {}
-    monkeypatch.setattr(play, "local_config", lambda **kwargs: captured.update(kwargs) or {})
-    monkeypatch.setattr(play, "launch_browser", lambda config, **kwargs: 0)
+def test_play_browser_passes_season_limits_to_the_local_runner(monkeypatch):
+    settings = SeasonSettings("Spring practice", {"players": 1, "speed": 6, "goal": 7}, 50, 3_000)
+    monkeypatch.setattr(play, "META", _SYNTHETIC_META)
+    monkeypatch.setattr(play, "load_season_settings", lambda *_args: settings)
+    configs: list[dict[str, object]] = []
+    monkeypatch.setattr(play, "launch_browser", lambda config, **_kwargs: configs.append(config) or 0)
 
     assert play.main(["agent", "--no-browser"]) == 0
 
-    assert captured["decision_limit_ms"] == 50
-    assert captured["game_limit_ms"] == 3_000
-    assert capsys.readouterr().out.count("Using Spring practice settings from season.json.") == 1
+    config = configs[0]
+    assert config["step_timeout_ms"] == 50
+    assert config["episode_timeout_ms"] == 3_000
+    assert config["parameters"] == {"players": 1, "speed": 6, "goal": 7}
 
 
-def test_eval_loads_and_announces_settings_once_for_many_seeds(monkeypatch, capsys):
-    settings = SeasonSettings("Spring practice", resolve_parameters(play.META), 50, 3_000)
-    monkeypatch.setattr(evaluate, "load_season_settings", lambda root, meta: settings)
-    monkeypatch.setattr(evaluate, "parse_rival", lambda parser, raw, seat, parameters: None)
+def test_eval_applies_season_settings_to_every_requested_seed(monkeypatch, capsys):
+    settings = SeasonSettings("Spring practice", {"players": 1, "speed": 6, "goal": 7}, 50, 3_000)
+    monkeypatch.setattr(play, "META", _SYNTHETIC_META)
+    monkeypatch.setattr(evaluate, "load_season_settings", lambda *_args: settings)
     calls: list[dict[str, object]] = []
     monkeypatch.setattr(evaluate, "run_headless", lambda **kwargs: calls.append(kwargs) or 1.0)
 
-    assert evaluate.main(["--episodes", "2"]) == 0
+    assert evaluate.main(["--seeds", "3", "8"]) == 0
 
-    assert [call["seed"] for call in calls] == [0, 1]
-    assert all(call["decision_limit_ms"] == 50 for call in calls)
-    assert capsys.readouterr().out.count("Using Spring practice settings from season.json.") == 1
+    assert [call["seed"] for call in calls] == [3, 8]
+    for call in calls:
+        assert call["parameters"] == {"players": 1, "speed": 6, "goal": 7}
+        assert call["decision_limit_ms"] == 50
+        assert call["game_limit_ms"] == 3_000
+    output = capsys.readouterr().out
+    assert "Spring practice" in output
+    assert "season.json" in output
 
 
 def test_eval_rejects_a_seat_outside_the_resolved_season_layout(monkeypatch, capsys):

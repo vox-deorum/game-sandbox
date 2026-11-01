@@ -7,6 +7,10 @@ from types import SimpleNamespace
 import pytest
 from sandbox import llm_example
 
+_BASE_URL = "https://course.example/api/llm/v1"
+_API_KEY = "test-only-api-key"
+_REPLY = "A reply from the test upstream"
+
 
 def _install_smoke_client(monkeypatch: pytest.MonkeyPatch):
     calls: list[dict] = []
@@ -14,8 +18,8 @@ def _install_smoke_client(monkeypatch: pytest.MonkeyPatch):
         create=lambda **kwargs: (
             calls.append(kwargs)
             or SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="Game Sandbox LLM ready"))],
-                usage=SimpleNamespace(total_tokens=9),
+                choices=[SimpleNamespace(message=SimpleNamespace(content=_REPLY))],
+                usage=SimpleNamespace(total_tokens=4_321),
             )
         )
     )
@@ -27,8 +31,8 @@ def _install_smoke_client(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(llm_example, "load_dotenv", lambda: None)
     monkeypatch.setattr(llm_example, "OpenAI", openai)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://course.example/api/llm/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "secret-development-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", _BASE_URL)
+    monkeypatch.setenv("OPENAI_API_KEY", _API_KEY)
     return calls, clients
 
 
@@ -45,25 +49,31 @@ def test_smoke_call_uses_requested_tier_and_reports_usage(monkeypatch, capsys, a
     calls, clients = _install_smoke_client(monkeypatch)
 
     assert llm_example.main(argv) == 0
-    output = capsys.readouterr().out
-    assert clients == [("https://course.example/api/llm/v1", "secret-development-key", 0)]
+    captured = capsys.readouterr()
+    assert _REPLY in captured.out
+    assert model_tier in captured.out
+    assert "4321" in captured.out
+    assert clients == [(_BASE_URL, _API_KEY, 0)]
     assert len(calls) == 1
     assert calls[0]["model"] == model_tier
     assert calls[0]["stream"] is False
-    assert f"model tier: {model_tier}" in output
-    assert "tokens used: 9" in output
-    assert "secret-development-key" not in output
+    assert _API_KEY not in captured.out
+    assert _API_KEY not in captured.err
 
 
 @pytest.mark.parametrize("missing", ["OPENAI_BASE_URL", "OPENAI_API_KEY"])
 def test_smoke_call_requires_credentials(monkeypatch, capsys, missing):
     monkeypatch.setattr(llm_example, "load_dotenv", lambda: None)
-    monkeypatch.setenv("OPENAI_BASE_URL", "https://course.example/api/llm/v1")
-    monkeypatch.setenv("OPENAI_API_KEY", "secret-development-key")
+    monkeypatch.setattr(llm_example, "OpenAI", lambda **_kwargs: pytest.fail("client was created"))
+    monkeypatch.setenv("OPENAI_BASE_URL", _BASE_URL)
+    monkeypatch.setenv("OPENAI_API_KEY", _API_KEY)
     monkeypatch.delenv(missing)
 
-    assert llm_example.main([]) == 1
-    assert missing in capsys.readouterr().err
+    assert llm_example.main([])
+    captured = capsys.readouterr()
+    assert missing in captured.err
+    assert _API_KEY not in captured.out
+    assert _API_KEY not in captured.err
 
 
 def test_smoke_call_rejects_unknown_tier_before_creating_client(monkeypatch, capsys):
