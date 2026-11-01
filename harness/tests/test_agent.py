@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
-import re
 import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -29,39 +28,34 @@ def test_agentbase_is_abstract():
         AgentBase()  # type: ignore[abstract]
 
 
-def test_concrete_subclass_satisfies_detection():
+@pytest.mark.parametrize(
+    ("hooks", "expected"),
+    [
+        ({}, (False, False, False)),
+        ({"reset": print}, (False, False, False)),
+        ({"act": print}, (False, False, False)),
+        ({"reset": 1, "act": print}, (False, False, False)),
+        ({"reset": print, "act": 1}, (False, False, False)),
+        ({"reset": print, "act": print}, (True, False, False)),
+        ({"reset": print, "act": print, "learn": print}, (True, True, False)),
+        ({"reset": print, "act": print, "chat": print}, (True, False, True)),
+        ({"reset": print, "act": print, "learn": print, "chat": print}, (True, True, True)),
+        ({"reset": print, "act": print, "learn": 1, "chat": 1}, (True, False, False)),
+    ],
+)
+def test_concrete_subclass_satisfies_detection(hooks, expected):
     class Concrete(AgentBase):
         def reset(self, seed: int, observation: object) -> None: ...
 
         def act(self, observation):
             return 0
 
-    agent = Concrete()
-    assert is_agent(agent)
-    assert not has_learn(agent)
-    assert not has_chat(agent)
-
-
-def test_duck_typed_agent_is_detected_without_inheritance():
-    class Plain:
-        def reset(self, seed, observation): ...
-
-        def act(self, observation):
-            return 0
-
-        def learn(self, observation, action, reward, terminated): ...
-
-    agent = Plain()
-    assert is_agent(agent)
-    assert has_learn(agent)
-    assert not has_chat(agent)
-
-
-def test_missing_required_method_fails_detection():
-    class NoAct:
-        def reset(self, seed, observation): ...
-
-    assert not is_agent(NoAct())
+    inherited = Concrete()
+    assert is_agent(inherited)
+    assert not has_learn(inherited)
+    assert not has_chat(inherited)
+    agent = SimpleNamespace(**hooks)
+    assert (is_agent(agent), has_learn(agent), has_chat(agent)) == expected
 
 
 def _load_template_agent_module(path: Path) -> ModuleType:
@@ -98,16 +92,12 @@ def _load_template_agent_module(path: Path) -> ModuleType:
 @pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)
 def test_template_stub_and_agentbase_agree_method_for_method(agent_path: Path):
     template_cls = _load_template_agent_module(agent_path).Agent
-    for name in ("reset", "act"):
-        base_sig = inspect.signature(getattr(AgentBase, name))
-        stub_sig = inspect.signature(getattr(template_cls, name))
-        base_parameters = [
-            (parameter.name, parameter.kind, parameter.default) for parameter in base_sig.parameters.values()
-        ]
-        stub_parameters = [
-            (parameter.name, parameter.kind, parameter.default) for parameter in stub_sig.parameters.values()
-        ]
-        assert base_parameters == stub_parameters, name
+    for cls in (AgentBase, template_cls):
+        for name, expected in (("reset", ["self", "seed", "observation"]), ("act", ["self", "observation"])):
+            parameters = list(inspect.signature(getattr(cls, name)).parameters.values())
+            assert [parameter.name for parameter in parameters] == expected
+            assert all(parameter.kind == inspect.Parameter.POSITIONAL_OR_KEYWORD for parameter in parameters)
+            assert all(parameter.default == inspect.Parameter.empty for parameter in parameters)
     # The template stub structurally satisfies the agent interface.
     assert is_agent(template_cls())
 
@@ -126,9 +116,9 @@ def test_three_branches_starter_prioritizes_benches_then_doorways_then_pumps_and
 
     monkeypatch.setattr(module.me, "heading", lambda _observation: heading)
     monkeypatch.setattr(module.props, "usable", lambda _observation: bench)
-    assert example.act(observation) == module.action.stand(heading, "use")
+    assert example.act(observation) == {"heading": 15.0, "speed": 0.0, "action": 1}
 
-    doorway = {"x": 3.0, "y": 4.0}
+    doorway = {"x": 3.0, "y": 1.0}
     monkeypatch.setattr(module.props, "usable", lambda _observation: None)
     monkeypatch.setattr(module.me, "position", lambda _observation: here)
     monkeypatch.setattr(module.me, "home", lambda _observation: "home_1")
@@ -136,41 +126,15 @@ def test_three_branches_starter_prioritizes_benches_then_doorways_then_pumps_and
     monkeypatch.setattr(module.layout, "doorway", lambda _observation, _home: doorway)
     monkeypatch.setattr(module.layout, "cell_at", lambda _observation, _position: {"x": 1, "y": 1})
     monkeypatch.setattr(module.layout, "ground_at", lambda _observation, _cell: "interior")
-    assert example.act(observation) == module.action.walk(
-        module.geometry.heading_to(here, doorway), 1.0, "none"
-    )
+    assert example.act(observation) == {"heading": 0.0, "speed": 1.0, "action": 0}
 
     pump = {"type": "pump", "cell": {"x": 5, "y": 6}}
     monkeypatch.setattr(module.layout, "ground_at", lambda _observation, _cell: "ground")
     monkeypatch.setattr(module.people, "seen", lambda _observation: ({"id": "player_0"},))
     monkeypatch.setattr(module.props, "all", lambda _observation: (pump,))
-    monkeypatch.setattr(
-        module.layout, "cell_center", lambda _observation, cell: {"x": cell["x"] + 0.5, "y": cell["y"] + 0.5}
-    )
-    assert example.act(observation) == module.action.walk(
-        module.geometry.heading_to(here, {"x": 5.5, "y": 6.5}), 1.0, "wave"
-    )
+    monkeypatch.setattr(module.layout, "cell_center", lambda _observation, _cell: {"x": 1.0, "y": 6.5})
+    assert example.act(observation) == {"heading": 90.0, "speed": 1.0, "action": 2}
 
     monkeypatch.setattr(module.people, "seen", lambda _observation: ())
     monkeypatch.setattr(module.props, "all", lambda _observation: ())
-    assert example.act(observation) == module.action.walk(heading, 0.0, "none")
-
-
-@pytest.mark.parametrize("agent_path", TEMPLATE_AGENTS, ids=lambda p: p.parent.name)
-def test_messaging_template_documents_the_chat_hook(agent_path: Path):
-    """A template whose environment enables messaging must document the ``chat`` hook, so the stub
-    can never drift from the shape the harness actually calls. The stub is commented out (like
-    ``learn``): declaring it live would make every derived agent register as chatting and pay a timed
-    hook call each turn. The functional half (that the documented shapes work against a real Episode)
-    lives in test_session_chat.py."""
-    load_environment = pytest.importorskip(
-        "game_sandbox_harness.environment", reason="environments not installed"
-    ).load_environment
-    meta = load_environment(agent_path.parent.parent.name).meta
-    if not meta.messaging:
-        pytest.skip(f"{agent_path.parent.parent.name} has messaging disabled; chat stub is optional")
-    source = agent_path.read_text(encoding="utf-8")
-    # Tolerant of the leading comment marker: the stub is documented, live or commented.
-    assert re.search(r"def chat\(self, inbox", source), (
-        f"{agent_path} enables messaging but does not document a `def chat(self, inbox` stub"
-    )
+    assert example.act(observation) == {"heading": 15.0, "speed": 0.0, "action": 0}

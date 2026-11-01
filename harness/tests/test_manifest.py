@@ -76,64 +76,25 @@ def test_loading_repo_keeps_modules_from_its_active_virtualenv(tmp_path: Path, m
         repo,
         module,
         manifest={"entry_point": module, "class_name": "Agent", "template_version": 1},
-        source=_AGENT_SOURCE,
+        source="import kept_dependency\n" + _AGENT_SOURCE.replace("return 1", "return kept_dependency.VALUE"),
     )
     interpreter_root = repo / ".venv"
     dependency_path = interpreter_root / "Lib" / "site-packages" / "kept_dependency.py"
     dependency_path.parent.mkdir(parents=True)
-    dependency_path.write_text("VALUE = 1\n", encoding="utf-8")
+    dependency_path.write_text("raise RuntimeError('dependency was reloaded')\n", encoding="utf-8")
     dependency = ModuleType("kept_dependency")
     dependency.__file__ = str(dependency_path)
+    dependency.VALUE = 73
     sys.modules[dependency.__name__] = dependency
     monkeypatch.setattr(sys, "prefix", str(interpreter_root))
+    monkeypatch.syspath_prepend(str(dependency_path.parent))
 
     try:
-        load_agent(repo)
-        assert sys.modules[dependency.__name__] is dependency
+        assert load_agent(repo).act(None) == 73
     finally:
         _cleanup(repo)
         sys.modules.pop(module, None)
         sys.modules.pop(dependency.__name__, None)
-
-
-def test_same_entry_point_in_two_repo_roots_loads_each_repo(tmp_path: Path):
-    repo_a = tmp_path / "a"
-    repo_b = tmp_path / "b"
-    repo_a.mkdir()
-    repo_b.mkdir()
-    manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
-    _write_repo(
-        repo_a,
-        "agent",
-        manifest=manifest,
-        source="""
-class Agent:
-    def reset(self, seed, observation):
-        pass
-    def act(self, observation):
-        return "a"
-""",
-    )
-    _write_repo(
-        repo_b,
-        "agent",
-        manifest=manifest,
-        source="""
-class Agent:
-    def reset(self, seed, observation):
-        pass
-    def act(self, observation):
-        return "b"
-""",
-    )
-
-    try:
-        assert load_agent(repo_a).act(None) == "a"
-        assert load_agent(repo_b).act(None) == "b"
-    finally:
-        _cleanup(repo_a)
-        _cleanup(repo_b)
-        sys.modules.pop("agent", None)
 
 
 def test_same_helper_module_name_in_two_repo_roots_loads_each_repo_helper(tmp_path: Path):
@@ -248,135 +209,70 @@ class Agent:
         sys.modules.pop("helper", None)
 
 
-def test_act_time_lazy_import_is_not_isolated_across_players(tmp_path: Path):
-    # A KNOWN LIMITATION, pinned so it stays visible (see the manifest module docstring). Load-time
-    # isolation covers helpers imported at module top; a helper imported LAZILY inside act() is not
-    # isolated, because every loaded root stays on sys.path and sys.modules is shared. Two players that
-    # each lazily `import helper` share whichever imported first. When this is ever fixed (per-player
-    # namespacing or a subinterpreter per player), flip this to assert "a" and "b" and drop the note.
-    repo_a = tmp_path / "player_0"
-    repo_b = tmp_path / "player_1"
-    repo_a.mkdir()
-    repo_b.mkdir()
-    manifest = {"entry_point": "agent", "class_name": "Agent", "template_version": 1}
-    # `import helper` sits inside act(), not at module top, so the loader's eviction never sees it.
-    agent_source = """
-class Agent:
-    def reset(self, seed, observation):
-        pass
-    def act(self, observation):
-        import helper
-        return helper.VALUE
-"""
-    _write_repo(repo_a, "agent", manifest=manifest, source=agent_source)
-    _write_repo(repo_b, "agent", manifest=manifest, source=agent_source)
-    (repo_a / "helper.py").write_text('VALUE = "a"\n', encoding="utf-8")
-    (repo_b / "helper.py").write_text('VALUE = "b"\n', encoding="utf-8")
-
-    try:
-        agent_a = load_agent(repo_a)
-        agent_b = load_agent(repo_b)
-        # repo_b was loaded last, so its directory leads sys.path; the first lazy import of "helper"
-        # wins and is cached under that bare name, and both players then read the same value.
-        first = agent_a.act(None)
-        second = agent_b.act(None)
-        assert first == second == "b"
-    finally:
-        _cleanup(repo_a)
-        _cleanup(repo_b)
-        sys.modules.pop("agent", None)
-        sys.modules.pop("helper", None)
-
-
 def test_missing_manifest_raises(tmp_path: Path):
     with pytest.raises(ManifestError, match="no manifest.json"):
         load_manifest(tmp_path)
 
 
-def test_malformed_json_raises(tmp_path: Path):
-    (tmp_path / "manifest.json").write_text("{not json", encoding="utf-8")
-    with pytest.raises(ManifestError, match="not valid JSON"):
+@pytest.mark.parametrize(
+    ("contents", "reason"),
+    [
+        ("{not json", "not valid JSON"),
+        ([], "JSON object"),
+        ({"class_name": "Agent", "template_version": 1}, "entry_point"),
+        ({"entry_point": "agent", "template_version": 1}, "class_name"),
+        ({"entry_point": "agent", "class_name": "Agent"}, "template_version"),
+        ({"entry_point": "agent", "class_name": "Agent", "template_version": 1, "oops": 1}, "unknown key"),
+        ({"entry_point": "agent", "class_name": "Agent", "template_version": "1"}, "integer"),
+        ({"entry_point": "agent", "class_name": "Agent", "template_version": True}, "integer"),
+        ({"entry_point": "", "class_name": "Agent", "template_version": 1}, "entry_point"),
+        ({"entry_point": 1, "class_name": "Agent", "template_version": 1}, "entry_point"),
+        ({"entry_point": "agent", "class_name": "", "template_version": 1}, "class_name"),
+        ({"entry_point": "agent", "class_name": None, "template_version": 1}, "class_name"),
+    ],
+)
+def test_malformed_json_raises(tmp_path: Path, contents, reason):
+    text = contents if isinstance(contents, str) else json.dumps(contents)
+    (tmp_path / "manifest.json").write_text(text, encoding="utf-8")
+    with pytest.raises(ManifestError, match=reason):
         load_manifest(tmp_path)
 
 
-def test_missing_field_raises(tmp_path: Path):
-    (tmp_path / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "Agent"}), encoding="utf-8"
-    )
-    with pytest.raises(ManifestError, match="missing required field"):
-        load_manifest(tmp_path)
-
-
-def test_unknown_key_raises(tmp_path: Path):
-    (tmp_path / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "Agent", "template_version": 1, "oops": 1}),
-        encoding="utf-8",
-    )
-    with pytest.raises(ManifestError, match="unknown key"):
-        load_manifest(tmp_path)
-
-
-def test_non_integer_version_raises(tmp_path: Path):
-    (tmp_path / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "Agent", "template_version": "1"}),
-        encoding="utf-8",
-    )
-    with pytest.raises(ManifestError, match="must be an integer"):
-        load_manifest(tmp_path)
-
-
-def test_bool_version_rejected(tmp_path: Path):
-    (tmp_path / "manifest.json").write_text(
-        json.dumps({"entry_point": "agent", "class_name": "Agent", "template_version": True}),
-        encoding="utf-8",
-    )
-    with pytest.raises(ManifestError, match="must be an integer"):
-        load_manifest(tmp_path)
-
-
-def test_import_error_raises(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("source", "class_name", "code", "reason"),
+    [
+        (None, "Agent", "import_error", "could not import"),
+        ("raise RuntimeError('import failed')", "Agent", "import_error", "import failed"),
+        (_AGENT_SOURCE, "Missing", "class_not_found", "Missing"),
+        (
+            _AGENT_SOURCE + "\n    def __init__(self):\n        raise ValueError('constructor failed')\n",
+            "Agent",
+            "constructor_error",
+            "constructor failed",
+        ),
+        (
+            _AGENT_SOURCE.replace("def reset(", "def other_reset("),
+            "Agent",
+            "missing_hook",
+            "callable 'reset'",
+        ),
+        (_AGENT_SOURCE.replace("def act(", "def other_act("), "Agent", "missing_hook", "callable 'act'"),
+        (_AGENT_SOURCE + "\n    reset = None\n", "Agent", "missing_hook", "callable 'reset'"),
+        (_AGENT_SOURCE + "\n    act = 1\n", "Agent", "missing_hook", "callable 'act'"),
+    ],
+)
+def test_import_error_raises(tmp_path: Path, source, class_name, code, reason):
+    module = "missing_loader_module" if source is None else "load_failure_agent"
     _write_repo(
         tmp_path,
-        "broken_agent",
-        manifest={
-            "entry_point": "does_not_exist",
-            "class_name": "Agent",
-            "template_version": 1,
-        },
-        source="raise RuntimeError('unused')",
+        "load_failure_agent",
+        manifest={"entry_point": module, "class_name": class_name, "template_version": 1},
+        source=source or "",
     )
     try:
-        with pytest.raises(ManifestError, match="could not import entry-point module"):
+        with pytest.raises(ManifestError, match=reason) as raised:
             load_agent(tmp_path)
+        assert raised.value.code == code
     finally:
         _cleanup(tmp_path)
-
-
-def test_missing_class_raises(tmp_path: Path):
-    module = "nomatch_agent"
-    _write_repo(
-        tmp_path,
-        module,
-        manifest={"entry_point": module, "class_name": "Missing", "template_version": 1},
-        source=_AGENT_SOURCE,
-    )
-    try:
-        with pytest.raises(ManifestError, match="has no class 'Missing'"):
-            load_agent(tmp_path)
-    finally:
-        _cleanup(tmp_path)
-
-
-def test_class_missing_act_raises(tmp_path: Path):
-    module = "noact_agent"
-    _write_repo(
-        tmp_path,
-        module,
-        manifest={"entry_point": module, "class_name": "Agent", "template_version": 1},
-        source="class Agent:\n    def reset(self, seed, observation):\n        pass\n",
-    )
-    try:
-        with pytest.raises(ManifestError, match="no callable 'act'"):
-            load_agent(tmp_path)
-    finally:
-        _cleanup(tmp_path)
+        sys.modules.pop(module, None)

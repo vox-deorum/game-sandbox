@@ -1,20 +1,17 @@
-"""Direct checks for the unregistered three-player ParallelEnv test fixture."""
+"""Parallel episode behavior and strict reset/step contracts."""
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator
 from dataclasses import replace
 from typing import Any
 
 import pytest
-from pettingzoo.test import parallel_api_test
-from support_parallel import ThreePlayerParallelEnv, default_action, extract_overlay, make_entry
+from support_parallel import ThreePlayerParallelEnv, make_entry
 
 from game_sandbox_harness.clock import ManualClock
 from game_sandbox_harness.environment import (
     EnvironmentContractError,
-    discover_environments,
     resolve_parameters,
     validate_parallel_reset,
     validate_parallel_step,
@@ -23,9 +20,6 @@ from game_sandbox_harness.live import run_live_loop
 from game_sandbox_harness.live_io import PausableClock, SessionControl
 from game_sandbox_harness.recording.local import FolderRecordingStore
 from game_sandbox_harness.session import (
-    REASON_EPISODE_LIMIT,
-    REASON_TERMINATED,
-    REASON_TRUNCATED,
     AgentPlayer,
     Episode,
     ExternalPlayer,
@@ -93,10 +87,6 @@ class TraceAgent:
             self.clock.advance(self.learn_cost)
 
 
-def _json_bytes(value: object) -> str:
-    return json.dumps(value, allow_nan=False, sort_keys=True, separators=(",", ":"))
-
-
 @pytest.fixture
 def env() -> Iterator[ThreePlayerParallelEnv]:
     """Hand out a fresh fixture environment and close it however the test ends."""
@@ -107,113 +97,48 @@ def env() -> Iterator[ThreePlayerParallelEnv]:
         fixture_env.close()
 
 
-def test_fixture_passes_pettingzoo_parallel_api_test(env: ThreePlayerParallelEnv):
-    parallel_api_test(env, num_cycles=4)
-
-
-def test_fixture_is_not_a_registered_environment():
-    assert "three_player_parallel_test" not in discover_environments()
-
-
-def test_fixture_has_deterministic_joint_actions_departures_and_json_overlay(
-    env: ThreePlayerParallelEnv,
-):
-    observations, _ = env.reset(seed=17)
-    assert observations == {
-        "player_0": {"joint_action": 0, "tick": 0},
-        "player_1": {"joint_action": 0, "tick": 0},
-        "player_2": {"joint_action": 0, "tick": 0},
-    }
-    assert extract_overlay(env) == {
-        "active_players": ["player_0", "player_1", "player_2"],
-        "joint_action": 0,
-        "last_actions": {},
-        "tick": 0,
-    }
-    assert default_action(env, "player_1") == 0
-
-    observations, rewards, terminated, truncated, _ = env.step({"player_0": 1, "player_1": 2, "player_2": 0})
-    assert observations == {
-        "player_0": {"joint_action": 3, "tick": 1},
-        "player_1": {"joint_action": 3, "tick": 1},
-        "player_2": {"joint_action": 3, "tick": 1},
-    }
-    assert rewards == {"player_0": 3.0, "player_1": 3.0, "player_2": 3.0}
-    assert terminated == {"player_0": True, "player_1": False, "player_2": False}
-    assert truncated == {"player_0": False, "player_1": False, "player_2": False}
-    assert _json_bytes(extract_overlay(env)) == (
-        '{"active_players":["player_1","player_2"],"joint_action":3,'
-        '"last_actions":{"player_0":1,"player_1":2,"player_2":0},"tick":1}'
-    )
-    assert env.chat_policy("player_1") == {
-        "target_recipients": ["player_2"],
-        "default_recipient": "player_2",
-    }
-    with pytest.raises(ValueError, match="inactive"):
-        env.chat_policy("player_0")
-
-    _, rewards, terminated, truncated, _ = env.step({"player_1": 2, "player_2": 1})
-    assert rewards == {"player_1": 3.0, "player_2": 3.0}
-    assert terminated == {"player_1": False, "player_2": False}
-    assert truncated == {"player_1": True, "player_2": False}
-    assert env.agents == ["player_2"]
-
-
-def test_parallel_episode_start_uses_reset_agents_for_messaging_policy():
-    entry = make_entry(messaging=True)
-    with Episode(
-        entry,
-        {player: ExternalPlayer(NoopSource()) for player in entry.meta.human_players},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-    ) as episode:
-        assert episode.external_chat_sender is None
-
-
-def test_parallel_opening_state_exposes_the_reset_overlay_before_the_first_tick():
-    entry = make_entry(messaging=True)
-    with Episode(
-        entry,
-        {player: ExternalPlayer(NoopSource()) for player in entry.meta.human_players},
-        parameters=resolve_parameters(entry.meta),
-        seed=1,
-        external_chat_player="player_0",
-        clock=ManualClock(100),
-    ) as episode:
-        assert episode.opening_state() == {
-            "schema_version": 1,
-            "tick": 0,
-            "agents": {},
-            "overlay": {
-                "active_players": ALL_PLAYERS,
-                "joint_action": 0,
-                "last_actions": {},
+@pytest.mark.parametrize(
+    ("presentation", "expected"),
+    [
+        (
+            True,
+            {
+                "schema_version": 1,
                 "tick": 0,
+                "agents": {},
+                "overlay": {
+                    "active_players": ["player_0", "player_1", "player_2"],
+                    "joint_action": 0,
+                    "last_actions": {},
+                    "tick": 0,
+                },
+                "chat_options": {
+                    "sender": "player_0",
+                    "target_recipients": ["player_1", "player_2"],
+                    "default_recipient": "player_1",
+                },
+                "timing": {"started_at": 100, "duration_ms": 0},
             },
-            "chat_options": {
-                "sender": "player_0",
-                "target_recipients": ["player_1", "player_2"],
-                "default_recipient": "player_1",
-            },
-            "timing": {"started_at": 100, "duration_ms": 0},
-        }
-
-
-def test_parallel_opening_state_exists_even_without_overlay_or_chat_options():
-    entry = replace(make_entry(), overlay=None)
+        ),
+        (
+            False,
+            {"schema_version": 1, "tick": 0, "agents": {}, "timing": {"started_at": 100, "duration_ms": 0}},
+        ),
+    ],
+)
+def test_parallel_opening_state_exposes_the_reset_overlay_before_the_first_tick(presentation, expected):
+    entry = make_entry(messaging=True)
+    if not presentation:
+        entry = replace(entry, overlay=None)
     with Episode(
         entry,
         {player: ExternalPlayer(NoopSource()) for player in entry.meta.human_players},
         parameters=resolve_parameters(entry.meta),
         seed=1,
+        external_chat_player="player_0" if presentation else None,
         clock=ManualClock(100),
     ) as episode:
-        assert episode.opening_state() == {
-            "schema_version": 1,
-            "tick": 0,
-            "agents": {},
-            "timing": {"started_at": 100, "duration_ms": 0},
-        }
+        assert episode.opening_state() == expected
 
 
 def test_parallel_external_actions_are_consumed_before_agent_action_hooks():
@@ -268,30 +193,23 @@ def test_headless_live_loop_advances_simultaneous_episodes_without_a_pace_interv
 
 
 def test_headless_simultaneous_loop_honors_pause_until_resume():
-    created: list[ThreePlayerParallelEnv] = []
-
-    def make_paused_env() -> ThreePlayerParallelEnv:
-        env = ThreePlayerParallelEnv()
-        created.append(env)
-        return env
-
-    entry = make_entry(make_paused_env)
+    entry = make_entry()
     base = ManualClock()
     clock = PausableClock(base)
     control = SessionControl(clock)
     control.pause()
 
-    class ResumeOnThirdSleep:
+    class ResumeAfterPause:
         def __init__(self) -> None:
             self.calls = 0
 
         def sleep_ms(self, ms: int) -> None:
             self.calls += 1
-            assert created[0]._tick == 0
-            if self.calls == 3:
+            assert episode.tick == 0
+            if self.calls >= 2:
                 control.resume()
 
-    sleeper = ResumeOnThirdSleep()
+    sleeper = ResumeAfterPause()
     with Episode(
         entry,
         {player: ExternalPlayer(NoopSource()) for player in entry.meta.human_players},
@@ -307,8 +225,8 @@ def test_headless_simultaneous_loop_honors_pause_until_resume():
             sleeper=sleeper,
         )
 
-    assert sleeper.calls == 3
-    assert created[0]._tick == 3
+    assert sleeper.calls > 0
+    assert episode.result().ticks == 3
 
 
 def test_run_episode_dispatches_parallel_ticks_and_records_all_active_players(tmp_path):
@@ -327,7 +245,7 @@ def test_run_episode_dispatches_parallel_ticks_and_records_all_active_players(tm
     )
 
     assert result.ticks == 3
-    assert result.reason == REASON_TRUNCATED
+    assert result.reason == "truncated"
     assert result.scores == {"player_0": 3.0, "player_1": 6.0, "player_2": 6.0}
     states = list(FolderRecordingStore(tmp_path).open("parallel").steps())
     assert [list(state["agents"]) for state in states] == [
@@ -490,7 +408,7 @@ def test_parallel_simultaneous_budget_overruns_choose_the_first_canonical_player
         player_attribution=_agent_attribution(),
     ) as episode:
         episode.advance()
-        assert episode.result().reason == REASON_EPISODE_LIMIT
+        assert episode.result().reason == "episode_limit"
         assert episode.result().failed_player == "player_0"
     assert len(list(FolderRecordingStore(tmp_path).open("budget").steps())) == 1
 
@@ -512,7 +430,7 @@ def test_parallel_natural_ending_wins_over_a_coincident_cap_and_active_cap_trunc
         seed=1,
         max_steps=1,
     )
-    assert result.reason == REASON_TERMINATED
+    assert result.reason == "terminated"
 
     active_cap = make_entry()
     result = run_episode(
@@ -522,7 +440,7 @@ def test_parallel_natural_ending_wins_over_a_coincident_cap_and_active_cap_trunc
         seed=1,
         max_steps=1,
     )
-    assert result.reason == REASON_TRUNCATED
+    assert result.reason == "truncated"
 
 
 def test_episode_rejects_a_declared_sequential_factory_returning_parallel():

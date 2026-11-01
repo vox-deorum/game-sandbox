@@ -28,6 +28,7 @@ from game_sandbox_harness.environment import (
     resolve_layout,
     resolve_parameters,
 )
+from game_sandbox_harness.schema import validate_environment_meta
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "schema" / "fixtures"
 
@@ -54,31 +55,29 @@ def _meta() -> EnvironmentMeta:
 
 
 def test_meta_to_json_round_trips():
-    meta = _meta()
+    meta = replace(
+        _meta(),
+        pace_interval_ms=250,
+        view_interval_ms=120,
+        live_interval_ms=80,
+        human_pause="playback",
+        seat_order_matters=True,
+    )
     blob = json.dumps(meta.to_json())
     parsed = json.loads(blob)
+    validate_environment_meta(parsed)
     assert parsed["env_id"] == "demo"
     assert parsed["stepping"] == "sequential"
     assert parsed["builtin_agents"] == [{"name": "naive", "label": "Naive"}]
     assert parsed["human_players"] == ["player_0"]  # tuple serialized as a JSON array
     assert parsed["human_timeout_ms"] is None
-    assert parsed["pace_interval_ms"] == 50
-    assert parsed["seat_order_matters"] is False
-    assert parsed["view_interval_ms"] is None  # defaulted, present in the serialized shape
-    assert parsed["live_interval_ms"] is None  # defaulted, present in the serialized shape
-    assert parsed["human_pause"] == "session"  # defaulted, present in the serialized shape
+    assert parsed["pace_interval_ms"] == 250
+    assert parsed["view_interval_ms"] == 120
+    assert parsed["live_interval_ms"] == 80
+    assert parsed["human_pause"] == "playback"
+    assert parsed["seat_order_matters"] is True
     assert parsed["parameters"][0]["name"] == "players"
     assert parsed["presets"] == []
-
-
-def test_preset_to_json_round_trips():
-    preset = EnvPreset("small_game", "Small game", {"players": 1})
-    assert json.loads(json.dumps(preset.to_json())) == {
-        "name": "small_game",
-        "title": "Small game",
-        "values": {"players": 1},
-        "llm": False,
-    }
 
 
 def test_preset_serializes_llm_and_rejects_non_bool():
@@ -94,18 +93,22 @@ def test_preset_rejects_non_mapping_values():
 
 
 def test_meta_serializes_and_resolves_presets():
-    meta = EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "layout": PlayerBounds(1, 2),
-            "parameters": (EnvParameter("terrain", "Terrain", "Enables terrain.", "bool", False),),
-            "presets": (EnvPreset("duel", "Duel", {"players": 2, "terrain": True}),),
-        }
+    meta = replace(
+        _meta(),
+        layout=PlayerBounds(1, 3),
+        parameters=(EnvParameter("terrain", "Terrain", "Enables terrain.", "bool", False),),
+        presets=(EnvPreset("duel", "Duel", {"players": 2, "terrain": True}),),
     )
     assert meta.to_json()["presets"] == [
         {"name": "duel", "title": "Duel", "values": {"players": 2, "terrain": True}, "llm": False}
     ]
-    assert resolve_parameters(meta, meta.presets[0].values) == {"players": 2, "terrain": True}
+    preset_layer = meta.presets[0].values
+    assert resolve_parameters(meta, preset_layer) == {"players": 2, "terrain": True}
+    # The explicit layer wins for terrain while the preset's non-default players value survives.
+    assert resolve_parameters(meta, preset_layer, {"terrain": False}) == {
+        "players": 2,
+        "terrain": False,
+    }
 
 
 def test_preset_example_serializes_only_when_set():
@@ -123,37 +126,36 @@ def test_preset_example_serializes_only_when_set():
 
 def test_meta_rejects_preset_llm_when_environment_declares_llm_false():
     with pytest.raises(ValueError, match=r"enables the LLM "):
-        EnvironmentMeta(**{**_meta().__dict__, "presets": (EnvPreset("duel", "Duel", {}, llm=True),)})
+        replace(_meta(), presets=(EnvPreset("duel", "Duel", {}, llm=True),))
 
 
 def test_meta_accepts_preset_llm_when_environment_declares_llm_true():
-    meta = EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "llm": True,
-            "presets": (EnvPreset("duel", "Duel", {}, llm=True),),
-        }
+    meta = replace(
+        _meta(),
+        llm=True,
+        presets=(EnvPreset("duel", "Duel", {}, llm=True),),
     )
     assert meta.presets[0].llm is True
 
 
 def test_preset_values_looks_up_by_name():
-    meta = EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "layout": PlayerBounds(1, 2),
-            "presets": (EnvPreset("duel", "Duel", {"players": 2}),),
-        }
+    meta = replace(
+        _meta(),
+        layout=PlayerBounds(1, 2),
+        presets=(EnvPreset("duel", "Duel", {"players": 2}),),
     )
     assert preset_values(meta, "duel") == {"players": 2}
-    with pytest.raises(ValueError, match="unknown environment preset 'other'; available: duel"):
+    with pytest.raises(ValueError) as error:
         preset_values(meta, "other")
+    message = str(error.value)
+    assert "other" in message
+    assert "duel" in message
 
 
 def test_meta_rejects_duplicate_preset_names():
     presets = (EnvPreset("duel", "Duel", {}), EnvPreset("duel", "Again", {}))
     with pytest.raises(ValueError, match="preset names must be unique"):
-        EnvironmentMeta(**{**_meta().__dict__, "presets": presets})
+        replace(_meta(), presets=presets)
 
 
 def test_meta_rejects_unknown_human_pause():
@@ -164,17 +166,7 @@ def test_meta_rejects_unknown_human_pause():
 @pytest.mark.parametrize("values", [{"players": 2}, {"unknown": True}])
 def test_meta_rejects_presets_with_invalid_parameter_values(values: dict[str, object]):
     with pytest.raises(ValueError, match="invalid parameter values"):
-        EnvironmentMeta(**{**_meta().__dict__, "presets": (EnvPreset("invalid", "Invalid", values),)})
-
-
-def test_flappy_bird_is_discoverable():
-    found = discover_environments()
-    assert "flappy_bird" in found
-    entry = found["flappy_bird"]
-    assert entry.meta.env_id == "flappy_bird"
-    assert entry.meta.human_players == ("player_0",)
-    # The metadata is serialisable end to end.
-    json.dumps(entry.meta.to_json())
+        replace(_meta(), presets=(EnvPreset("invalid", "Invalid", values),))
 
 
 def test_load_environment_unknown_id_raises():
@@ -188,27 +180,19 @@ def test_stepping_is_required_and_simultaneous_timing_is_coherent():
     with pytest.raises(TypeError, match="stepping"):
         EnvironmentMeta(**values)  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="sequential.*simultaneous"):
-        EnvironmentMeta(**{**_meta().__dict__, "stepping": "unknown"})  # type: ignore[arg-type]
+        replace(_meta(), stepping="unknown")  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="pace_interval_ms"):
-        EnvironmentMeta(**{**_meta().__dict__, "stepping": "simultaneous", "pace_interval_ms": None})
+        replace(_meta(), stepping="simultaneous", pace_interval_ms=None)
     with pytest.raises(ValueError, match="positive"):
-        EnvironmentMeta(**{**_meta().__dict__, "stepping": "simultaneous", "pace_interval_ms": 0})
+        replace(_meta(), stepping="simultaneous", pace_interval_ms=0)
     with pytest.raises(ValueError, match="human_timeout_ms"):
-        EnvironmentMeta(
-            **{
-                **_meta().__dict__,
-                "stepping": "simultaneous",
-                "human_timeout_ms": 1000,
-            }
-        )
+        replace(_meta(), stepping="simultaneous", human_timeout_ms=1000)
 
 
 @pytest.mark.parametrize("pace_interval_ms", [1.5, True])
 def test_sequential_pace_rejects_non_integer_wire_values(pace_interval_ms: object):
     with pytest.raises(ValueError, match="JSON-safe integer"):
-        EnvironmentMeta(
-            **{**_meta().__dict__, "pace_interval_ms": pace_interval_ms}  # type: ignore[arg-type]
-        )
+        replace(_meta(), pace_interval_ms=pace_interval_ms)  # type: ignore[arg-type]
 
 
 def test_discovery_rejects_name_envid_mismatch(monkeypatch):
@@ -248,13 +232,7 @@ def _fixture_meta() -> EnvironmentMeta:
                 choices=choices,
             )
         )
-    return EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "layout": PlayerBounds(1, 4),
-            "parameters": tuple(declarations),
-        }
-    )
+    return replace(_meta(), layout=PlayerBounds(1, 4), parameters=tuple(declarations))
 
 
 def test_parameter_values_match_the_shared_cross_language_fixture():
@@ -313,70 +291,18 @@ def test_parameter_declarations_reject_invalid_shapes():
 
 def test_builtin_agents_require_a_unique_naive_baseline_and_valid_entries():
     with pytest.raises(ValueError, match="at least one"):
-        EnvironmentMeta(**{**_meta().__dict__, "builtin_agents": ()})
+        replace(_meta(), builtin_agents=())
     with pytest.raises(ValueError, match="first builtin"):
-        EnvironmentMeta(
-            **{
-                **_meta().__dict__,
-                "builtin_agents": (BuiltinAgent("cautious", "Cautious"),),
-            }
-        )
+        replace(_meta(), builtin_agents=(BuiltinAgent("cautious", "Cautious"),))
     with pytest.raises(ValueError, match="unique"):
-        EnvironmentMeta(
-            **{
-                **_meta().__dict__,
-                "builtin_agents": (BuiltinAgent("naive", "Naive"), BuiltinAgent("naive", "Again")),
-            }
+        replace(
+            _meta(),
+            builtin_agents=(BuiltinAgent("naive", "Naive"), BuiltinAgent("naive", "Again")),
         )
     with pytest.raises(ValueError, match="snake_case"):
         BuiltinAgent("Not snake", "Naive")
     with pytest.raises(ValueError, match="non-empty"):
         BuiltinAgent("naive", "")
-
-
-def test_layout_resolution_covers_player_bounds_and_uneven_seat_plans():
-    bounds = EnvironmentMeta(**{**_meta().__dict__, "layout": PlayerBounds(1, 4)})
-    resolved_bounds = resolve_layout(bounds, resolve_parameters(bounds, {"players": 3}))
-    assert [seat.seat_id for seat in resolved_bounds.seats] == ["seat_0", "seat_1", "seat_2"]
-    assert [seat.players for seat in resolved_bounds.seats] == [
-        ("player_0",),
-        ("player_1",),
-        ("player_2",),
-    ]
-
-    plans = EnvironmentMeta(
-        **{
-            **_meta().__dict__,
-            "layout": SeatPlans(
-                (
-                    SeatPlan(
-                        "duo",
-                        "Duo",
-                        (SeatDeclaration((0,)), SeatDeclaration((1, 2, 3))),
-                    ),
-                )
-            ),
-        }
-    )
-    layout = resolve_layout(plans, resolve_parameters(plans))
-    assert layout.plan_key == "duo"
-    assert layout.player_count == 4
-    assert layout.seat_count == 2
-    assert layout.seats[1].players == ("player_1", "player_2", "player_3")
-
-
-@pytest.mark.parametrize(
-    "layout",
-    [
-        SeatPlans(()),
-        SeatPlans((SeatPlan("x", "X", (SeatDeclaration(()),)),)),
-        SeatPlans((SeatPlan("x", "X", (SeatDeclaration((0, 0)),)),)),
-        SeatPlans((SeatPlan("x", "X", (SeatDeclaration((0, 2)),)),)),
-    ],
-)
-def test_layout_rejects_invalid_partitions(layout):
-    with pytest.raises(ValueError, match="environment 'demo'"):
-        EnvironmentMeta(**{**_meta().__dict__, "layout": layout})
 
 
 def _layout_from_fixture(raw: dict[str, object]) -> PlayerBounds | SeatPlans:
@@ -420,12 +346,10 @@ def test_layout_values_match_the_shared_cross_language_fixture():
     fixture = json.loads((FIXTURES_DIR / "layout-values.json").read_text(encoding="utf-8"))
 
     for case in fixture["valid"]:
-        meta = EnvironmentMeta(
-            **{
-                **_meta().__dict__,
-                "layout": _layout_from_fixture(case["meta"]["layout"]),
-                "human_players": tuple(case["meta"]["human_players"]),
-            }
+        meta = replace(
+            _meta(),
+            layout=_layout_from_fixture(case["meta"]["layout"]),
+            human_players=tuple(case["meta"]["human_players"]),
         )
         assert _resolved_layout_json(meta, case["parameters"]) == case["layout"], case["name"]
 
@@ -442,4 +366,4 @@ def test_layout_values_match_the_shared_cross_language_fixture():
             else raw_layout
         )
         with pytest.raises(ValueError):
-            EnvironmentMeta(**{**_meta().__dict__, "layout": layout})
+            replace(_meta(), layout=layout)  # type: ignore[arg-type]

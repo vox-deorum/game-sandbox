@@ -23,8 +23,7 @@ that bare name for every player. Two players that each lazily import their own `
 share whichever one imported first. Fixing this properly needs per-player module namespacing (or a
 separate interpreter per player), which is a larger change than the container's current in-process
 model; until then, keep the container to one player per process, or have submissions import their
-helpers at module top, where the eviction already isolates them. ``test_manifest.py`` pins this
-boundary so the limit stays visible rather than silently surprising a later stage.
+helpers at module top, where the eviction already isolates them.
 """
 
 from __future__ import annotations

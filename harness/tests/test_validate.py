@@ -1,12 +1,4 @@
-"""The ``validate`` load-check command (Stage 5.4): exercise it directly, without the backend.
-
-Each test writes a tiny repo into ``tmp_path`` with a unique entry-point module name (so the
-shared ``sys.path``/import mechanism never collides on a cached ``agent`` module across tests),
-runs :func:`game_sandbox_harness.validate.main` against it, and asserts both the process exit code
-and the single structured ``validate-result`` envelope printed on stdout. The worked example loads;
-each broken variant reports its specific closed-set code. The command never constructs the
-environment — it only imports the module and instantiates the class.
-"""
+"""The load-check subprocess reports one unspoofable result without playing a game."""
 
 from __future__ import annotations
 
@@ -16,7 +8,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from game_sandbox_harness.validate import RESULT_KIND
+import pytest
 
 
 def _write_repo(root: Path, module: str, *, class_name: str, source: str) -> None:
@@ -25,128 +17,81 @@ def _write_repo(root: Path, module: str, *, class_name: str, source: str) -> Non
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
-def _cleanup(root: Path, module: str) -> None:
-    sys.path[:] = [p for p in sys.path if p != str(root.resolve())]
-    sys.modules.pop(module, None)
-
-
 def _run(root: Path) -> tuple[subprocess.CompletedProcess[str], dict[str, Any]]:
-    """Run the module and return the process plus the parsed result envelope from stdout."""
     proc = subprocess.run(
         [sys.executable, "-m", "game_sandbox_harness.validate", str(root)],
         capture_output=True,
         text=True,
         timeout=10,
     )
-    out = proc.stdout
-    envelope = next(
-        json.loads(line)
-        for line in out.splitlines()
-        if line.strip().startswith("{") and json.loads(line).get("kind") == RESULT_KIND
-    )
-    return proc, envelope
+    events = [json.loads(line) for line in proc.stdout.splitlines()]
+    assert len(events) == 1, (proc.stdout, proc.stderr)
+    assert events[0]["kind"] == "validate-result"
+    return proc, events[0]
 
 
 _GOOD_AGENT = """
 class Agent:
     def reset(self, seed, observation):
-        self.seed = seed
+        raise AssertionError("validation called reset")
     def act(self, observation):
-        return 1
+        raise AssertionError("validation called act")
     def learn(self, observation, action, reward, terminated):
-        pass
+        raise AssertionError("validation called learn")
 """
 
 
 def test_good_agent_loads_and_reports_success(tmp_path: Path):
-    module = "good_validate_agent"
-    _write_repo(tmp_path, module, class_name="Agent", source=_GOOD_AGENT)
-    try:
-        proc, envelope = _run(tmp_path)
-        assert proc.returncode == 0
-        assert envelope["ok"] is True
-        # Optional-hook presence rides along for the owner's debug view.
-        assert envelope["hooks"] == {"learn": True, "chat": False}
-    finally:
-        _cleanup(tmp_path, module)
+    _write_repo(tmp_path, "good_validate_agent", class_name="Agent", source=_GOOD_AGENT)
+    proc, envelope = _run(tmp_path)
+    assert proc.returncode == 0
+    assert envelope == {"kind": "validate-result", "ok": True, "hooks": {"learn": True, "chat": False}}
 
 
-def test_missing_class_reports_class_not_found(tmp_path: Path):
-    module = "nomatch_validate_agent"
-    _write_repo(tmp_path, module, class_name="Missing", source=_GOOD_AGENT)
-    try:
-        proc, envelope = _run(tmp_path)
-        assert proc.returncode == 1
-        assert envelope["ok"] is False
-        assert envelope["code"] == "class_not_found"
-        assert "Missing" in envelope["detail"]
-    finally:
-        _cleanup(tmp_path, module)
-
-
-def test_import_error_reports_import_error(tmp_path: Path):
-    module = "raises_on_import_agent"
-    _write_repo(
-        tmp_path,
-        module,
-        class_name="Agent",
-        source="raise RuntimeError('boom at import')\n",
-    )
-    try:
-        proc, envelope = _run(tmp_path)
-        assert proc.returncode == 1
-        assert envelope["code"] == "import_error"
-    finally:
-        _cleanup(tmp_path, module)
-
-
-def test_constructor_error_reports_constructor_error(tmp_path: Path):
-    module = "bad_ctor_agent"
-    _write_repo(
-        tmp_path,
-        module,
-        class_name="Agent",
-        source=(
-            "class Agent:\n"
-            "    def __init__(self):\n"
-            "        raise ValueError('no good')\n"
-            "    def reset(self, seed, observation):\n"
-            "        pass\n"
-            "    def act(self, observation):\n"
-            "        return 0\n"
+@pytest.mark.parametrize(
+    ("class_name", "source", "code", "detail"),
+    [
+        ("Missing", _GOOD_AGENT, "class_not_found", "Missing"),
+        ("Agent", "raise RuntimeError('boom at import')", "import_error", "boom at import"),
+        (
+            "Agent",
+            _GOOD_AGENT + "\n    def __init__(self):\n        raise ValueError('no good')\n",
+            "constructor_error",
+            "no good",
         ),
-    )
-    try:
-        proc, envelope = _run(tmp_path)
-        assert proc.returncode == 1
-        assert envelope["code"] == "constructor_error"
-        assert "no good" in envelope["detail"]
-    finally:
-        _cleanup(tmp_path, module)
+        ("Agent", _GOOD_AGENT.replace("def reset(", "def other_reset("), "missing_hook", "reset"),
+        ("Agent", _GOOD_AGENT.replace("def act(", "def other_act("), "missing_hook", "act"),
+        ("Agent", _GOOD_AGENT + "\n    reset = None\n", "missing_hook", "reset"),
+        ("Agent", _GOOD_AGENT + "\n    act = 1\n", "missing_hook", "act"),
+    ],
+)
+def test_missing_class_reports_class_not_found(tmp_path: Path, class_name, source, code, detail):
+    _write_repo(tmp_path, "invalid_validate_agent", class_name=class_name, source=source)
+    proc, envelope = _run(tmp_path)
+    assert proc.returncode == 1
+    assert envelope["ok"] is False
+    assert envelope["code"] == code
+    assert detail in envelope["detail"]
 
 
-def test_missing_act_hook_reports_missing_hook(tmp_path: Path):
-    module = "noact_validate_agent"
-    _write_repo(
-        tmp_path,
-        module,
-        class_name="Agent",
-        source="class Agent:\n    def reset(self, seed, observation):\n        pass\n",
+def test_entry_point_outside_repo_reports_import_error(tmp_path: Path):
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"entry_point": "json", "class_name": "JSONDecoder", "template_version": 1}),
+        encoding="utf-8",
     )
-    try:
-        proc, envelope = _run(tmp_path)
-        assert proc.returncode == 1
-        assert envelope["code"] == "missing_hook"
-    finally:
-        _cleanup(tmp_path, module)
+    proc, envelope = _run(tmp_path)
+    assert proc.returncode == 1
+    assert envelope["ok"] is False
+    assert envelope["code"] == "import_error"
+    assert "json" in envelope["detail"]
+    assert "outside the repo root" in envelope["detail"]
 
 
 def test_participant_stdout_cannot_spoof_the_result(tmp_path: Path):
-    module = "spoof_validate_agent"
-    fake_success = json.dumps({"kind": RESULT_KIND, "ok": True})
+    fake_success = json.dumps({"kind": "validate-result", "ok": True})
     _write_repo(
         tmp_path,
-        module,
+        "spoof_validate_agent",
         class_name="Agent",
         source=(
             f"print({fake_success!r}, flush=True)\n"
@@ -155,12 +100,8 @@ def test_participant_stdout_cannot_spoof_the_result(tmp_path: Path):
             "        pass\n"
         ),
     )
-    try:
-        proc, envelope = _run(tmp_path)
-        assert proc.returncode == 1
-        assert proc.stdout.count(RESULT_KIND) == 1
-        assert envelope["ok"] is False
-        assert envelope["code"] == "missing_hook"
-        assert fake_success in proc.stderr
-    finally:
-        _cleanup(tmp_path, module)
+    proc, envelope = _run(tmp_path)
+    assert proc.returncode == 1
+    assert envelope["ok"] is False
+    assert envelope["code"] == "missing_hook"
+    assert fake_success in proc.stderr

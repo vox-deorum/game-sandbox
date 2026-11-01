@@ -8,6 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import Any
 
 import pytest
 
@@ -15,8 +16,6 @@ from game_sandbox_harness.environment import (
     BuiltinAgent,
     EnvironmentMeta,
     PlayerBounds,
-    ResolvedLayout,
-    ResolvedSeat,
     SeatDeclaration,
     SeatPlan,
     SeatPlans,
@@ -28,20 +27,47 @@ from game_sandbox_harness.schema import (
     validate_header,
     validate_step,
 )
-from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
-
-SINGLE_LAYOUT = ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1)
 
 FIXTURES_DIR = Path(__file__).resolve().parents[2] / "schema" / "fixtures"
 
 
-def _valid_state():
-    return build_step_state(
-        tick=0,
-        agents={"player_0": build_agent_step(reward=1.0, score=1.0, decision_ms=2.5)},
-        started_at=1_700_000_000_000,
-        duration_ms=3.0,
-    )
+def _valid_state() -> dict[str, Any]:
+    """A handwritten step state that exercises every required field."""
+    return {
+        "schema_version": 1,
+        "tick": 0,
+        "agents": {
+            "player_0": {
+                "reward": 1.0,
+                "score": 1.0,
+                "timing": {"decision_ms": 2.5},
+            }
+        },
+        "timing": {"started_at": 1_700_000_000_000, "duration_ms": 3.0},
+    }
+
+
+def _valid_header() -> dict[str, Any]:
+    """A handwritten header with one human, one submitted agent, and one builtin agent."""
+    return {
+        "schema_version": 1,
+        "environment": "flappy",
+        "parameters": {"players": 3, "pipe_gap": 100},
+        "seed": 7,
+        "players": {
+            "player_0": {"kind": "human", "label": "Human player", "user": "octocat"},
+            "player_1": {
+                "kind": "agent",
+                "label": "Submitted agent",
+                "submission_id": "submission-42",
+            },
+            "player_2": {"kind": "agent", "label": "Naive agent", "builtin_name": "naive"},
+        },
+        "seats": {"seat_0": ["player_0"], "seat_1": ["player_1"], "seat_2": ["player_2"]},
+        "seat_plan": "solo",
+        # The header root is an open region, so an unknown additive field is accepted.
+        "future_field": {"anything": [1, 2, 3]},
+    }
 
 
 def test_valid_state_passes():
@@ -49,45 +75,38 @@ def test_valid_state_passes():
 
 
 def test_valid_header_passes():
-    validate_header(
-        build_header(
-            environment="flappy",
-            parameters={"players": 1, "pipe_gap": 100},
-            seed=7,
-            players={
-                "player_0": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                }
-            },
-            layout=SINGLE_LAYOUT,
-        )
-    )
+    validate_header(_valid_header())
 
 
 @pytest.mark.parametrize(
-    "seats",
+    "attribution",
     [
-        {"seat_0": ["player_0"], "seat_1": ["player_0"]},
-        {"seat_0": ["player_1"]},
+        {"kind": "agent", "builtin_name": "naive", "label": ""},
+        {"kind": "agent", "label": "Agent"},
+        {"kind": "agent", "label": "Agent", "submission_id": "submission-1", "builtin_name": "naive"},
     ],
 )
-def test_header_rejects_a_seat_partition_that_disagrees_with_players(seats: dict[str, list[str]]):
-    header = build_header(
-        environment="flappy",
-        parameters={"players": 1, "pipe_gap": 100},
-        players={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            }
-        },
-        layout=SINGLE_LAYOUT,
-    )
+def test_header_rejects_invalid_player_attribution(attribution):
+    header = _valid_header()
+    header["players"]["player_1"] = attribution
+    with pytest.raises(SchemaValidationError, match="players/player_1"):
+        validate_header(header)
+
+
+@pytest.mark.parametrize(
+    ("seats", "reason"),
+    [
+        (
+            {"seat_0": ["player_0", "player_1", "player_2"], "seat_1": ["player_0"]},
+            "multiple seats",
+        ),
+        ({"seat_0": ["player_0", "player_1", "player_3"]}, "seat partition"),
+    ],
+)
+def test_header_rejects_a_seat_partition_that_disagrees_with_players(seats: dict[str, list[str]], reason):
+    header = _valid_header()
     header["seats"] = seats
-    with pytest.raises(SchemaValidationError):
+    with pytest.raises(SchemaValidationError, match=reason):
         validate_header(header)
 
 
@@ -112,19 +131,8 @@ def test_overlay_accepts_arbitrary_content():
 
 
 def test_static_overlay_accepts_arbitrary_content():
-    header = build_header(
-        environment="flappy",
-        parameters={"players": 1, "pipe_gap": 100},
-        players={
-            "player_0": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            }
-        },
-        layout=SINGLE_LAYOUT,
-        overlay_static={"sprites": {"bird": "blue"}, "anything": [1, 2, 3]},
-    )
+    header = _valid_header()
+    header["overlay_static"] = {"sprites": {"bird": "blue"}, "anything": [1, 2, 3]}
     validate_header(header)
 
 
@@ -226,7 +234,7 @@ _SEMANTIC_ONLY_INVALID_LAYOUT_CASES = frozenset(
 
 def test_validate_environment_meta_rejects_structurally_invalid_layout_fixtures():
     fixture = json.loads((FIXTURES_DIR / "layout-values.json").read_text(encoding="utf-8"))
-    base = discover_environments()["flappy_bird"].meta.to_json()
+    base = _fixture_meta(layout=PlayerBounds(1, 1), human_players=("player_0",)).to_json()
     for case in fixture["invalid"]:
         if case["name"] in _SEMANTIC_ONLY_INVALID_LAYOUT_CASES:
             continue

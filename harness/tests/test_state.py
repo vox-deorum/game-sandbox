@@ -1,26 +1,12 @@
-"""The builders produce schema-valid output by construction."""
+"""Builders preserve supplied state and header data, omitting absent optional fields."""
 
 from __future__ import annotations
 
 import pytest
 
 from game_sandbox_harness.environment import ResolvedLayout, ResolvedSeat
-from game_sandbox_harness.schema import (
-    SCHEMA_VERSION,
-    SchemaValidationError,
-    validate_header,
-    validate_step,
-)
+from game_sandbox_harness.schema import validate_header, validate_step
 from game_sandbox_harness.state import build_agent_step, build_header, build_step_state
-
-FLAPPY_PARAMETERS = {"players": 1, "pipe_gap": 100}
-SINGLE_LAYOUT = ResolvedLayout("solo", (ResolvedSeat("seat_0", ("player_0",)),), 1, 1)
-TWO_PLAYER_LAYOUT = ResolvedLayout(
-    "duo",
-    (ResolvedSeat("seat_0", ("player_0",)), ResolvedSeat("seat_1", ("player_1",))),
-    2,
-    2,
-)
 
 
 def test_minimal_step_is_valid():
@@ -31,52 +17,65 @@ def test_minimal_step_is_valid():
         duration_ms=0.0,
     )
     validate_step(state)
-    assert state["schema_version"] == SCHEMA_VERSION
-    # Optional regions are absent, not present-and-empty, to keep lines small.
-    assert "overlay" not in state
-    assert "messages" not in state
+    assert state == {
+        "schema_version": 1,
+        "tick": 0,
+        "agents": {"player_0": {"reward": 0.0, "score": 0.0}},
+        "timing": {"started_at": 0, "duration_ms": 0.0},
+    }
 
 
-def test_full_step_is_valid():
+@pytest.mark.parametrize(
+    ("hook_times", "expected_timing"),
+    [
+        ({"learn_ms": 0.2}, {"decision_ms": 0.5, "learn_ms": 0.2}),
+        ({"learn_ms": 0.2, "chat_ms": 0.3}, {"decision_ms": 0.5, "learn_ms": 0.2, "chat_ms": 0.3}),
+        (
+            {"decision_ms": 0.0, "learn_ms": 0.0, "chat_ms": 0.0},
+            {"decision_ms": 0.0, "learn_ms": 0.0, "chat_ms": 0.0},
+        ),
+    ],
+)
+def test_full_step_is_valid(hook_times, expected_timing):
     state = build_step_state(
         tick=3,
         agents={
             "player_0": build_agent_step(
-                reward=1.0, score=4.0, observation={"y": 1}, action=1, decision_ms=0.5
+                reward=1.0,
+                score=4.0,
+                observation={"y": 1},
+                action=0,
+                **({"decision_ms": 0.5} | hook_times),
             )
         },
         started_at=1_700_000_000_000,
         duration_ms=2.0,
         overlay={"pipes": []},
-        messages=[{"from": "player_0", "to": None, "text": "hi"}],
-    )
-    validate_step(state)
-
-
-def test_chat_ms_is_emitted_only_when_supplied():
-    # A non-chatting agent carries no chat field, so a chat-less recording is unchanged.
-    without = build_agent_step(reward=0.0, score=0.0, decision_ms=0.5, learn_ms=0.2)
-    assert "chat_ms" not in without["timing"]
-    # A chatting tick carries chat_ms alongside decision_ms and learn_ms.
-    with_chat = build_agent_step(reward=0.0, score=0.0, decision_ms=0.5, chat_ms=0.3)
-    assert with_chat["timing"]["chat_ms"] == 0.3
-
-
-def test_step_with_messages_and_chat_ms_validates():
-    state = build_step_state(
-        tick=1,
-        agents={
-            "player_0": build_agent_step(reward=0.0, score=0.0, action=57, decision_ms=0.5, chat_ms=0.25)
-        },
-        started_at=1_700_000_000_000,
-        duration_ms=1.0,
         messages=[
             {"from": "player_0", "to": "player_1", "text": "strong:hearts"},
             {"from": "player_0", "to": None, "text": "table!"},
         ],
     )
     validate_step(state)
-    assert state["agents"]["player_0"]["timing"]["chat_ms"] == 0.25
+    assert state == {
+        "schema_version": 1,
+        "tick": 3,
+        "agents": {
+            "player_0": {
+                "reward": 1.0,
+                "score": 4.0,
+                "observation": {"y": 1},
+                "action": 0,
+                "timing": expected_timing,
+            }
+        },
+        "timing": {"started_at": 1_700_000_000_000, "duration_ms": 2.0},
+        "overlay": {"pipes": []},
+        "messages": [
+            {"from": "player_0", "to": "player_1", "text": "strong:hearts"},
+            {"from": "player_0", "to": None, "text": "table!"},
+        ],
+    }
 
 
 def test_step_with_live_chat_options_validates():
@@ -92,127 +91,61 @@ def test_step_with_live_chat_options_validates():
         },
     )
     validate_step(state)
-    assert state["chat_options"]["default_recipient"] == "player_2"
-
-
-def test_header_builder_is_valid():
-    validate_header(
-        build_header(
-            environment="flappy",
-            parameters=FLAPPY_PARAMETERS,
-            players={
-                "player_0": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                }
-            },
-            layout=SINGLE_LAYOUT,
-        )
-    )
-    validate_header(
-        build_header(
-            environment="flappy",
-            parameters=FLAPPY_PARAMETERS,
-            players={
-                "player_0": {
-                    "kind": "agent",
-                    "builtin_name": "naive",
-                    "label": "Naive agent",
-                }
-            },
-            layout=SINGLE_LAYOUT,
-            created_at="2026-06-10T00:00:00Z",
-            seed=9,
-        )
-    )
-
-
-def test_header_builder_emits_static_overlay_only_when_present():
-    players = {
-        "player_0": {
-            "kind": "agent",
-            "builtin_name": "naive",
-            "label": "Naive agent",
-        }
+    assert state["chat_options"] == {
+        "sender": "player_0",
+        "target_recipients": ["player_2", "player_1", "player_3"],
+        "default_recipient": "player_2",
     }
-    assert "overlay_static" not in build_header(
-        environment="flappy",
-        parameters=FLAPPY_PARAMETERS,
-        players=players,
-        layout=SINGLE_LAYOUT,
-        overlay_static=None,
-    )
-
-    header = build_header(
-        environment="flappy",
-        parameters=FLAPPY_PARAMETERS,
-        players=players,
-        layout=SINGLE_LAYOUT,
-        overlay_static={"sprites": {"bird": "blue"}},
-    )
-    validate_header(header)
-    assert header["overlay_static"] == {"sprites": {"bird": "blue"}}
-
-
-def test_header_builder_carries_player_attribution():
-    header = build_header(
-        environment="flappy",
-        parameters=FLAPPY_PARAMETERS,
-        players={
-            "player_0": {"kind": "human", "label": "alice", "user": "alice"},
-            "player_1": {
-                "kind": "agent",
-                "builtin_name": "naive",
-                "label": "Naive agent",
-            },
-        },
-        layout=TWO_PLAYER_LAYOUT,
-    )
-    validate_header(header)
-    assert header["players"]["player_0"]["user"] == "alice"
-    assert header["players"]["player_1"]["label"] == "Naive agent"
-
-
-def test_header_rejects_player_attribution_with_empty_label():
-    with pytest.raises(SchemaValidationError):
-        validate_header(
-            build_header(
-                environment="flappy",
-                parameters=FLAPPY_PARAMETERS,
-                players={
-                    "player_0": {
-                        "kind": "agent",
-                        "builtin_name": "naive",
-                        "label": "",
-                    }
-                },
-                layout=SINGLE_LAYOUT,
-            )
-        )
 
 
 @pytest.mark.parametrize(
-    "attribution",
+    ("optional", "expected_optional"),
     [
-        {"kind": "agent", "label": "Agent"},
-        {
-            "kind": "agent",
-            "label": "Agent",
-            "submission_id": "submission-1",
-            "builtin_name": "naive",
-        },
+        ({}, {}),
+        (
+            {
+                "seed": 0,
+                "created_at": "2026-06-10T00:00:00Z",
+                "overlay_static": {"sprites": {"bird": "blue"}},
+                "sidecars": [{"name": "future", "path": "future.bin"}],
+            },
+            {
+                "seed": 0,
+                "created_at": "2026-06-10T00:00:00Z",
+                "overlay_static": {"sprites": {"bird": "blue"}},
+                "sidecars": [{"name": "future", "path": "future.bin"}],
+            },
+        ),
     ],
 )
-def test_header_rejects_agent_attribution_without_exactly_one_identity(
-    attribution: dict[str, str],
-):
-    with pytest.raises(SchemaValidationError):
-        validate_header(
-            build_header(
-                environment="flappy",
-                parameters=FLAPPY_PARAMETERS,
-                players={"player_0": attribution},  # type: ignore[dict-item]
-                layout=SINGLE_LAYOUT,
-            )
-        )
+def test_header_builder_is_valid(optional, expected_optional):
+    header = build_header(
+        environment="demo",
+        parameters={"seat_plan": "shared", "goal": 5},
+        players={
+            "player_0": {"kind": "human", "label": "Alice", "user": "alice"},
+            "player_1": {"kind": "agent", "builtin_name": "naive", "label": "Baseline"},
+            "player_2": {"kind": "agent", "submission_id": "submission-9", "label": "Student"},
+        },
+        layout=ResolvedLayout(
+            "shared",
+            (ResolvedSeat("seat_0", ("player_0", "player_2")), ResolvedSeat("seat_1", ("player_1",))),
+            3,
+            2,
+        ),
+        **optional,
+    )
+    validate_header(header)
+    assert header == {
+        "schema_version": 1,
+        "environment": "demo",
+        "parameters": {"seat_plan": "shared", "goal": 5},
+        "players": {
+            "player_0": {"kind": "human", "label": "Alice", "user": "alice"},
+            "player_1": {"kind": "agent", "builtin_name": "naive", "label": "Baseline"},
+            "player_2": {"kind": "agent", "submission_id": "submission-9", "label": "Student"},
+        },
+        "seats": {"seat_0": ["player_0", "player_2"], "seat_1": ["player_1"]},
+        "seat_plan": "shared",
+        **expected_optional,
+    }
