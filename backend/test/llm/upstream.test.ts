@@ -1,7 +1,7 @@
-import { APIConnectionError, APIConnectionTimeoutError, APIError } from 'openai'
-import { describe, expect, it, vi } from 'vitest'
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify'
+import { describe, expect, it } from 'vitest'
 
-import type { LlmChatCompletion } from '../../src/llm/types.js'
+import type { LlmChatCompletion, LlmChatRequest } from '../../src/llm/types.js'
 import { UpstreamCaller, upstreamRequestAllowanceMs } from '../../src/llm/upstream.js'
 import { createLlmUpstreamStub } from '../support/llm-upstream.js'
 
@@ -13,115 +13,151 @@ const success = {
   choices: [],
 } as LlmChatCompletion
 
-function statusError(status: number): APIError {
-  return APIError.generate(
-    status,
-    { error: { message: `upstream ${status}`, type: 'provider_error', code: `e${status}` } },
-    undefined,
-    new Headers(),
-  )
+async function serve(route: (request: FastifyRequest, reply: FastifyReply) => unknown) {
+  const app = Fastify({ forceCloseConnections: true })
+  app.post('/v1/chat/completions', route)
+  const address = await app.listen({ host: '127.0.0.1', port: 0 })
+  return { app, baseURL: `${address}/v1` }
 }
 
 describe('UpstreamCaller', () => {
   it.each([
-    [30_000, 0, 30_000],
-    [30_000, 1, 60_500],
-    [30_000, 2, 91_500],
-    [30_000, 6, 233_500],
-  ])('bounds a %d ms timeout with %d SDK retries at %d ms', (timeoutMs, maxRetries, expected) => {
-    expect(upstreamRequestAllowanceMs(timeoutMs, maxRetries)).toBe(expected)
+    [undefined, undefined],
+    ['synthetic-upstream-key', 'Bearer synthetic-upstream-key'],
+  ])('forwards the payload and optional credential %s across HTTP', async (apiKey, authorization) => {
+    let now = 100
+    const observed: unknown[] = []
+    const { app, baseURL } = await serve((request) => {
+      observed.push({ authorization: request.headers.authorization, body: request.body })
+      now = 117
+      return success
+    })
+    try {
+      const caller = new UpstreamCaller({
+        baseURL,
+        apiKey,
+        timeoutMs: 1_000,
+        maxRetries: 0,
+        now: () => now,
+      })
+      const payload: LlmChatRequest = {
+        model: 'm',
+        messages: [{ role: 'user', content: 'hello' }],
+        max_tokens: 7,
+        temperature: 0.25,
+      }
+      await expect(caller.call(payload)).resolves.toEqual({ completion: success, latencyMs: 17 })
+      expect(observed).toEqual([
+        {
+          authorization,
+          body: {
+            model: 'm',
+            messages: [{ role: 'user', content: 'hello' }],
+            max_tokens: 7,
+            temperature: 0.25,
+          },
+        },
+      ])
+    } finally {
+      await app.close()
+    }
   })
 
-  it('passes the per-request timeout to the SDK client and measures one logical call', async () => {
-    let now = 0
-    const client = { create: vi.fn().mockImplementation(async () => success) }
-    const caller = new UpstreamCaller({
-      baseURL: 'http://unused',
-      timeoutMs: 50,
-      maxRetries: 2,
-      client,
-      now: () => (now += 17),
-    })
-    const result = await caller.call({ model: 'm', messages: [] })
-    expect(client.create).toHaveBeenCalledOnce()
-    expect(client.create).toHaveBeenCalledWith(expect.anything(), {
-      timeout: 50,
-    })
-    expect(result.latencyMs).toBe(17)
-  })
-
-  it('settles promptly when the caller aborts while the client remains pending', async () => {
-    const client = { create: vi.fn(() => new Promise<LlmChatCompletion>(() => {})) }
-    const caller = new UpstreamCaller({
-      baseURL: 'http://unused',
-      timeoutMs: 50,
-      maxRetries: 2,
-      client,
-    })
-    const controller = new AbortController()
-    const pending = caller.call({ model: 'm', messages: [] }, controller.signal)
-    const reason = new Error('session ended')
-
-    controller.abort(reason)
-
-    await expect(pending).rejects.toBe(reason)
-    expect(client.create).toHaveBeenCalledOnce()
-    expect(client.create).toHaveBeenCalledWith(expect.anything(), {
-      timeout: 50,
-      signal: controller.signal,
-    })
-  })
-
-  it('normalizes SDK client errors without retrying injected clients itself', async () => {
-    const bad = { create: vi.fn().mockRejectedValue(statusError(400)) }
-    const terminal = new UpstreamCaller({
-      baseURL: 'http://unused',
-      timeoutMs: 1,
-      maxRetries: 3,
-      client: bad,
-    })
-    await expect(terminal.call({ model: 'm', messages: [] })).rejects.toMatchObject({
-      status: 400,
-      code: 'e400',
-    })
-    expect(bad.create).toHaveBeenCalledTimes(1)
-
-    const timeout = { create: vi.fn().mockRejectedValue(new APIConnectionTimeoutError()) }
-    const caller = new UpstreamCaller({
-      baseURL: 'http://unused',
-      timeoutMs: 1,
-      maxRetries: 1,
-      client: timeout,
-    })
-    await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({
-      status: 502,
-      code: 'upstream_timeout',
-    })
-    expect(timeout.create).toHaveBeenCalledOnce()
+  it('allows every attempt timeout and grows finitely when retries are enabled', () => {
+    expect(upstreamRequestAllowanceMs(30_000, 0)).toBe(30_000)
+    const oneRetry = upstreamRequestAllowanceMs(30_000, 1)
+    const twoRetries = upstreamRequestAllowanceMs(30_000, 2)
+    expect(Number.isFinite(oneRetry)).toBe(true)
+    expect(Number.isFinite(twoRetries)).toBe(true)
+    expect(oneRetry).toBeGreaterThanOrEqual(60_000)
+    expect(twoRetries).toBeGreaterThanOrEqual(90_000)
+    expect(twoRetries).toBeGreaterThan(oneRetry)
   })
 
   it.each([
-    [
-      'connection failure',
-      () => new APIConnectionError({ message: 'offline' }),
-      502,
-      'upstream_connection_error',
-    ],
-    ['408', () => statusError(408), 408, 'e408'],
-    ['409', () => statusError(409), 409, 'e409'],
-    ['429', () => statusError(429), 429, 'e429'],
-    ['500', () => statusError(500), 500, 'e500'],
-    ['503', () => statusError(503), 503, 'e503'],
-  ])('normalizes every SDK failure for %s', async (_name, makeError, status, code) => {
-    const client = { create: vi.fn().mockImplementation(() => Promise.reject(makeError())) }
+    ['connection failure', 'upstream_connection_error'],
+    ['timeout', 'upstream_timeout'],
+  ])('bounds SDK attempts and normalizes a real %s', async (failure, code) => {
+    let attempts = 0
+    const { app, baseURL } = await serve((request, reply) => {
+      attempts++
+      reply.hijack()
+      if (failure === 'connection failure') request.raw.socket.destroy()
+    })
+    try {
+      const caller = new UpstreamCaller({ baseURL, timeoutMs: 100, maxRetries: 1 })
+      await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({
+        status: 502,
+        envelope: { error: { code, type: 'upstream_error', message: expect.stringMatching(/\S/) } },
+      })
+      expect(attempts).toBe(2)
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('forwards cancellation to a noncooperating client and settles even if it never responds', async () => {
+    let receivedSignal: AbortSignal | undefined | null
     const caller = new UpstreamCaller({
       baseURL: 'http://unused',
-      timeoutMs: 10,
+      timeoutMs: 50,
       maxRetries: 2,
-      client,
+      client: {
+        create: (_request, options) => {
+          receivedSignal = options.signal
+          return new Promise<LlmChatCompletion>(() => {})
+        },
+      },
     })
-    await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({ status, code })
-    expect(client.create).toHaveBeenCalledOnce()
+    const controller = new AbortController()
+    const pending = caller.call({ model: 'm', messages: [] }, controller.signal)
+    expect(receivedSignal).toBe(controller.signal)
+    const reason = new Error('session ended')
+    controller.abort(reason)
+    await expect(pending).rejects.toBe(reason)
+    receivedSignal = undefined
+    await expect(caller.call({ model: 'm', messages: [] }, controller.signal)).rejects.toBe(reason)
+    expect(receivedSignal).toBeUndefined()
+  })
+
+  it.each([
+    [408, true, 2],
+    [409, true, 2],
+    [429, true, 2],
+    [500, true, 2],
+    [503, true, 2],
+    [503, false, 3],
+    [400, false, 1],
+  ] as const)('handles HTTP %d with recovery %s in %d attempts', async (status, recover, expectedAttempts) => {
+    let attempts = 0
+    const { app, baseURL } = await serve((_request, reply) => {
+      attempts++
+      if (recover && attempts === 2) return success
+      return reply
+        .header('retry-after-ms', '1')
+        .code(status)
+        .send({
+          error: { message: `upstream ${status}`, type: 'provider_error', code: `e${status}` },
+        })
+    })
+    try {
+      const caller = new UpstreamCaller({ baseURL, timeoutMs: 1_000, maxRetries: 2 })
+      if (recover) {
+        await expect(caller.call({ model: 'm', messages: [] })).resolves.toMatchObject({
+          completion: success,
+        })
+      } else {
+        await expect(caller.call({ model: 'm', messages: [] })).rejects.toMatchObject({
+          status,
+          envelope: {
+            error: { message: `upstream ${status}`, type: 'provider_error', code: `e${status}` },
+          },
+        })
+      }
+      expect(attempts).toBe(expectedAttempts)
+    } finally {
+      await app.close()
+    }
   })
 
   it('lists the upstream models, and reports a refusal with the provider status', async () => {

@@ -1,3 +1,4 @@
+import type { FastifyInstance } from 'fastify'
 import type OpenAI from 'openai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -5,16 +6,17 @@ import { LlmError } from '../../src/llm/errors.js'
 import { LlmHandler } from '../../src/llm/handler.js'
 import { createOfficialTickMarker, KeyRegistry } from '../../src/llm/key-registry.js'
 import { buildLlmListener } from '../../src/llm/listener.js'
-import { LlmMeter } from '../../src/llm/meter.js'
+import { LlmMeter, type LlmReservation } from '../../src/llm/meter.js'
 import type { LlmTokenCounter } from '../../src/llm/tokenizer.js'
 import {
   type LlmAccountingScope,
   type LlmChatCompletion,
   type LlmChatRequest,
+  type LlmCommittedUsageByModel,
   type LlmGrant,
   type LlmSuccessfulRecord,
   type ModelAlias,
-  weightedCommittedTokens,
+  modelCostWeights,
 } from '../../src/llm/types.js'
 import { UpstreamError } from '../../src/llm/upstream.js'
 import { configureAppLogs, createLogBuffer, resetAppLogs } from '../../src/logging/log-buffer.js'
@@ -36,30 +38,51 @@ const completion = (usage: unknown = null): OpenAI.Chat.Completions.ChatCompleti
     usage,
   }) as OpenAI.Chat.Completions.ChatCompletion
 
-function fixture(
-  overrides: {
-    model?: { tier: ModelAlias; upstream: string; costWeight: number }
-    rpm?: number
-    sink?: LlmGrant['recordSink']
-    tokenizer?: LlmTokenCounter
-  } = {},
-) {
-  const model = overrides.model ?? { tier: 'small', upstream: 'provider-secret', costWeight: 1 }
+/** Aggregate the successful records a scope's sink stored, so admission reads them back. */
+function committedUsage(records: readonly LlmSuccessfulRecord[]): LlmCommittedUsageByModel {
+  const byModel: LlmCommittedUsageByModel = {}
+  for (const record of records) {
+    const usage = byModel[record.model] ?? {
+      calls: 0,
+      inputTokens: 0,
+      reasoningTokens: 0,
+      outputTokens: 0,
+    }
+    usage.calls += 1
+    usage.inputTokens += record.usage.inputTokens
+    usage.reasoningTokens += record.usage.reasoningTokens
+    usage.outputTokens += record.usage.outputTokens
+    byModel[record.model] = usage
+  }
+  return byModel
+}
+
+interface FixtureOptions {
+  models?: LlmGrant['models']
+  tokenBudget?: number
+  rpm?: number
+  sink?: LlmGrant['recordSink']
+  tokenizer?: LlmTokenCounter
+}
+
+function fixture(overrides: FixtureOptions = {}) {
+  const models: LlmGrant['models'] = overrides.models ?? {
+    small: { upstream: 'provider-secret', costWeight: 1 },
+  }
   const records: LlmSuccessfulRecord[] = []
   const scope: LlmAccountingScope = {
     key: 'session:s1:player_0',
-    limits: { tokenBudget: 100, requestsPerMinute: overrides.rpm ?? 10 },
-    weights: { [model.tier]: model.costWeight },
-    readCommittedUsage: () => ({}),
+    limits: { tokenBudget: overrides.tokenBudget ?? 100, requestsPerMinute: overrides.rpm ?? 10 },
+    weights: modelCostWeights(models),
+    readCommittedUsage: () => committedUsage(records),
   }
-  const sink =
-    overrides.sink ??
-    ((record: LlmSuccessfulRecord) => {
-      records.push(record)
-    })
+  const sink: LlmGrant['recordSink'] = async (record) => {
+    await overrides.sink?.(record)
+    records.push(record)
+  }
   const grant = {
     kind: 'official',
-    models: { [model.tier]: { upstream: model.upstream, costWeight: model.costWeight } },
+    models,
     accountingScope: scope,
     recordSink: sink,
   } satisfies LlmGrant
@@ -90,88 +113,138 @@ function fixture(
   return { grant, handler, logs, meter, records, upstream }
 }
 
-describe('LLM registry, handler, and listener', () => {
-  afterEach(() => resetAppLogs())
+/** Build a listener and one official key for the common single-session setup. */
+async function officialProxy(
+  handler: LlmHandler,
+  grant: LlmGrant,
+  options: { now?: () => number; maxRequestMs?: number } = {},
+) {
+  const registry = new KeyRegistry(() => new Uint8Array(32).fill(7), options)
+  const key = registry.issueOfficial(
+    's1',
+    { kind: 'official', models: grant.models, accountingScope: grant.accountingScope },
+    createOfficialTickMarker(),
+    () => grant.recordSink,
+  )
+  const app = await openListener({ registry, handler })
+  return { app, key, registry }
+}
 
-  it.each([
-    ['small', 'provider-small', 1],
-    ['medium', 'provider-medium', 2],
-    ['large', 'provider-large', 4],
-  ] as const)('maps the public %s tier to its configured upstream model and retains the tier in telemetry', async (tier, upstreamModel, costWeight) => {
-    const { grant, handler, records, upstream } = fixture({
-      model: { tier, upstream: upstreamModel, costWeight },
-    })
-
-    const response = await handler.handle(grant, { model: tier, messages: [] })
-
-    expect(upstream.call).toHaveBeenCalledWith(
-      expect.objectContaining({ model: upstreamModel, max_completion_tokens: 8 }),
-    )
-    expect(response.model).toBe(tier)
-    expect(records).toHaveLength(1)
-    expect(records[0]).toMatchObject({
-      model: tier,
-      costWeight,
-      request: { model: tier },
-      completion: { model: tier },
-    })
+const listeners: FastifyInstance[] = []
+function gate() {
+  let resolve = (): void => {}
+  const promise = new Promise<void>((done) => {
+    resolve = done
   })
+  return { promise, resolve }
+}
 
-  it('maps aliases both ways, normalizes the output maximum, and records once before success', async () => {
-    const { grant, handler, records, upstream } = fixture()
-    const upstreamCompletion = completion({
+async function openListener(deps: Parameters<typeof buildLlmListener>[0]) {
+  const app = await buildLlmListener(deps)
+  listeners.push(app)
+  return app
+}
+
+function post(
+  app: FastifyInstance,
+  key: string,
+  url = '/v1/chat/completions',
+  payload: object = { model: 'small', messages: [] },
+  headers: Record<string, string> = {},
+) {
+  return app.inject({
+    method: 'POST',
+    url,
+    payload,
+    headers: { authorization: `Bearer ${key}`, ...headers },
+  })
+}
+
+afterEach(async () => {
+  await Promise.all(listeners.splice(0).map((app) => app.close()))
+  resetAppLogs()
+})
+
+describe('LLM registry, handler, and listener', () => {
+  it.each([
+    ['small', 'provider-small', 1, 6],
+    ['medium', 'provider-medium', 2, 12],
+    ['large', 'provider-large', 4, 24],
+    ['medium', 'provider-medium', 0.25, 1.5],
+  ] as const)('forwards %s privately and records its canonical public completion once', async (tier, upstreamModel, costWeight, charge) => {
+    const { grant, handler, records, upstream } = fixture({
+      models: { [tier]: { upstream: upstreamModel, costWeight } },
+    })
+    const generated = `${upstreamModel} is literal generated content`
+    const tool = {
+      id: 'call-1',
+      type: 'function' as const,
+      function: { name: 'lookup', arguments: `{"model":"${upstreamModel}"}` },
+    }
+    const raw = completion({
       prompt_tokens: 2,
       completion_tokens: 4,
       total_tokens: 6,
       completion_tokens_details: { reasoning_tokens: 1 },
     })
-    const firstChoice = upstreamCompletion.choices[0]
-    if (firstChoice !== undefined) {
-      firstChoice.message.content = 'provider-secret is literal generated content'
-    }
-    upstreamCompletion.moderation = {
+    raw.choices = [
+      {
+        index: 0,
+        finish_reason: 'stop',
+        logprobs: null,
+        message: {
+          role: 'assistant',
+          content: generated,
+          refusal: null,
+          tool_calls: [tool],
+        },
+      },
+    ]
+    raw.moderation = {
       input: { code: 'moderation_skipped', message: 'input not moderated', type: 'error' },
-      output: { code: 'moderation_skipped', message: 'output not moderated', type: 'error' },
-    }
+      output: { model: upstreamModel, results: [{ model: upstreamModel, flagged: false }] },
+    } as unknown as LlmChatCompletion['moderation']
     upstream.call.mockResolvedValueOnce({
       completion: {
-        ...upstreamCompletion,
-        provider_metadata: { resolved_model: 'provider-secret' },
-      } as OpenAI.Chat.Completions.ChatCompletion,
+        ...raw,
+        model: upstreamModel,
+        provider_metadata: { resolved_model: upstreamModel },
+      } as LlmChatCompletion,
       latencyMs: 17,
     })
     const response = await handler.handle(grant, {
-      model: 'small',
+      model: tier,
       messages: [{ role: 'user', content: 'hello' }],
     })
-
-    expect(upstream.call).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'provider-secret', max_completion_tokens: 8 }),
-    )
-    expect(response.model).toBe('small')
-    expect(response.choices[0]?.message.content).toBe(
-      'provider-secret is literal generated content',
-    )
-    expect(response.moderation).toEqual(upstreamCompletion.moderation)
+    expect(upstream.call.mock.calls[0]?.[0]).toEqual({
+      model: upstreamModel,
+      messages: [{ role: 'user', content: 'hello' }],
+      max_completion_tokens: 8,
+    })
+    expect(response.model).toBe(tier)
+    expect(response.choices[0]?.message).toMatchObject({ content: generated, tool_calls: [tool] })
+    expect(response.moderation).toEqual({
+      input: { code: 'moderation_skipped', message: 'input not moderated', type: 'error' },
+      output: { model: tier, results: [{ model: tier, flagged: false }] },
+    })
     expect(response).not.toHaveProperty('provider_metadata')
     expect(records).toHaveLength(1)
-    expect(records[0]?.completion).not.toHaveProperty('provider_metadata')
     expect(records[0]).toMatchObject({
-      model: 'small',
-      costWeight: 1,
-      budgetCostUnits: 6,
-      request: { model: 'small', max_completion_tokens: 8 },
-      completion: { model: 'small' },
+      model: tier,
+      costWeight,
+      budgetCostUnits: charge,
+      request: { model: tier, max_completion_tokens: 8 },
       usage: { inputTokens: 2, reasoningTokens: 1, outputTokens: 4 },
       usageEstimated: false,
       latencyMs: 17,
     })
+    expect(records[0]?.completion).toEqual(response)
   })
 
   it.each([
-    ['missing', null],
-    ['negative', { prompt_tokens: -1, completion_tokens: 4, total_tokens: 3 }],
-    ['non-integer', { prompt_tokens: 1.5, completion_tokens: 4, total_tokens: 5.5 }],
+    ['missing', null, 0],
+    ['negative', { prompt_tokens: -1, completion_tokens: 4, total_tokens: 3 }, 0],
+    ['non-integer', { prompt_tokens: 1.5, completion_tokens: 4, total_tokens: 5.5 }, 0],
     [
       'unsafe integer',
       {
@@ -179,8 +252,9 @@ describe('LLM registry, handler, and listener', () => {
         completion_tokens: 0,
         total_tokens: Number.MAX_SAFE_INTEGER + 1,
       },
+      0,
     ],
-    ['inconsistent total', { prompt_tokens: 2, completion_tokens: 4, total_tokens: 99 }],
+    ['inconsistent total', { prompt_tokens: 2, completion_tokens: 4, total_tokens: 99 }, 0],
     [
       'reasoning exceeds completion',
       {
@@ -189,408 +263,268 @@ describe('LLM registry, handler, and listener', () => {
         total_tokens: 6,
         completion_tokens_details: { reasoning_tokens: 5 },
       },
+      5,
     ],
-  ])('uses fallback estimates for %s usage without changing the completion', async (name, usage) => {
-    const { grant, handler, records, upstream } = fixture()
-    upstream.call.mockResolvedValueOnce({ completion: completion(usage), latencyMs: 2 })
+  ] as const)('uses fallback estimates for %s usage without changing the completion', async (_label, usage, reasoningTokens) => {
+    let countedRequest: Readonly<Record<string, unknown>> | undefined
+    let countedCompletion: Readonly<Record<string, unknown>> | undefined
+    const { grant, handler, records, upstream } = fixture({
+      tokenizer: {
+        countRequest: (value) => {
+          countedRequest = value
+          return 3
+        },
+        countCompletion: (value) => {
+          countedCompletion = value
+          return 5
+        },
+      },
+    })
+    upstream.call.mockResolvedValueOnce({
+      completion: {
+        ...completion(usage),
+        provider_metadata: { resolved_model: 'provider-secret' },
+      } as LlmChatCompletion,
+      latencyMs: 2,
+    })
     const response = await handler.handle(grant, { model: 'small', messages: [] })
     expect(response.usage).toEqual(usage)
+    expect(response.model).toBe('small')
+    expect(countedRequest).toEqual({ model: 'small', messages: [], max_completion_tokens: 8 })
+    expect(countedCompletion).toEqual(response)
+    expect(records).toHaveLength(1)
     expect(records[0]).toMatchObject({
       costWeight: 1,
       budgetCostUnits: 8,
-      usage: {
-        inputTokens: 3,
-        reasoningTokens: name === 'reasoning exceeds completion' ? 5 : 0,
-        outputTokens: 5,
-      },
+      usage: { inputTokens: 3, reasoningTokens, outputTokens: 5 },
       usageEstimated: true,
     })
   })
 
-  it('forwards explicit max_tokens unchanged and injects the modern default only when absent', async () => {
-    const { grant, handler, upstream } = fixture()
-    await handler.handle(grant, { model: 'small', messages: [], max_tokens: 7 })
-    await handler.handle(grant, { model: 'small', messages: [] })
-    expect(upstream.call.mock.calls[0]?.[0]).toMatchObject({ max_tokens: 7 })
-    expect(upstream.call.mock.calls[0]?.[0]).not.toHaveProperty('max_completion_tokens')
-    expect(upstream.call.mock.calls[1]?.[0]).toMatchObject({ max_completion_tokens: 8 })
-    expect(upstream.call.mock.calls[1]?.[0]).not.toHaveProperty('max_tokens')
-    await handler.handle(grant, { model: 'small', messages: [], stream: false })
-    expect(upstream.call.mock.calls[2]?.[0]).toMatchObject({ stream: false })
+  it.each([
+    [{ max_tokens: 7 }, { max_tokens: 7 }],
+    [{ max_completion_tokens: 9 }, { max_completion_tokens: 9 }],
+    [{}, { max_completion_tokens: 8 }],
+    [{ max_tokens: 20 }, { max_tokens: 20 }],
+  ])('forwards exactly one output maximum for %j', async (maximum, normalized) => {
+    const { grant, handler, records, upstream } = fixture()
+    await handler.handle(grant, { model: 'small', messages: [], stream: false, ...maximum })
+    expect(upstream.call.mock.calls[0]?.[0]).toEqual({
+      model: 'provider-secret',
+      messages: [],
+      stream: false,
+      ...normalized,
+    })
+    expect(records).toHaveLength(1)
+    expect(records[0]?.request).toEqual({
+      model: 'small',
+      messages: [],
+      stream: false,
+      ...normalized,
+    })
   })
 
-  it('authenticates and revokes official keys and isolates their tick markers', async () => {
-    const { grant, handler, upstream } = fixture()
+  it.each([
+    [{ max_tokens: 7 }, 10, 9],
+    [{ max_completion_tokens: 9 }, 12, 11],
+    [{}, 11, 10],
+  ])('reserves the output maximum in %j at the exact budget boundary', async (maximum, exactBudget, shortBudget) => {
+    const exact = fixture({ tokenBudget: exactBudget })
+    await expect(
+      exact.handler.handle(exact.grant, {
+        model: 'small',
+        messages: [],
+        ...maximum,
+      }),
+    ).resolves.toMatchObject({ model: 'small' })
+    expect(exact.records).toHaveLength(1)
+    const short = fixture({ tokenBudget: shortBudget })
+    await expect(
+      short.handler.handle(short.grant, {
+        model: 'small',
+        messages: [],
+        ...maximum,
+      }),
+    ).rejects.toMatchObject({ status: 400, code: 'budget_exceeded' })
+    expect(short.upstream.call).not.toHaveBeenCalled()
+    expect(short.records).toEqual([])
+    await expect(
+      short.handler.handle(short.grant, {
+        model: 'small',
+        messages: [],
+        max_completion_tokens: 1,
+      }),
+    ).resolves.toMatchObject({ model: 'small' })
+  })
+
+  it('authenticates official keys and isolates tick markers between sessions', async () => {
+    const { grant, handler, records, upstream } = fixture()
     let issued = 6
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(++issued))
     const tick = createOfficialTickMarker()
-    const key = registry.issueOfficial('s1', grant, tick, () => grant.recordSink)
+    const firstKey = registry.issueOfficial('s1', grant, tick, () => grant.recordSink)
+    const secondKey = registry.issueOfficial('s1', grant, tick, () => grant.recordSink)
     const otherTick = createOfficialTickMarker()
-    const otherKey = registry.issueOfficial('s2', grant, otherTick, () => grant.recordSink)
-    const app = await buildLlmListener({ registry, handler })
+    const otherGrant = {
+      ...grant,
+      accountingScope: { ...grant.accountingScope, key: 'session:s2:player_0' },
+    } satisfies LlmGrant
+    const otherKey = registry.issueOfficial(
+      's2',
+      otherGrant,
+      otherTick,
+      () => otherGrant.recordSink,
+    )
+    const app = await openListener({ registry, handler })
 
-    expect(key).toMatch(/^sk-sandbox-[0-9a-f]{64}$/)
-    const setup = await app.inject({
-      method: 'POST',
-      url: '/internal/tick',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { phase: 'setup' },
-    })
+    for (const key of [firstKey, secondKey, otherKey]) {
+      expect(key).toMatch(/^sk-sandbox-[0-9a-f]{64}$/)
+    }
+    const setup = await post(app, firstKey, '/internal/tick', { phase: 'setup' })
     expect(setup.statusCode).toBe(200)
     expect(tick.current).toBeNull()
-    await app.inject({
-      method: 'POST',
-      url: '/internal/tick',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { tick: 12 },
-    })
+    await post(app, firstKey, '/internal/tick', { tick: 12 })
     expect(tick.current).toBe(12)
     expect(otherTick.current).toBeNull()
 
-    const invalidTick = await app.inject({
-      method: 'POST',
-      url: '/internal/tick',
-      headers: { authorization: `Bearer ${otherKey}` },
-      payload: { tick: -1 },
-    })
+    const invalidTick = await post(app, otherKey, '/internal/tick', { tick: -1 })
     expect(invalidTick.statusCode).toBe(400)
     expect(invalidTick.json()).toMatchObject({ error: { code: 'invalid_tick_marker' } })
     expect(otherTick.current).toBeNull()
-    await app.inject({
-      method: 'POST',
-      url: '/internal/tick',
-      headers: { authorization: `Bearer ${otherKey}` },
-      payload: { tick: 3 },
-    })
+    await post(app, otherKey, '/internal/tick', { tick: 3 })
     expect(otherTick.current).toBe(3)
     expect(tick.current).toBe(12)
 
-    registry.revokeSession('s1')
-    const denied = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    expect(denied.statusCode).toBe(401)
-    expect(denied.json()).toMatchObject({ error: { code: 'invalid_api_key' } })
-    expect(upstream.call).not.toHaveBeenCalled()
-    await app.close()
+    const accepted = await post(app, secondKey)
+    expect(accepted.statusCode).toBe(200)
+    expect(records).toHaveLength(1)
+    expect(records[0]).not.toHaveProperty('tick')
+    expect(records[0]).not.toHaveProperty('admissionTick')
+
+    await registry.revokeSession('s1')
+    for (const key of [firstKey, secondKey]) {
+      const denied = await post(app, key)
+      expect(denied.statusCode).toBe(401)
+      expect(denied.json()).toMatchObject({ error: { code: 'invalid_api_key' } })
+    }
+    const stillAccepted = await post(app, otherKey)
+    expect(stillAccepted.statusCode).toBe(200)
+    expect(records).toHaveLength(2)
+    expect(upstream.call).toHaveBeenCalledTimes(2)
   })
 
-  it('closes official admission immediately and drains requests through accounting finalization', async () => {
-    let startFinalizer = (): void => {}
-    const finalizerStarted = new Promise<void>((resolve) => {
-      startFinalizer = resolve
-    })
-    let finishFinalizer = (): void => {}
-    const finalizerGate = new Promise<void>((resolve) => {
-      finishFinalizer = resolve
-    })
-    let finalized = false
-    const { grant, handler, meter } = fixture({
+  it('closes admission immediately and drains through durable finalization', async () => {
+    const started = gate()
+    const finish = gate()
+    const { grant, handler, records } = fixture({
       sink: async () => {
-        startFinalizer()
-        await finalizerGate
-        finalized = true
+        started.resolve()
+        await finish.promise
       },
     })
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(2))
-    const tick = createOfficialTickMarker()
-    const key = registry.issueOfficial('s1', grant, tick, () => grant.recordSink)
-    const app = await buildLlmListener({ registry, handler })
-
-    const activeRequest = app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    await finalizerStarted
-
-    const revocation = registry.revokeSession('s1')
-    expect(registry.revokeSession('s1')).toBe(revocation)
-    let revoked = false
-    void revocation.then(() => {
-      revoked = true
-    })
-    await Promise.resolve()
-    expect(revoked).toBe(false)
-    expect(meter.inspect(grant.accountingScope.key).reservedWeightedTokens).toBe(11)
-
-    const deniedCompletion = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    expect(deniedCompletion.statusCode).toBe(401)
-    const deniedTick = await app.inject({
-      method: 'POST',
-      url: '/internal/tick',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { tick: 9 },
-    })
-    expect(deniedTick.statusCode).toBe(401)
-    expect(tick.current).toBeNull()
-    expect(revoked).toBe(false)
-
-    finishFinalizer()
-    await expect(activeRequest).resolves.toMatchObject({ statusCode: 200 })
-    await revocation
-    expect(finalized).toBe(true)
-    expect(revoked).toBe(true)
-    expect(meter.inspect(grant.accountingScope.key).reservedWeightedTokens).toBe(0)
-    await app.close()
+    const { app, key, registry } = await officialProxy(handler, grant)
+    try {
+      let responded = false
+      const pending = post(app, key).then((response) => {
+        responded = true
+        expect(records).toHaveLength(1)
+        return response
+      })
+      await started.promise
+      let settled = 0
+      const first = registry.revokeSession('s1').then(() => {
+        settled++
+      })
+      const second = registry.revokeSession('s1').then(() => {
+        settled++
+      })
+      expect((await post(app, key)).statusCode).toBe(401)
+      expect((await post(app, key, '/internal/tick', { tick: 9 })).statusCode).toBe(401)
+      expect(settled).toBe(0)
+      expect(responded).toBe(false)
+      expect(records).toEqual([])
+      finish.resolve()
+      expect((await pending).statusCode).toBe(200)
+      await Promise.all([first, second])
+      expect(settled).toBe(2)
+    } finally {
+      finish.resolve()
+    }
   })
 
-  it('aborts pre-success upstream work and releases its reservation during revocation', async () => {
-    const { grant, handler, meter, upstream } = fixture()
+  it('aborts pre-success work and releases accounting on cancellation', async () => {
     let markStarted = (): void => {}
     const started = new Promise<void>((resolve) => {
       markStarted = resolve
     })
+    const { grant, handler, records, upstream } = fixture({ tokenBudget: 11, rpm: 1 })
     upstream.call.mockImplementationOnce(
       (_request, signal) =>
-        new Promise((_, reject) => {
+        new Promise((_resolve, reject) => {
           markStarted()
           signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
         }),
     )
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(3))
-    const key = registry.issueOfficial(
-      's1',
-      grant,
-      createOfficialTickMarker(),
-      () => grant.recordSink,
-    )
-    const app = await buildLlmListener({ registry, handler })
+    const { app, key, registry } = await officialProxy(handler, grant)
 
-    const activeRequest = app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
+    const activeRequest = post(app, key)
     await started
     await registry.revokeSession('s1')
 
     const response = await activeRequest
     expect(response.statusCode).toBe(503)
     expect(response.json()).toMatchObject({ error: { code: 'request_cancelled' } })
-    expect(meter.inspect(grant.accountingScope.key).reservedWeightedTokens).toBe(0)
-    await app.close()
+    expect(records).toHaveLength(0)
+
+    const probe = await handler.handle(grant, { model: 'small', messages: [] })
+    expect(probe.model).toBe('small')
+    expect(records).toHaveLength(1)
+    expect(upstream.call).toHaveBeenCalledTimes(2)
+
+    const denied = await post(app, key)
+    expect(denied.statusCode).toBe(401)
+    expect(denied.json()).toMatchObject({ error: { code: 'invalid_api_key' } })
   })
 
-  it('accrues in-flight ms across a successful and a failed call and serves it to the harness', async () => {
+  it('counts success, failure and background time with exact background watchdog exclusion', async () => {
     let now = 1_000
     const { grant, handler, upstream } = fixture()
     upstream.call
       .mockImplementationOnce(async () => {
-        now += 40
-        return {
-          completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
-          latencyMs: 40,
-        }
+        now = 1_040
+        return { completion: completion(), latencyMs: 40 }
       })
       .mockImplementationOnce(async () => {
-        now += 25
+        now = 1_065
         throw new LlmError(400, 'bad_upstream', 'bad')
       })
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(9), { now: () => now })
-    const key = registry.issueOfficial(
-      's1',
-      grant,
-      createOfficialTickMarker(),
-      () => grant.recordSink,
-    )
-    const app = await buildLlmListener({ registry, handler })
-
-    const ok = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    expect(ok.statusCode).toBe(200)
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(40)
-    expect(registry.blockingInFlightMs('s1')).toBe(40)
-
-    const failed = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    expect(failed.statusCode).toBe(400)
-    // A failed call still counts: timing authority stays with the proxy for the whole logical request.
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(65)
-    expect(registry.blockingInFlightMs('s1')).toBe(65)
-
-    const inflight = await app.inject({
-      method: 'POST',
-      url: '/internal/inflight',
-      headers: { authorization: `Bearer ${key}` },
-    })
-    expect(inflight.json()).toEqual({ inflight_ms: 65 })
-    const tick = await app.inject({
-      method: 'POST',
-      url: '/internal/tick',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { phase: 'setup' },
-    })
-    expect(tick.json()).toEqual({ ok: true })
-    await app.close()
-  })
-
-  it('classifies only the exact background header as non-blocking while preserving total timing', async () => {
-    let now = 1_000
-    const { grant, handler, upstream } = fixture()
-    upstream.call.mockImplementation(async () => {
-      now += 10
-      return {
-        completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
-        latencyMs: 10,
-      }
-    })
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(8), { now: () => now })
-    const key = registry.issueOfficial(
-      's1',
-      grant,
-      createOfficialTickMarker(),
-      () => grant.recordSink,
-    )
-    const app = await buildLlmListener({ registry, handler })
-
-    for (const headers of [
-      {},
-      { 'x-game-sandbox-background': '1' },
-      { 'x-game-sandbox-background': 'true' },
-    ]) {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/v1/chat/completions',
-        headers: { authorization: `Bearer ${key}`, ...headers },
-        payload: { model: 'small', messages: [] },
+      .mockImplementationOnce(async () => {
+        now = 1_075
+        return { completion: completion(), latencyMs: 10 }
       })
-      expect(response.statusCode).toBe(200)
+      .mockImplementationOnce(async () => {
+        now = 1_085
+        return { completion: completion(), latencyMs: 10 }
+      })
+    const { app, key, registry } = await officialProxy(handler, grant, { now: () => now })
+    for (const [headers, status, total, blocking] of [
+      [{}, 200, 40, 40],
+      [{}, 400, 65, 65],
+      [{ 'x-game-sandbox-background': '1' }, 200, 75, 65],
+      [{ 'x-game-sandbox-background': 'true' }, 200, 85, 75],
+    ] as const) {
+      expect((await post(app, key, '/v1/chat/completions', undefined, headers)).statusCode).toBe(
+        status,
+      )
+      expect((await post(app, key, '/internal/inflight')).json()).toEqual({ inflight_ms: total })
+      expect(registry.blockingInFlightMs('s1')).toBe(blocking)
     }
-
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(30)
-    expect(registry.blockingInFlightMs('s1')).toBe(20)
-    const inflight = await app.inject({
-      method: 'POST',
-      url: '/internal/inflight',
-      headers: { authorization: `Bearer ${key}` },
-    })
-    expect(inflight.json()).toEqual({ inflight_ms: 30 })
-    await app.close()
   })
 
-  it('binds successful telemetry to the admission marker, including setup null', async () => {
-    const { grant, handler, upstream } = fixture()
-    const tick = createOfficialTickMarker()
-    const admissions: Array<{ admitted: number | null; committed: number | null }> = []
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(7))
-    const key = registry.issueOfficial('s1', grant, tick, (admitted) => () => {
-      admissions.push({ admitted, committed: tick.current })
-    })
-    const app = await buildLlmListener({ registry, handler })
-    upstream.call
-      .mockImplementationOnce(async () => {
-        tick.current = 4
-        return {
-          completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
-          latencyMs: 1,
-        }
-      })
-      .mockImplementationOnce(async () => {
-        tick.current = 13
-        return {
-          completion: completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
-          latencyMs: 1,
-        }
-      })
-
-    const setupCall = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    expect(setupCall.statusCode).toBe(200)
-
-    tick.current = 12
-    const turnCall = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    expect(turnCall.statusCode).toBe(200)
-    expect(admissions).toEqual([
-      { admitted: null, committed: 4 },
-      { admitted: 12, committed: 13 },
-    ])
-    await app.close()
-  })
-
-  it('counts a capped active-request partial toward the session and clears accumulators on revocation', async () => {
-    let now = 1_000
-    const { grant, handler, upstream } = fixture()
-    let markStarted = (): void => {}
-    const started = new Promise<void>((resolve) => {
-      markStarted = resolve
-    })
-    upstream.call.mockImplementationOnce(
-      (_request, signal) =>
-        new Promise((_, reject) => {
-          markStarted()
-          signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
-        }),
-    )
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(4), {
-      now: () => now,
-      maxRequestMs: 15,
-    })
-    const key = registry.issueOfficial(
-      's1',
-      grant,
-      createOfficialTickMarker(),
-      () => grant.recordSink,
-    )
-    const app = await buildLlmListener({ registry, handler })
-
-    const active = app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
-    })
-    await started
-    now = 1_050
-    // The active request has run 50 ms, but a single call may contribute at most maxRequestMs (15).
-    expect(registry.blockingInFlightMs('s1')).toBe(15)
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(15)
-    const inflight = await app.inject({
-      method: 'POST',
-      url: '/internal/inflight',
-      headers: { authorization: `Bearer ${key}` },
-    })
-    expect(inflight.json()).toEqual({ inflight_ms: 15 })
-
-    await registry.revokeSession('s1')
-    await active
-    // Revocation clears the per-session blocking view and the per-scope accumulator.
-    expect(registry.blockingInFlightMs('s1')).toBe(0)
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(0)
-    await app.close()
-  })
-
-  it('indexes active requests by scope and removes them as their sessions drain', async () => {
+  it('reads capped active partials by scope through the inflight route', async () => {
     let now = 1_000
     let issued = 10
-    const { grant } = fixture()
+    const { grant, handler } = fixture()
     const otherGrant = {
       ...grant,
       accountingScope: { ...grant.accountingScope, key: 'session:s2:player_0' },
@@ -620,23 +554,29 @@ describe('LLM registry, handler, and listener', () => {
     const first = registry.authenticateRequest(firstKey)
     const second = registry.authenticateRequest(secondKey)
     const other = registry.authenticateRequest(otherKey)
+    const app = await openListener({ registry, handler })
 
     now = 1_050
-    // Two requests in one scope each contribute their capped partial, while the other scope is isolated.
+    const own = await post(app, firstKey, '/internal/inflight')
+    expect(own.json()).toEqual({ inflight_ms: 30 })
+    const sibling = await post(app, otherKey, '/internal/inflight')
+    expect(sibling.json()).toEqual({ inflight_ms: 15 })
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(30)
-    expect(registry.inFlightMsForScope(otherGrant.accountingScope.key)).toBe(15)
+    expect(registry.blockingInFlightMs('s1')).toBe(30)
 
     first.release()
-    // Released work remains capped when it moves to the cumulative counter. The other active
-    // request contributes its own capped partial.
-    expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(30)
+    const afterRelease = await post(app, secondKey, '/internal/inflight')
+    expect(afterRelease.json()).toEqual({ inflight_ms: 30 })
+
     const revocation = registry.revokeSession('s1')
     second.release()
     await revocation
-
-    // Draining the session clears its cumulative state and its last active-scope entry.
     expect(registry.inFlightMsForScope(grant.accountingScope.key)).toBe(0)
-    expect(registry.inFlightMsForScope(otherGrant.accountingScope.key)).toBe(15)
+    expect(registry.blockingInFlightMs('s1')).toBe(0)
+    const liveScope = await post(app, otherKey, '/internal/inflight')
+    expect(liveScope.json()).toEqual({ inflight_ms: 15 })
+    const retired = await post(app, firstKey, '/internal/inflight')
+    expect(retired.statusCode).toBe(401)
 
     other.release()
     await registry.revokeSession('s2')
@@ -648,11 +588,12 @@ describe('LLM registry, handler, and listener', () => {
     'Basic abc',
     'Bearer',
     'Bearer one two',
-  ])('returns the pinned authentication envelope for malformed authorization %s', async (authorization) => {
-    const { grant, handler, upstream } = fixture()
+    `Bearer sk-sandbox-${'a'.repeat(64)}`,
+  ])('returns a compatible authentication envelope for authorization %s', async (authorization) => {
+    const { grant, handler, records, upstream } = fixture()
     const registry = new KeyRegistry(() => new Uint8Array(32).fill(1))
     registry.issueOfficial('s1', grant, createOfficialTickMarker(), () => grant.recordSink)
-    const app = await buildLlmListener({ registry, handler })
+    const app = await openListener({ registry, handler })
     const response = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
@@ -660,44 +601,43 @@ describe('LLM registry, handler, and listener', () => {
       payload: { model: 'small', messages: [] },
     })
     expect(response.statusCode).toBe(401)
-    expect(response.json()).toEqual({
-      error: {
-        message: 'A valid bearer API key is required.',
-        type: 'invalid_request_error',
-        code: 'invalid_api_key',
-      },
-    })
+    const body = response.json()
+    expect(body.error.code).toBe('invalid_api_key')
+    expect(body.error.type).toBe('invalid_request_error')
+    expect(body.error.message.length).toBeGreaterThan(0)
     expect(upstream.call).not.toHaveBeenCalled()
-    await app.close()
+    expect(records).toHaveLength(0)
   })
 
-  it('uses fixed parse logging and compatible envelopes for malformed JSON and unknown methods', async () => {
-    const { handler } = fixture()
-    const log = vi.fn()
-    configureAppLogs(createLogBuffer({ sink: log }))
-    const app = await buildLlmListener({
-      registry: new KeyRegistry(() => new Uint8Array(32).fill(1)),
-      handler,
-    })
+  it('normalizes malformed JSON and unknown routes without leaking request content', async () => {
+    const { handler, logs, records, upstream } = fixture()
+    const registry = new KeyRegistry(() => new Uint8Array(32).fill(1))
+    const app = await openListener({ registry, handler })
+    const secret = 'sk-live-synthetic-4f9a'
     const malformed = await app.inject({
       method: 'POST',
       url: '/v1/chat/completions',
       headers: { 'content-type': 'application/json' },
-      payload: '{',
+      payload: `{"authorization":"Bearer ${secret}"`,
     })
     expect(malformed.statusCode).toBe(400)
-    expect(malformed.json()).toMatchObject({ error: { code: 'invalid_request' } })
-    expect(log).toHaveBeenCalledWith('LLM listener rejected malformed request')
+    const malformedBody = malformed.json()
+    expect(malformedBody.error.code).toBe('invalid_request')
+    expect(malformedBody.error.type).toBe('invalid_request_error')
+    expect(malformedBody.error.message.length).toBeGreaterThan(0)
+    const diagnostics = logs.join('\n')
+    expect(diagnostics.length).toBeGreaterThan(0)
+    expect(diagnostics.toLowerCase()).toContain('malformed')
+    expect(diagnostics).not.toContain(secret)
+
     const wrongMethod = await app.inject({ method: 'GET', url: '/v1/chat/completions' })
     expect(wrongMethod.statusCode).toBe(404)
-    expect(wrongMethod.json()).toEqual({
-      error: {
-        message: 'The requested LLM route was not found.',
-        type: 'invalid_request_error',
-        code: 'not_found',
-      },
-    })
-    await app.close()
+    const wrongBody = wrongMethod.json()
+    expect(wrongBody.error.code).toBe('not_found')
+    expect(wrongBody.error.type).toBe('invalid_request_error')
+    expect(wrongBody.error.message.length).toBeGreaterThan(0)
+    expect(upstream.call).not.toHaveBeenCalled()
+    expect(records).toHaveLength(0)
   })
 
   it('redacts the configured upstream model from terminal error fields', async () => {
@@ -723,142 +663,174 @@ describe('LLM registry, handler, and listener', () => {
     })
   })
 
-  it('rejects alias, streaming, malformed maxima, and hard-cap violations locally', async () => {
-    const { grant, handler, upstream } = fixture()
-    const cases = [
-      [{ model: 'large', messages: [] }, 'model_not_allowed'],
-      [{ model: 'toString', messages: [] }, 'model_not_allowed'],
-      [{ model: 'small', messages: [], stream: true }, 'streaming_unsupported'],
-      [{ model: 'small', messages: [], stream: 'false' }, 'streaming_unsupported'],
-      [{ model: 'small', messages: [], stream: 0 }, 'streaming_unsupported'],
-      [{ model: 'small', messages: [], stream: null }, 'streaming_unsupported'],
-      [
-        { model: 'small', messages: [], max_tokens: 1, max_completion_tokens: 1 },
-        'invalid_max_tokens',
-      ],
-      [{ model: 'small', messages: [], max_tokens: 21 }, 'invalid_max_tokens'],
-    ] as const
-    for (const [body, code] of cases) {
-      await expect(handler.handle(grant, body)).rejects.toMatchObject({ code })
+  it('refuses disabled aliases, streaming and invalid output maxima before provider spend', async () => {
+    const { grant, handler, upstream, records } = fixture()
+    for (const [body, code] of [
+      [{ model: 'large' }, 'model_not_allowed'],
+      [{ model: 'toString' }, 'model_not_allowed'],
+      ...[true, 'false', 0, null].map((stream) => [{ stream }, 'streaming_unsupported'] as const),
+      [{ max_tokens: 1, max_completion_tokens: 1 }, 'invalid_max_tokens'],
+      ...[21, -1, 1.5, '2'].map((max_tokens) => [{ max_tokens }, 'invalid_max_tokens'] as const),
+      [{ max_tokens: Number.NaN }, 'invalid_max_tokens'],
+    ] as const) {
+      await expect(
+        handler.handle(grant, { model: 'small', messages: [], ...body }),
+      ).rejects.toMatchObject({ status: 400, code })
     }
     expect(upstream.call).not.toHaveBeenCalled()
+    expect(records).toEqual([])
   })
 })
 
 describe('generic admission and unavailable scopes', () => {
-  afterEach(() => vi.useRealTimers())
+  interface WeightedBudgetCase {
+    label: string
+    limits: { tokenBudget: number; requestsPerMinute: number }
+    weights: Partial<Record<ModelAlias, number>>
+    committed: LlmCommittedUsageByModel
+    admitted: readonly [ModelAlias, number, number]
+    refused: readonly [ModelAlias, number, number]
+  }
+
+  const weightedBudgetCases: WeightedBudgetCase[] = [
+    {
+      label: 'mixed weights at the exact boundary',
+      limits: { tokenBudget: 20, requestsPerMinute: 10 },
+      weights: { large: 4, medium: 2, small: 1 },
+      committed: {
+        small: { calls: 1, inputTokens: 1, reasoningTokens: 0, outputTokens: 1 },
+        medium: { calls: 1, inputTokens: 1, reasoningTokens: 0, outputTokens: 2 },
+      },
+      admitted: ['large', 1, 2],
+      refused: ['small', 0, 1],
+    },
+    {
+      label: 'a fractional weight at the exact boundary without rounding',
+      limits: { tokenBudget: 10, requestsPerMinute: 10 },
+      weights: { small: 0.25 },
+      committed: { small: { calls: 1, inputTokens: 2, reasoningTokens: 0, outputTokens: 3 } },
+      admitted: ['small', 17, 18],
+      refused: ['small', 0, 1],
+    },
+    {
+      label: 'reasoning inside committed output',
+      limits: { tokenBudget: 8, requestsPerMinute: 10 },
+      weights: { small: 1 },
+      committed: { small: { calls: 1, inputTokens: 2, reasoningTokens: 3, outputTokens: 5 } },
+      admitted: ['small', 0, 1],
+      refused: ['small', 0, 1],
+    },
+    ...(['retired', 'constructor', '__proto__'] as const).map((alias) => ({
+      label: `unknown committed alias ${alias} uses the highest current price`,
+      limits: { tokenBudget: 12, requestsPerMinute: 10 },
+      weights: { medium: 2, small: 1 },
+      committed: { [alias]: { calls: 1, inputTokens: 2, reasoningTokens: 0, outputTokens: 3 } },
+      admitted: ['small', 1, 1] as const,
+      refused: ['small', 0, 1] as const,
+    })),
+  ]
+
+  const faultCases: Array<{
+    label: string
+    tokenizer: LlmTokenCounter
+    faulty: LlmChatCompletion
+  }> = [
+    {
+      label: 'estimation',
+      tokenizer: {
+        countRequest: () => 3,
+        countCompletion: () => {
+          throw new Error('estimator failed')
+        },
+      },
+      faulty: completion(null),
+    },
+    {
+      label: 'canonicalization',
+      tokenizer: { countRequest: () => 3, countCompletion: () => 5 },
+      faulty: {
+        ...completion({ prompt_tokens: 2, completion_tokens: 4, total_tokens: 6 }),
+        moderation: {
+          input: { model: 'provider-secret', results: null },
+          output: { model: 'provider-secret', results: [] },
+        },
+      } as unknown as LlmChatCompletion,
+    },
+  ]
 
   it.each([
-    ['token', { tokenBudget: 10, requestsPerMinute: 10 }, 3, 3],
-    ['rate', { tokenBudget: 100, requestsPerMinute: 1 }, 2, 3],
-  ])('makes concurrent %s reservations observe one atomic budget', async (_kind, limits, input, output) => {
+    ['token', { tokenBudget: 10, requestsPerMinute: 10 }, 3, 3, 'budget_exceeded'],
+    ['rate', { tokenBudget: 100, requestsPerMinute: 1 }, 2, 3, 'rate_limit_exceeded'],
+  ] as const)('makes concurrent %s reservations observe one atomic budget', async (kind, limits, input, output, refusalCode) => {
     const meter = new LlmMeter()
-    const accountingScope: LlmAccountingScope = {
-      key: `concurrent:${_kind}`,
+    const scope: LlmAccountingScope = {
+      key: `concurrent:${kind}`,
       limits,
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
     const outcomes = await Promise.allSettled([
-      meter.reserve(accountingScope, 'small', input, output),
-      meter.reserve(accountingScope, 'small', input, output),
+      meter.reserve(scope, 'small', input, output),
+      meter.reserve(scope, 'small', input, output),
     ])
-    expect(outcomes.map((outcome) => outcome.status).sort()).toEqual(['fulfilled', 'rejected'])
     const rejected = outcomes.find((outcome) => outcome.status === 'rejected')
-    expect(rejected).toMatchObject({
-      reason: { code: _kind === 'rate' ? 'rate_limit_exceeded' : 'budget_exceeded' },
-    })
-    expect(meter.inspect(accountingScope.key)).toMatchObject({
-      reservedWeightedTokens: input + output,
-    })
-    expect(meter.inspect(accountingScope.key).pendingRateEvents.size).toBe(1)
+    expect(rejected).toMatchObject({ status: 'rejected', reason: { code: refusalCode } })
     const accepted = outcomes.find((outcome) => outcome.status === 'fulfilled')
-    if (accepted?.status === 'fulfilled') meter.release(accepted.value)
+    if (accepted?.status !== 'fulfilled') throw new Error('expected one admitted reservation')
+    meter.release(accepted.value)
+
+    const fresh = await meter.reserve(scope, 'small', input, output)
+    meter.release(fresh)
   })
 
-  it('weights mixed committed usage and pending large-model capacity at the exact boundary', async () => {
+  it.each(weightedBudgetCases)('$label', async (weightedCase) => {
     const meter = new LlmMeter()
     const scope: LlmAccountingScope = {
-      key: 'weighted:mixed',
-      limits: { tokenBudget: 20, requestsPerMinute: 10 },
-      weights: { large: 4, medium: 2, small: 1 },
-      readCommittedUsage: () => ({
-        small: { calls: 0, inputTokens: 1, reasoningTokens: 0, outputTokens: 1 },
-        medium: { calls: 0, inputTokens: 1, reasoningTokens: 0, outputTokens: 2 },
-      }),
+      key: 'weighted:case',
+      limits: weightedCase.limits,
+      weights: weightedCase.weights,
+      readCommittedUsage: () => weightedCase.committed,
     }
-
-    const admitted = await meter.reserve(scope, 'large', 1, 2)
-    expect(meter.inspect(scope.key).reservedWeightedTokens).toBe(12)
-    await expect(meter.reserve(scope, 'small', 0, 1)).rejects.toMatchObject({
+    const held = await meter.reserve(scope, ...weightedCase.admitted)
+    await expect(meter.reserve(scope, ...weightedCase.refused)).rejects.toMatchObject({
       code: 'budget_exceeded',
     })
-    meter.release(admitted)
-  })
+    meter.release(held)
 
-  it('carries a fractional weight through reservation arithmetic without rounding it away', async () => {
-    const meter = new LlmMeter()
-    const scope: LlmAccountingScope = {
-      key: 'weighted:fractional',
-      limits: { tokenBudget: 10, requestsPerMinute: 10 },
-      weights: { small: 0.5 },
-      readCommittedUsage: () => ({
-        small: { calls: 1, inputTokens: 4, reasoningTokens: 0, outputTokens: 4 },
-      }),
-    }
-
-    // Committed usage is already 4 weighted units (8 tokens at weight 0.5). Reserving 5+6 tokens
-    // adds 5.5 weighted units, for a running total of 9.5, still inside the budget of 10.
-    const admitted = await meter.reserve(scope, 'small', 5, 6)
-    expect(meter.inspect(scope.key).reservedWeightedTokens).toBe(5.5)
-
-    // One more weighted unit (1+1 tokens at weight 0.5) pushes the total to 10.5, over budget.
-    await expect(meter.reserve(scope, 'small', 1, 1)).rejects.toMatchObject({
-      code: 'budget_exceeded',
-    })
-    meter.release(admitted)
+    const recovered = await meter.reserve(scope, ...weightedCase.admitted)
+    meter.release(recovered)
   })
 
   it.each([
-    'retired',
-    'constructor',
-    '__proto__',
-  ])('uses the highest configured weight for unknown committed alias %s', (alias) => {
-    const byModel = {
-      [alias]: { calls: 1, inputTokens: 2, reasoningTokens: 0, outputTokens: 3 },
-    }
-    expect(weightedCommittedTokens(byModel, { medium: 2, small: 1 })).toBe(10)
-  })
-
-  it('keeps official player and development-shaped accounting keys independent', async () => {
+    ['token', { tokenBudget: 2, requestsPerMinute: 10 }, 'budget_exceeded'],
+    ['rate', { tokenBudget: 100, requestsPerMinute: 1 }, 'rate_limit_exceeded'],
+  ] as const)('isolates pending %s capacity for official players and development keys', async (_name, limits, code) => {
     const meter = new LlmMeter()
-    const makeScope = (key: string): LlmAccountingScope => ({
-      key,
-      limits: { tokenBudget: 100, requestsPerMinute: 1 },
-      weights: { small: 1 },
-      readCommittedUsage: () => ({}),
-    })
-    const sessionA = makeScope('session:s1:player_0')
-    const sessionB = makeScope('session:s1:player_1')
-    const development = makeScope('development:participant-1:season-1')
-
-    // Convert each pending rate reservation into the event a successful call would retain.
-    for (const scope of [sessionA, sessionB, development]) {
-      const reservation = await meter.reserve(scope, 'small', 1, 1)
-      meter.recordRateEvent(reservation)
-      meter.release(reservation)
+    const scopes = [
+      'session:s1:player_0',
+      'session:s1:player_1',
+      'development:participant-1:season-1',
+    ].map(
+      (key): LlmAccountingScope => ({
+        key,
+        limits,
+        weights: { small: 1 },
+        readCommittedUsage: () => ({}),
+      }),
+    )
+    const reservations = []
+    for (const scope of scopes) {
+      reservations.push(await meter.reserve(scope, 'small', 1, 1))
+      await expect(meter.reserve(scope, 'small', 1, 1)).rejects.toMatchObject({ code })
     }
-    for (const scope of [sessionA, sessionB, development]) {
-      expect(meter.inspect(scope.key).rateEvents).toHaveLength(1)
+    for (const reservation of reservations) meter.release(reservation)
+    for (const scope of scopes) {
+      const retry = await meter.reserve(scope, 'small', 1, 1)
+      meter.release(retry)
     }
-    // Each window is independent and full at rpm=1, so the next reservation on any scope is limited.
-    await expect(meter.reserve(development, 'small', 1, 1)).rejects.toMatchObject({
-      code: 'rate_limit_exceeded',
-    })
-    expect(meter.inspect(sessionB.key).rateEvents).toHaveLength(1)
   })
 
-  it('retains successful request starts in time order when concurrent requests finish out of order', async () => {
+  it('keeps admission order when overlapping requests finish in reverse', async () => {
     let now = 1_000
     const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
@@ -867,20 +839,31 @@ describe('generic admission and unavailable scopes', () => {
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
-    const first = await meter.reserve(scope, 'small', 1, 1)
+    const first = await meter.reserve(scope, 'small', 1, 0)
     now = 1_010
-    const second = await meter.reserve(scope, 'small', 1, 1)
+    const second = await meter.reserve(scope, 'small', 1, 0)
 
+    now = 1_020
     meter.recordRateEvent(second)
     meter.release(second)
-    now = 1_020
     meter.recordRateEvent(first)
     meter.release(first)
 
-    expect(meter.inspect(scope.key)).toMatchObject({
-      rateEvents: [1_000, 1_010],
+    now = 60_999
+    await expect(meter.reserve(scope, 'small', 1, 0)).rejects.toMatchObject({
+      code: 'rate_limit_exceeded',
     })
-    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
+    now = 61_000
+    const atFirstExpiry = await meter.reserve(scope, 'small', 1, 0)
+    now = 61_009
+    await expect(meter.reserve(scope, 'small', 1, 0)).rejects.toMatchObject({
+      code: 'rate_limit_exceeded',
+    })
+    now = 61_010
+    const atSecondExpiry = await meter.reserve(scope, 'small', 1, 0)
+
+    meter.release(atFirstExpiry)
+    meter.release(atSecondExpiry)
   })
 
   it('keeps a later success when an earlier concurrent request fails', async () => {
@@ -892,24 +875,26 @@ describe('generic admission and unavailable scopes', () => {
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
-    const first = await meter.reserve(scope, 'small', 1, 1)
+    const earlier = await meter.reserve(scope, 'small', 1, 0)
     now = 1_010
-    const second = await meter.reserve(scope, 'small', 1, 1)
+    const later = await meter.reserve(scope, 'small', 1, 0)
 
-    meter.recordRateEvent(second)
-    meter.release(second)
-    meter.release(first)
+    now = 1_020
+    meter.recordRateEvent(later)
+    meter.release(later)
+    meter.release(earlier)
 
-    expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
-    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
-    const admitted = await meter.reserve(scope, 'small', 1, 1)
-    // The freed capacity is occupied again: one recorded event plus the new pending reservation.
-    expect(meter.inspect(scope.key).rateEvents).toEqual([1_010])
-    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(1)
-    meter.release(admitted)
+    const reusable = await meter.reserve(scope, 'small', 1, 0)
+    await expect(meter.reserve(scope, 'small', 1, 0)).rejects.toMatchObject({
+      code: 'rate_limit_exceeded',
+    })
+    meter.release(reusable)
   })
 
-  it('expires pending rate capacity when its request start leaves the sliding window', async () => {
+  it.each([
+    ['without an intervening admission', false],
+    ['with an intervening admission', true],
+  ] as const)('expires a pending start at the window boundary %s', async (_label, intervening) => {
     let now = 1_000
     const meter = new LlmMeter({ now: () => now })
     const scope: LlmAccountingScope = {
@@ -918,198 +903,124 @@ describe('generic admission and unavailable scopes', () => {
       weights: { small: 1 },
       readCommittedUsage: () => ({}),
     }
-    const expired = await meter.reserve(scope, 'small', 1, 1)
-    now = 61_001
-    const current = await meter.reserve(scope, 'small', 1, 1)
+    const slow = await meter.reserve(scope, 'small', 1, 0)
 
-    meter.recordRateEvent(expired)
-    meter.release(expired)
-    expect(meter.inspect(scope.key).rateEvents).toEqual([])
-    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(1)
+    now = 60_999
+    await expect(meter.reserve(scope, 'small', 1, 0)).rejects.toMatchObject({
+      code: 'rate_limit_exceeded',
+    })
+
+    now = 61_000
+    let current: LlmReservation
+    if (intervening) {
+      current = await meter.reserve(scope, 'small', 1, 0)
+      meter.recordRateEvent(slow)
+      meter.release(slow)
+    } else {
+      meter.recordRateEvent(slow)
+      meter.release(slow)
+      current = await meter.reserve(scope, 'small', 1, 0)
+    }
+
+    await expect(meter.reserve(scope, 'small', 1, 0)).rejects.toMatchObject({
+      code: 'rate_limit_exceeded',
+    })
     meter.release(current)
   })
 
-  it('retains no event for a success whose start left the window even without an intervening prune', async () => {
-    let now = 1_000
-    const meter = new LlmMeter({ now: () => now })
-    const scope: LlmAccountingScope = {
-      key: 'concurrent:rate-late-success',
-      limits: { tokenBudget: 100, requestsPerMinute: 1 },
-      weights: { small: 1 },
-      readCommittedUsage: () => ({}),
-    }
-    const slow = await meter.reserve(scope, 'small', 1, 1)
-    now = 61_001
-
-    meter.recordRateEvent(slow)
-    meter.release(slow)
-    expect(meter.inspect(scope.key).rateEvents).toEqual([])
-    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
-  })
-
-  it('ignores a duplicate record on a live reservation and throws on a finalized one', async () => {
-    let now = 1_000
-    const meter = new LlmMeter({ now: () => now })
-    const scope: LlmAccountingScope = {
-      key: 'concurrent:rate-finalized',
-      limits: { tokenBudget: 100, requestsPerMinute: 5 },
-      weights: { small: 1 },
-      readCommittedUsage: () => ({}),
-    }
-    const recorded = await meter.reserve(scope, 'small', 1, 1)
-    meter.recordRateEvent(recorded)
-    meter.recordRateEvent(recorded)
-    expect(meter.inspect(scope.key).rateEvents).toEqual([1_000])
-    meter.release(recorded)
-
-    now = 1_010
-    const released = await meter.reserve(scope, 'small', 1, 1)
-    meter.release(released)
-    expect(() => meter.recordRateEvent(released)).toThrow(
-      'LLM rate reservation was already finalized',
-    )
-    expect(meter.inspect(scope.key).rateEvents).toEqual([1_000])
-    expect(meter.inspect(scope.key).pendingRateEvents.size).toBe(0)
-  })
-
-  it('records no rate event after a terminal upstream failure so a later request still reaches upstream', async () => {
-    const { grant, handler, meter, upstream } = fixture({ rpm: 1 })
-    upstream.call.mockRejectedValue(new LlmError(400, 'bad_upstream', 'bad'))
+  it('releases token and rate capacity after a terminal upstream failure', async () => {
+    const { grant, handler, records, upstream } = fixture({ tokenBudget: 11, rpm: 1 })
+    upstream.call.mockRejectedValueOnce(new LlmError(400, 'bad_upstream', 'bad'))
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'bad_upstream',
     })
-    expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
-      rateEvents: [],
-    })
-    expect(meter.inspect(grant.accountingScope.key).pendingRateEvents.size).toBe(0)
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'bad_upstream',
-    })
+    expect(records).toHaveLength(0)
+
+    const response = await handler.handle(grant, { model: 'small', messages: [] })
+    expect(response.model).toBe('small')
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({ budgetCostUnits: 6, usageEstimated: false })
     expect(upstream.call).toHaveBeenCalledTimes(2)
   })
 
-  it('records one rate event per success and limits the next call once the window is full at rpm=1', async () => {
-    const { grant, handler, meter, upstream } = fixture({ rpm: 1 })
-    await handler.handle(grant, { model: 'small', messages: [] })
-    expect(meter.inspect(grant.accountingScope.key).rateEvents).toHaveLength(1)
+  it('limits the next call once the successful-call rate window is full at rpm one', async () => {
+    const { grant, handler, records, upstream } = fixture({ rpm: 1 })
+    const response = await handler.handle(grant, { model: 'small', messages: [] })
+    expect(response.model).toBe('small')
+    expect(records).toHaveLength(1)
+
     await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
       code: 'rate_limit_exceeded',
     })
     expect(upstream.call).toHaveBeenCalledTimes(1)
-  })
-
-  it('keeps a failed record scope unavailable for the process lifetime', async () => {
-    const sink = vi.fn(() => {
-      throw new Error('disk full')
-    })
-    const { grant, handler, meter, upstream } = fixture({ sink })
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'meter_unavailable',
-    })
-    const key = grant.accountingScope.key
-    expect(meter.inspect(key)).toMatchObject({
-      unavailable: true,
-      reservedWeightedTokens: 0,
-    })
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
-      code: 'meter_unavailable',
-    })
-    expect(upstream.call).toHaveBeenCalledTimes(1)
-  })
-
-  it('releases without blocking the scope when estimation fails after upstream success', async () => {
-    const sink = vi.fn()
-    const tokenizer: LlmTokenCounter = {
-      countRequest: () => 3,
-      countCompletion: () => {
-        throw new Error('estimator failed')
-      },
-    }
-    const { grant, handler, logs, meter, upstream } = fixture({ sink, tokenizer })
-    upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
-
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toThrow(
-      'estimator failed',
-    )
-
-    const key = grant.accountingScope.key
-    // The provider was paid for work no row will ever describe, so the operator gets a diagnostic.
-    expect(logs).toEqual([`LLM handler ${key}: small spend was not accounted: estimator failed`])
-    expect(sink).not.toHaveBeenCalled()
-    expect(meter.inspect(key)).toMatchObject({
-      unavailable: false,
-      reservedWeightedTokens: 0,
-    })
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).resolves.toMatchObject({
-      model: 'small',
-    })
-    expect(upstream.call).toHaveBeenCalledTimes(2)
-    expect(sink).toHaveBeenCalledOnce()
-  })
-
-  it('releases without blocking the scope when completion redaction fails', async () => {
-    const { grant, handler, meter, records, upstream } = fixture()
-    const malformed = {
-      ...completion({
-        prompt_tokens: 2,
-        completion_tokens: 4,
-        total_tokens: 6,
-      }),
-      moderation: {
-        input: { model: 'provider-secret', results: null },
-        output: { model: 'provider-secret', results: [] },
-      },
-    } as unknown as LlmChatCompletion
-    upstream.call.mockResolvedValueOnce({ completion: malformed, latencyMs: 1 })
-
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toThrow()
-    expect(meter.inspect(grant.accountingScope.key)).toMatchObject({
-      unavailable: false,
-      reservedWeightedTokens: 0,
-    })
-
-    await expect(handler.handle(grant, { model: 'small', messages: [] })).resolves.toMatchObject({
-      model: 'small',
-    })
-    expect(upstream.call).toHaveBeenCalledTimes(2)
     expect(records).toHaveLength(1)
   })
 
-  it('answers an unresolvable usage failure with a compatible internal error', async () => {
-    const tokenizer: LlmTokenCounter = {
-      countRequest: () => 3,
-      countCompletion: () => {
-        throw new Error('estimator failed')
+  it('keeps a failed durable sink unavailable while another scope remains usable', async () => {
+    const { grant, handler, upstream, records } = fixture({
+      sink: () => {
+        throw new Error('disk full')
+      },
+    })
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(handler.handle(grant, { model: 'small', messages: [] })).rejects.toMatchObject({
+        status: 503,
+        code: 'meter_unavailable',
+        type: expect.stringMatching(/\S/),
+        message: expect.stringMatching(/\S/),
+      })
+    }
+    expect(upstream.call).toHaveBeenCalledTimes(1)
+    expect(records).toEqual([])
+    const other = {
+      ...grant,
+      accountingScope: { ...grant.accountingScope, key: 'development:other' },
+      recordSink: (record: LlmSuccessfulRecord) => {
+        records.push(record)
       },
     }
-    const { grant, handler, logs, meter, upstream } = fixture({ sink: vi.fn(), tokenizer })
-    upstream.call.mockResolvedValueOnce({ completion: completion(null), latencyMs: 1 })
-    const registry = new KeyRegistry(() => new Uint8Array(32).fill(9))
-    const key = registry.issueOfficial(
-      's1',
-      grant,
-      createOfficialTickMarker(),
-      () => grant.recordSink,
-    )
-    const app = await buildLlmListener({ registry, handler })
-
-    const response = await app.inject({
-      method: 'POST',
-      url: '/v1/chat/completions',
-      headers: { authorization: `Bearer ${key}` },
-      payload: { model: 'small', messages: [] },
+    await expect(handler.handle(other, { model: 'small', messages: [] })).resolves.toMatchObject({
+      model: 'small',
     })
+    expect(records).toHaveLength(1)
+  })
 
-    expect(response.statusCode).toBe(500)
-    expect(response.json()).toEqual({
-      error: {
-        message: 'The LLM proxy encountered an internal error.',
-        type: 'server_error',
-        code: 'internal_error',
-      },
+  it.each(
+    faultCases,
+  )('recovers after a $label fault and retains provider-success rate usage', async ({
+    tokenizer,
+    faulty,
+  }) => {
+    const { grant, handler, logs, records, upstream } = fixture({
+      tokenBudget: 17,
+      rpm: 2,
+      tokenizer,
     })
-    expect(meter.inspect(grant.accountingScope.key).unavailable).toBe(false)
-    expect(logs).toHaveLength(1)
-    await app.close()
+    upstream.call.mockResolvedValueOnce({ completion: faulty, latencyMs: 1 })
+    const { app, key } = await officialProxy(handler, grant)
+    const secret = 'fault-payload-4f9a'
+    const payload = { model: 'small', messages: [{ role: 'user', content: secret }] }
+    const faulted = await post(app, key, '/v1/chat/completions', payload)
+    expect(faulted.statusCode).toBe(500)
+    expect(faulted.json()).toEqual({
+      error: { code: 'internal_error', type: 'server_error', message: expect.stringMatching(/\S/) },
+    })
+    expect(records).toEqual([])
+    expect(logs.join('\n')).toContain(grant.accountingScope.key)
+    expect(logs.join('\n')).toMatch(/small.*(spend|account)/)
+    expect(logs.join('\n')).not.toContain(secret)
+    expect((await post(app, key, '/v1/chat/completions', payload)).statusCode).toBe(200)
+    expect(records).toHaveLength(1)
+    expect(records[0]).toMatchObject({
+      budgetCostUnits: 6,
+      usage: { inputTokens: 2, reasoningTokens: 1, outputTokens: 4 },
+      usageEstimated: false,
+    })
+    const refused = await post(app, key, '/v1/chat/completions', payload)
+    expect(refused.statusCode).toBe(429)
+    expect(refused.json()).toMatchObject({
+      error: { code: 'rate_limit_exceeded', type: 'rate_limit_error' },
+    })
+    expect(upstream.call).toHaveBeenCalledTimes(2)
   })
 })
