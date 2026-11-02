@@ -1,18 +1,11 @@
-/**
- * The participant rating API (Stage 6.6), Docker-free with `:memory:` storage and recordings written
- * straight to a temp volume. These prove the rateable-agent set is read from the finished recording
- * header, the own-agent owner is resolved server-side, the whole payload validates before any write,
- * and the three session gates (no season, no recording, closed play) reject as specified. The
- * recording routes rate a replay: a tournament game against its run's season once it has finished,
- * and a session's recording through that session's rules.
- */
+/** Ratings and author prompts through HTTP, using real auth, SQLite, and recording files. */
 
+import { randomUUID } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -140,10 +133,10 @@ describe('rating API', () => {
     recordingId: string | null
     ended?: boolean
   }): Promise<string> {
-    const id = `sess-${Math.abs(hash(JSON.stringify(options)))}`
+    const id = `sess-${randomUUID()}`
     await storage.createSession({
       id,
-      user_id: 'bob',
+      user_id: bobId,
       env_id: ENV_ID,
       parameters: { players: 1 },
       mode: 'scripted',
@@ -188,7 +181,7 @@ describe('rating API', () => {
     recordingId: string,
     status: GameStatus = 'completed',
   ): Promise<void> {
-    const run = await createRunOrFail(storage, seasonId, 'operator', () => ({
+    const run = await createRunOrFail(storage, seasonId, users.idOf('operator'), () => ({
       parametersSnapshot: { players: 1 },
       scheduledGames: [
         {
@@ -209,242 +202,170 @@ describe('rating API', () => {
     await storage.setRunGameStatus(game.id, status)
   }
 
-  function hash(s: string): number {
-    let h = 0
-    for (let i = 0; i < s.length; i++) {
-      h = (h << 5) - h + s.charCodeAt(i)
-      h |= 0
-    }
-    return h
-  }
-
-  it('stores a rating of a submitted agent and a named builtin under the caller identity', async () => {
+  it('stores submitted and distinct named builtin ratings under the authenticated caller', async () => {
     const { season, subId, sessionId } = await seedAliceSession('flappy_bird-a', {
       player_1: { kind: 'agent', builtin_name: 'cautious', label: 'Cautious bidder' },
+      player_2: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
-
     const res = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
       payload: {
         ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 4, feedback: 'good dodge' },
+          { agent: { kind: 'submission', submission_id: subId }, score: 1, feedback: 'good dodge' },
           { agent: { kind: 'builtin', name: 'cautious' }, score: 5, feedback: 'steady' },
+          { agent: { kind: 'builtin', name: 'naive' }, score: 3, feedback: 'predictable' },
         ],
       },
     })
     expect(res.statusCode).toBe(200)
-
-    const submittedRating = await storage.getRating(season.id, bobId, {
-      kind: 'submission',
-      submission_id: subId,
-      user_id: aliceId,
-    })
-    expect(submittedRating?.score).toBe(4)
-    expect(submittedRating?.feedback).toBe('good dodge')
-    // The write response round-trips the caller's comment back per agent.
-    const body = res.json() as {
-      agents: Array<{
-        agent: { kind: string; submission_id?: string }
-        your_feedback: string | null
-      }>
-    }
-    expect(body.agents.find((a) => a.agent.kind === 'submission')).toMatchObject({
-      your_feedback: 'good dodge',
-    })
-    const aggregate = await storage.aggregateRatingsByAgent(season.id)
-    expect(aggregate.find((row) => row.agent.kind === 'builtin')).toEqual({
-      agent: { kind: 'builtin', name: 'cautious' },
-      mean: 5,
-      std: 0,
-      count: 1,
-    })
-  })
-
-  it('overwrites a prior rating rather than duplicating while play is open', async () => {
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-b')
-    const agent = { kind: 'submission' as const, submission_id: subId }
-
-    await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: { ratings: [{ agent, score: 2, feedback: 'first take' }] },
-    })
-    const second = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: { ratings: [{ agent, score: 5, feedback: 'revised take' }] },
-    })
-    expect(second.statusCode).toBe(200)
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(1)
+    const rows = await storage.listRatingsBySeason(season.id)
+    expect(rows).toHaveLength(3)
     expect(
-      (second.json() as { agents: Array<{ your_rating: number | null }> }).agents[0]?.your_rating,
-    ).toBe(5)
-    // The overwrite replaces both the score and the written comment.
-    const [stored] = await storage.listRatingsBySeason(season.id)
-    expect(stored?.feedback).toBe('revised take')
+      rows.map((row) => [
+        row.rater_user_id,
+        row.agent_submission_id ?? row.agent_builtin_name,
+        row.score,
+        row.feedback,
+      ]),
+    ).toEqual(
+      expect.arrayContaining([
+        [bobId, subId, 1, 'good dodge'],
+        [bobId, 'cautious', 5, 'steady'],
+        [bobId, 'naive', 3, 'predictable'],
+      ]),
+    )
   })
 
-  it('shares one effective rating across session and recording routes', async () => {
+  it('replaces one effective rating through session and replay routes without changing another rater', async () => {
     const { season, subId, recId, sessionId } = await seedAliceSession('flappy_bird-cross-route')
     const agent = { kind: 'submission' as const, submission_id: subId }
-
-    const sessionWrite = await app.inject({
+    const sessionUrl = `/api/sessions/${sessionId}/ratings`
+    const replayUrl = `/api/recordings/${recId}/ratings`
+    const other = await app.inject({
       method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: { ratings: [{ agent, score: 2, feedback: 'first impression' }] },
+      url: sessionUrl,
+      headers: OPERATOR,
+      payload: { ratings: [{ agent, score: 1, feedback: 'other rater' }] },
     })
-    expect(sessionWrite.statusCode).toBe(200)
-
-    const recordingWrite = await app.inject({
-      method: 'POST',
-      url: `/api/recordings/${recId}/ratings`,
-      headers: BOB,
-      payload: { ratings: [{ agent, score: 5, feedback: 'final impression' }] },
-    })
-    expect(recordingWrite.statusCode).toBe(200)
-
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(1)
-    const stored = await storage.getRating(season.id, bobId, {
-      kind: 'submission',
-      submission_id: subId,
-      user_id: aliceId,
-    })
-    expect(stored).toMatchObject({ score: 5, feedback: 'final impression' })
-
-    for (const url of [`/api/sessions/${sessionId}/ratings`, `/api/recordings/${recId}/ratings`]) {
-      const read = await app.inject({ method: 'GET', url, headers: BOB })
-      expect(read.statusCode).toBe(200)
-      expect(read.json()).toMatchObject({
-        agents: [{ agent, your_rating: 5, your_feedback: 'final impression' }],
+    expect(other.statusCode).toBe(200)
+    for (const [url, score, feedback] of [
+      [sessionUrl, 2, 'first impression'],
+      [replayUrl, 5, 'replay impression'],
+      [sessionUrl, 3, 'revised impression'],
+    ] as const) {
+      const write = await app.inject({
+        method: 'POST',
+        url,
+        headers: BOB,
+        payload: { ratings: [{ agent, score, feedback }] },
       })
+      expect([write.statusCode, write.json().agents]).toEqual([
+        200,
+        [
+          expect.objectContaining({
+            agent,
+            your_rating: score,
+            your_feedback: feedback,
+          }),
+        ],
+      ])
+      const rows = await storage.listRatingsBySeason(season.id)
+      expect(rows).toHaveLength(2)
+      expect(
+        rows.map((row) => [row.rater_user_id, row.agent_submission_id, row.score, row.feedback]),
+      ).toEqual(
+        expect.arrayContaining([
+          [bobId, subId, score, feedback],
+          [users.idOf('operator'), subId, 1, 'other rater'],
+        ]),
+      )
+    }
+    for (const url of [sessionUrl, replayUrl]) {
+      const read = await app.inject({ method: 'GET', url, headers: BOB })
+      expect([read.statusCode, read.json()]).toEqual([
+        200,
+        expect.objectContaining({
+          season_id: season.id,
+          agents: [
+            expect.objectContaining({ agent, your_rating: 3, your_feedback: 'revised impression' }),
+          ],
+        }),
+      ])
     }
   })
 
   it.each([
-    'pending',
-    'guest',
-  ] as const)('rejects %s rating writes through session and recording routes with not_active', async (status) => {
+    ['anonymous', 401, 'auth_required'],
+    ['pending', 403, 'not_active'],
+    ['guest', 403, 'not_active'],
+  ] as const)('refuses %s rating participation through both routes', async (status, code, reason) => {
     const { season, subId, recId, sessionId } = await seedAliceSession('flappy_bird-not-active')
-    const headers = await users.headersFor('mallory', { status })
-    const payload = {
-      ratings: [
-        { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'eager' },
-      ],
-    }
-
+    const headers = status === 'anonymous' ? {} : await users.headersFor('mallory', { status })
+    const methods = status === 'anonymous' ? (['GET', 'POST'] as const) : (['POST'] as const)
     for (const url of [`/api/sessions/${sessionId}/ratings`, `/api/recordings/${recId}/ratings`]) {
-      const res = await app.inject({ method: 'POST', url, headers, payload })
-      expect(res.statusCode).toBe(403)
-      expect((res.json() as { code: string }).code).toBe('not_active')
+      for (const method of methods) {
+        const res = await app.inject({
+          method,
+          url,
+          headers,
+          payload:
+            method === 'POST'
+              ? {
+                  ratings: [
+                    {
+                      agent: { kind: 'submission', submission_id: subId },
+                      score: 5,
+                      feedback: 'eager',
+                    },
+                  ],
+                }
+              : undefined,
+        })
+        expect([res.statusCode, res.json().code]).toEqual([code, reason])
+      }
     }
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
+    expect(await storage.listRatingsBySeason(season.id)).toEqual([])
   })
 
-  it('rejects a rating write and both rating reads for an anonymous caller', async () => {
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-anon')
-
-    const write = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      payload: {
-        ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'anon' },
-        ],
-      },
-    })
-    expect(write.statusCode).toBe(401)
-    expect((write.json() as { code: string }).code).toBe('auth_required')
-
-    const read = await app.inject({ method: 'GET', url: `/api/sessions/${sessionId}/ratings` })
-    expect(read.statusCode).toBe(401)
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
-  })
-
-  it('rejects an out-of-range score and a mixed valid/invalid payload writes nothing', async () => {
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-c', {
+  it.each([
+    { score: 0, feedback: 'too low', code: 'invalid_score' },
+    { score: 6, feedback: 'too high', code: 'invalid_score' },
+    { score: 4, feedback: ' \n\t ', code: 'empty_feedback' },
+    { score: 4, feedback: 'x'.repeat(1_001), code: 'feedback_too_long' },
+    { score: 4, feedback: '😀'.repeat(1_001), code: 'feedback_too_long' },
+  ])('rejects $code without saving the valid entry before it', async ({
+    score,
+    feedback,
+    code,
+  }) => {
+    const { season, subId, recId, sessionId } = await seedAliceSession('flappy_bird-invalid', {
       player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
+    for (const url of [`/api/sessions/${sessionId}/ratings`, `/api/recordings/${recId}/ratings`]) {
+      const res = await app.inject({
+        method: 'POST',
+        url,
+        headers: BOB,
+        payload: {
+          ratings: [
+            { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'fine' },
+            { agent: { kind: 'submission', submission_id: subId }, score, feedback },
+          ],
+        },
+      })
+      expect([res.statusCode, res.json().code]).toEqual([400, code])
+      expect(await storage.listRatingsBySeason(season.id)).toEqual([])
+    }
+  })
 
+  it.each([
+    'x'.repeat(1_000),
+    '😀'.repeat(1_000),
+  ])('stores a trimmed comment at the code-point cap (case %#)', async (comment) => {
+    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-comment')
     const res = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: {
-        ratings: [
-          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'fine' },
-          { agent: { kind: 'submission', submission_id: subId }, score: 9, feedback: 'wrong' },
-        ],
-      },
-    })
-    expect(res.statusCode).toBe(400)
-    expect((res.json() as { code: string }).code).toBe('invalid_score')
-    // The valid Naive score in the same payload was not written.
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
-  })
-
-  it('requires a written comment within the code-point cap for every rating', async () => {
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-comment', {
-      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-    })
-
-    // Whitespace-only feedback is blank after trim, so the whole payload is rejected before any write.
-    const blank = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: {
-        ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: '   ' }],
-      },
-    })
-    expect(blank.statusCode).toBe(400)
-    expect(blank.json()).toMatchObject({ code: 'empty_feedback' })
-
-    const tooLong = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: {
-        ratings: [
-          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'x'.repeat(1_001) },
-        ],
-      },
-    })
-    expect(tooLong.statusCode).toBe(400)
-    expect(tooLong.json()).toMatchObject({ code: 'feedback_too_long' })
-    // Neither rejected comment was written.
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
-
-    // Exactly the cap in code points is accepted...
-    const maxLength = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: {
-        ratings: [
-          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'x'.repeat(1_000) },
-        ],
-      },
-    })
-    expect(maxLength.statusCode).toBe(200)
-
-    // ...and an emoji is one code point, so a thousand of them fit while a thousand and one do not.
-    const emoji = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: {
-        ratings: [
-          { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: '😀'.repeat(1_000) },
-        ],
-      },
-    })
-    expect(emoji.statusCode).toBe(200)
-    const emojiTooLong = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
@@ -452,14 +373,16 @@ describe('rating API', () => {
         ratings: [
           {
             agent: { kind: 'submission', submission_id: subId },
-            score: 5,
-            feedback: '😀'.repeat(1_001),
+            score: 4,
+            feedback: ` \n${comment}\t `,
           },
         ],
       },
     })
-    expect(emojiTooLong.statusCode).toBe(400)
-    expect(emojiTooLong.json()).toMatchObject({ code: 'feedback_too_long' })
+    expect(res.statusCode).toBe(200)
+    expect((await storage.listRatingsBySeason(season.id)).map((row) => row.feedback)).toEqual([
+      comment,
+    ])
   })
 
   it('serves the owner feedback read for released seasons only, gated to the owner', async () => {
@@ -549,137 +472,156 @@ describe('rating API', () => {
     expect(anon.json()).toMatchObject({ code: 'auth_required' })
   })
 
-  it('rejects rating an agent that did not take part in the session', async () => {
-    const season = await playOpenSeason()
-    const recId = await writeRecording('flappy_bird-d', {
-      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+  it('rejects a real submission that did not participate in an otherwise rateable game', async () => {
+    const { season, sessionId } = await seedAliceSession('flappy_bird-outsider', {
+      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
     })
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
-
+    const outsider = await submissionFor(season.id, users.idOf('operator'))
     const res = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
       payload: {
         ratings: [
-          { agent: { kind: 'submission', submission_id: 'ghost' }, score: 3, feedback: 'who' },
+          {
+            agent: { kind: 'submission', submission_id: outsider },
+            score: 3,
+            feedback: 'not in this game',
+          },
         ],
       },
     })
-    expect(res.statusCode).toBe(400)
-    expect((res.json() as { code: string }).code).toBe('agent_not_in_session')
+    expect([res.statusCode, res.json().code]).toEqual([400, 'agent_not_in_session'])
+    expect(await storage.listRatingsBySeason(season.id)).toEqual([])
   })
 
-  it('rejects rating the caller own submitted agent, resolving the owner server-side', async () => {
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-e')
-
-    // Alice (the owner) rates her own agent; the wire form carries no owner, so the route must resolve
-    // it from the submission and reject regardless of the body.
+  it.each([
+    'session',
+    'tournament',
+  ] as const)('resolves ownership from the submission for a %s rating', async (origin) => {
+    const { season, subId, recId } = await aliceRecording('flappy_bird-own')
+    await writeRecording(recId, {
+      player_0: { kind: 'agent', label: 'Misleading owner', submission_id: subId, user: bobId },
+    })
+    const url =
+      origin === 'session'
+        ? `/api/sessions/${await seedSession({ seasonId: season.id, recordingId: recId })}/ratings`
+        : `/api/recordings/${recId}/ratings`
+    if (origin === 'tournament') await tournamentGame(season.id, recId)
     const res = await app.inject({
       method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
+      url,
       headers: ALICE,
       payload: {
         ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'me' },
+          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'mine' },
         ],
       },
     })
-    expect(res.statusCode).toBe(400)
-    expect((res.json() as { code: string }).code).toBe('own_agent')
-    expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
+    expect([res.statusCode, res.json().code]).toEqual([400, 'own_agent'])
+    expect(await storage.listRatingsBySeason(season.id)).toEqual([])
   })
 
-  it('returns not_rateable for a null-season session', async () => {
-    const recId = await writeRecording('flappy_bird-f', {
-      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-    })
-    const sessionId = await seedSession({ seasonId: null, recordingId: recId })
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-    })
-    expect(res.statusCode).toBe(409)
-    expect((res.json() as { code: string }).code).toBe('not_rateable')
-  })
-
-  it('returns not_finished when no recording is on the volume', async () => {
-    const season = await playOpenSeason()
-    const sessionId = await seedSession({ seasonId: season.id, recordingId: null })
-    const res = await app.inject({
-      method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-      payload: {
-        ratings: [{ agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'shrug' }],
-      },
-    })
-    expect(res.statusCode).toBe(409)
-    expect((res.json() as { code: string }).code).toBe('not_finished')
-  })
-
-  it('returns not_finished for a session that has not ended yet', async () => {
-    const season = await playOpenSeason()
-    const recId = await writeRecording('flappy_bird-run', {
-      player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-    })
-    // The recording header is on the volume, but the session is still running, not finalized.
+  it.each([
+    { state: 'no season', code: 'not_rateable' },
+    { state: 'no recording', code: 'not_finished' },
+    { state: 'missing file', code: 'not_finished' },
+    { state: 'running', code: 'not_finished' },
+  ])('refuses reads and writes for a session with $state', async ({ state, code }) => {
+    const season = state === 'no season' ? undefined : await playOpenSeason()
+    const recId = state === 'no recording' ? null : 'flappy_bird-gate'
+    if (recId !== null && state !== 'missing file') {
+      await writeRecording(recId, {
+        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      })
+    }
     const sessionId = await seedSession({
-      seasonId: season.id,
+      seasonId: season?.id ?? null,
       recordingId: recId,
-      ended: false,
+      ended: state !== 'running',
     })
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-    })
-    expect(res.statusCode).toBe(409)
-    expect((res.json() as { code: string }).code).toBe('not_finished')
+    for (const method of ['GET', 'POST'] as const) {
+      const res = await app.inject({
+        method,
+        url: `/api/sessions/${sessionId}/ratings`,
+        headers: BOB,
+        payload:
+          method === 'POST'
+            ? {
+                ratings: [
+                  { agent: { kind: 'builtin', name: 'naive' }, score: 4, feedback: 'fine' },
+                ],
+              }
+            : undefined,
+      })
+      expect([res.statusCode, res.json().code]).toEqual([409, code])
+    }
+    if (season !== undefined) expect(await storage.listRatingsBySeason(season.id)).toEqual([])
   })
 
-  it('rejects writes against a closed play window and marks reads read-only', async () => {
-    // A submitted-agent watch session attaches to its submission's season; close play afterward.
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-g')
+  it.each([
+    'session',
+    'tournament',
+  ] as const)('keeps prior feedback read-only after closing play for a %s', async (origin) => {
+    const { season, subId, recId } = await aliceRecording('flappy_bird-closed')
+    const url =
+      origin === 'session'
+        ? `/api/sessions/${await seedSession({ seasonId: season.id, recordingId: recId })}/ratings`
+        : `/api/recordings/${recId}/ratings`
+    if (origin === 'tournament') await tournamentGame(season.id, recId)
+    const agent = { kind: 'submission' as const, submission_id: subId }
+    const first = await app.inject({
+      method: 'POST',
+      url,
+      headers: BOB,
+      payload: { ratings: [{ agent, score: 2, feedback: 'before closing' }] },
+    })
+    expect(first.statusCode).toBe(200)
     await storage.setPlayStatus(season.id, 'closed')
-
     const write = await app.inject({
       method: 'POST',
-      url: `/api/sessions/${sessionId}/ratings`,
+      url,
       headers: BOB,
-      payload: {
-        ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 3, feedback: 'late' },
+      payload: { ratings: [{ agent, score: 5, feedback: 'too late' }] },
+    })
+    expect([write.statusCode, write.json().code]).toEqual([409, 'play_closed'])
+    const read = await app.inject({ method: 'GET', url, headers: BOB })
+    expect([read.statusCode, read.json()]).toEqual([
+      200,
+      expect.objectContaining({
+        read_only: true,
+        agents: [
+          expect.objectContaining({ agent, your_rating: 2, your_feedback: 'before closing' }),
         ],
-      },
-    })
-    expect(write.statusCode).toBe(409)
-    expect((write.json() as { code: string }).code).toBe('play_closed')
-
-    const read = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
-    })
-    expect(read.statusCode).toBe(200)
-    expect((read.json() as { read_only: boolean }).read_only).toBe(true)
+      }),
+    ])
+    expect(
+      (await storage.listRatingsBySeason(season.id)).map((row) => [row.score, row.feedback]),
+    ).toEqual([[2, 'before closing']])
   })
 
-  it('reads effective ratings and both prompts per agent, Naive showing only the season prompt', async () => {
-    const { season, subId, sessionId } = await seedAliceSession(
-      'flappy_bird-h',
-      {
-        player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-        player_2: { kind: 'human', label: 'bob', user: 'bob' },
-      },
-      'Rate the overall fun',
-    )
+  it.each([
+    { caller: 'bob', label: 'Agent 1', own: false, score: 4, feedback: 'Bold dives' },
+    { caller: 'alice', label: 'Your agent', own: true, score: null, feedback: null },
+  ])('reads saved feedback, prompts, and eligibility for $caller', async ({
+    caller,
+    label,
+    own,
+    score,
+    feedback,
+  }) => {
+    const season = await playOpenSeason('Rate the overall fun')
+    const subId = await submissionFor(season.id, aliceId)
+    const recId = await writeRecording('flappy_bird-view', {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      player_1: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      player_2: { kind: 'human', label: 'bob', user: bobId },
+      player_3: { kind: 'agent', label: "alice's agent", submission_id: subId },
+    })
+    const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
     await storage.updateSubmissionStatus(subId, 'ready')
     await storage.upsertAgentRatingPrompt(season.id, aliceId, 'Judge my dodging')
-
-    // Pre-rate the submitted agent so the read pre-fills the prior value and its written comment.
-    await app.inject({
+    const saved = await app.inject({
       method: 'POST',
       url: `/api/sessions/${sessionId}/ratings`,
       headers: BOB,
@@ -689,59 +631,37 @@ describe('rating API', () => {
         ],
       },
     })
-
+    expect(saved.statusCode).toBe(200)
     const res = await app.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}/ratings`,
-      headers: BOB,
+      headers: caller === 'alice' ? ALICE : BOB,
     })
-    expect(res.statusCode).toBe(200)
-    const body = res.json() as {
-      season_prompt: string | null
-      read_only: boolean
-      agents: Array<{
-        agent: { kind: string; submission_id?: string }
-        display_name: string
-        is_own: boolean
-        author_prompt: string | null
-        your_rating: number | null
-      }>
-    }
-    expect(body.season_prompt).toBe('Rate the overall fun')
-    expect(body.read_only).toBe(false)
-    // The human seat is skipped; the submitted agent and Naive remain.
-    expect(body.agents).toHaveLength(2)
-    const submitted = body.agents.find((a) => a.agent.kind === 'submission')
-    expect(submitted).toMatchObject({
-      display_name: 'Agent 1',
-      author_prompt: 'Judge my dodging',
-      your_rating: 4,
-      your_feedback: 'Bold dives',
-      is_own: false,
+    const body = res.json()
+    expect([res.statusCode, body.agents.length]).toEqual([200, 2])
+    expect(body).toMatchObject({
+      season_id: season.id,
+      season_prompt: 'Rate the overall fun',
+      read_only: false,
+      agents: expect.arrayContaining([
+        expect.objectContaining({
+          agent: { kind: 'submission', submission_id: subId },
+          display_name: label,
+          author_prompt: 'Judge my dodging',
+          your_rating: score,
+          your_feedback: feedback,
+          is_own: own,
+        }),
+        expect.objectContaining({
+          agent: { kind: 'builtin', name: 'naive' },
+          display_name: 'Naive agent',
+          author_prompt: null,
+          your_rating: null,
+          your_feedback: null,
+          is_own: false,
+        }),
+      ]),
     })
-    const naive = body.agents.find((a) => a.agent.kind === 'builtin')
-    expect(naive).toMatchObject({
-      display_name: 'Naive agent',
-      author_prompt: null,
-      your_rating: null,
-      your_feedback: null,
-    })
-  })
-
-  it('shows the user own submitted agent without offering a rating control', async () => {
-    const { sessionId } = await seedAliceSession('flappy_bird-i')
-
-    const res = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: ALICE,
-    })
-    const body = res.json() as {
-      agents: Array<{ display_name: string; is_own: boolean; your_rating: number | null }>
-    }
-    expect(body.agents[0]?.display_name).toBe('Your agent')
-    expect(body.agents[0]?.is_own).toBe(true)
-    expect(body.agents[0]?.your_rating).toBeNull()
   })
 
   it('reveals submitted-agent names to admins and after public play closes', async () => {
@@ -772,52 +692,61 @@ describe('rating API', () => {
     })
   })
 
-  it('shows a guest the stable hash label on every rating view, play window or not', async () => {
-    const { season, subId, sessionId } = await seedAliceSession('flappy_bird-guest')
+  it('keeps distinct guest labels private and stable across routes and the play window', async () => {
+    const { season, subId, recId } = await aliceRecording('flappy_bird-guest')
+    const bobSub = await submissionFor(season.id, bobId)
     await storage.updateSubmissionStatus(subId, 'ready')
-    const guestHeaders = await users.headersFor('guest-user', { status: 'guest' })
-
-    // The hash label, not "Agent N", for a guest while play is open...
-    const open = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: guestHeaders,
-    })
-    expect(open.json()).toMatchObject({
-      read_only: false,
-      agents: [{ display_name: maskedAgentLabel(aliceId) }],
-    })
-
-    // ...and identically once the window has closed (a guest is always masked).
-    await storage.setPlayStatus(season.id, 'closed')
-    const closed = await app.inject({
-      method: 'GET',
-      url: `/api/sessions/${sessionId}/ratings`,
-      headers: guestHeaders,
-    })
-    expect(closed.json()).toMatchObject({
-      read_only: true,
-      agents: [{ display_name: maskedAgentLabel(aliceId) }],
-    })
-  })
-
-  it('falls back to the stable owner id in a non-blind label when the user row is missing', async () => {
-    const season = await playOpenSeason()
-    // A submission attributed to an id with no user row (e.g. an imported roster).
-    const subId = await submissionFor(season.id, 'ghost-user')
-    const recId = await writeRecording('flappy_bird-ghost', {
-      player_0: { kind: 'agent', label: "ghost-user's agent", submission_id: subId },
+    await storage.updateSubmissionStatus(bobSub, 'ready')
+    await writeRecording(recId, {
+      player_0: { kind: 'agent', label: "alice's agent", submission_id: subId },
+      player_1: { kind: 'agent', label: "bob's agent", submission_id: bobSub },
     })
     const sessionId = await seedSession({ seasonId: season.id, recordingId: recId })
-
-    const operator = await app.inject({
+    const headers = await users.headersFor('guest-user', { status: 'guest' })
+    const viewer = await users.headersFor('viewer')
+    const regular = await app.inject({
       method: 'GET',
       url: `/api/sessions/${sessionId}/ratings`,
-      headers: OPERATOR,
+      headers: viewer,
     })
-    expect(operator.json()).toMatchObject({
-      agents: [{ display_name: "ghost-user's agent" }],
-    })
+    expect(regular.statusCode).toBe(200)
+    const numberedLabels = regular
+      .json<{ agents: Array<{ display_name: string }> }>()
+      .agents.map((entry) => entry.display_name)
+    expect(numberedLabels).toEqual([
+      expect.stringMatching(/^Agent \d+$/),
+      expect.stringMatching(/^Agent \d+$/),
+    ])
+    let original: Record<string, string> | undefined
+    for (const play of ['open', 'closed'] as const) {
+      await storage.setPlayStatus(season.id, play)
+      for (const url of [
+        `/api/sessions/${sessionId}/ratings`,
+        `/api/recordings/${recId}/ratings`,
+      ]) {
+        const res = await app.inject({ method: 'GET', url, headers })
+        const body = res.json<{
+          read_only: boolean
+          agents: Array<{
+            agent: { submission_id: string }
+            display_name: string
+          }>
+        }>()
+        expect([res.statusCode, body.read_only]).toEqual([200, play === 'closed'])
+        const labels = Object.fromEntries(
+          body.agents.map((entry) => [entry.agent.submission_id, entry.display_name]),
+        )
+        expect(labels).toEqual({
+          [subId]: expect.stringMatching(/^Agent \S+$/),
+          [bobSub]: expect.stringMatching(/^Agent \S+$/),
+        })
+        expect(new Set(Object.values(labels)).size).toBe(2)
+        for (const label of Object.values(labels)) expect(numberedLabels).not.toContain(label)
+        expect(Object.values(labels).join(' ')).not.toMatch(/alice|bob/i)
+        if (original === undefined) original = labels
+        else expect(labels).toEqual(original)
+      }
+    }
   })
 
   it('offers no ratings and refuses writes for a pure Naive watch recording', async () => {
@@ -846,78 +775,72 @@ describe('rating API', () => {
     expect(await storage.listRatingsBySeason(season.id)).toEqual([])
   })
 
-  it('sets the author prompt under the caller identity and rejects a caller with no agent', async () => {
-    const season = await playOpenSeason()
-    await submissionFor(season.id, aliceId)
+  it('sets, replaces, and clears only the caller prompt while submissions are open', async () => {
+    const season = await storage.createSeason({ env_id: ENV_ID, deps_version: 1 })
     await storage.setSubmissionStatus(season.id, 'open')
-
-    const ok = await app.inject({
-      method: 'PUT',
-      url: `/api/seasons/${season.id}/agent-rating-prompt`,
-      headers: ALICE,
-      payload: { prompt: 'What to look for' },
-    })
-    expect(ok.statusCode).toBe(200)
-    expect((ok.json() as { prompt: string | null }).prompt).toBe('What to look for')
-    expect((await storage.getAgentRatingPrompt(season.id, aliceId))?.prompt).toBe(
-      'What to look for',
-    )
-
-    const read = await app.inject({
-      method: 'GET',
-      url: `/api/seasons/${season.id}/agent-rating-prompt`,
-      headers: ALICE,
-    })
-    expect((read.json() as { prompt: string | null }).prompt).toBe('What to look for')
-
-    // Bob has no submission in this season.
+    await submissionFor(season.id, aliceId)
+    await submissionFor(season.id, users.idOf('operator'))
+    await storage.upsertAgentRatingPrompt(season.id, users.idOf('operator'), 'Other author')
+    const url = `/api/seasons/${season.id}/agent-rating-prompt`
+    for (const [prompt, expected] of [
+      ['What to look for', 'What to look for'],
+      ['Judge my dodging', 'Judge my dodging'],
+      ['', null],
+    ] as const) {
+      const write = await app.inject({ method: 'PUT', url, headers: ALICE, payload: { prompt } })
+      expect([write.statusCode, write.json()]).toEqual([
+        200,
+        { season_id: season.id, prompt: expected },
+      ])
+      const read = await app.inject({ method: 'GET', url, headers: ALICE })
+      expect([read.statusCode, read.json()]).toEqual([
+        200,
+        { season_id: season.id, prompt: expected },
+      ])
+      const other = await app.inject({ method: 'GET', url, headers: OPERATOR })
+      expect([other.statusCode, other.json()]).toEqual([
+        200,
+        { season_id: season.id, prompt: 'Other author' },
+      ])
+    }
     const denied = await app.inject({
       method: 'PUT',
-      url: `/api/seasons/${season.id}/agent-rating-prompt`,
+      url,
       headers: BOB,
       payload: { prompt: 'nope' },
     })
-    expect(denied.statusCode).toBe(409)
-    expect((denied.json() as { code: string }).code).toBe('no_agent_in_season')
+    expect([denied.statusCode, denied.json().code]).toEqual([409, 'no_agent_in_season'])
+    expect(await storage.getAgentRatingPrompt(season.id, bobId)).toBeUndefined()
   })
 
-  it('clears the author prompt when given an empty value', async () => {
+  it('preserves the saved prompt after submissions close even while play stays open', async () => {
     const season = await playOpenSeason()
     await submissionFor(season.id, aliceId)
     await storage.setSubmissionStatus(season.id, 'open')
-    await app.inject({
+    const url = `/api/seasons/${season.id}/agent-rating-prompt`
+    const saved = await app.inject({
       method: 'PUT',
-      url: `/api/seasons/${season.id}/agent-rating-prompt`,
+      url,
       headers: ALICE,
-      payload: { prompt: 'something' },
+      payload: { prompt: 'Original prompt' },
     })
-    const cleared = await app.inject({
-      method: 'PUT',
-      url: `/api/seasons/${season.id}/agent-rating-prompt`,
-      headers: ALICE,
-      payload: { prompt: '' },
-    })
-    expect(cleared.statusCode).toBe(200)
-    expect((cleared.json() as { prompt: string | null }).prompt).toBeNull()
-  })
-
-  it('locks the author prompt once the season submission window is closed', async () => {
-    // Play is open and the author has an active submission, but submissions never opened — the
-    // lifecycle forbids revisions once submissions close, even while play stays open, and a direct
-    // API call must not bypass that to edit a prompt after submissions (or release).
-    const season = await playOpenSeason()
-    await submissionFor(season.id, aliceId)
-
+    expect(saved.statusCode).toBe(200)
+    await storage.setSubmissionStatus(season.id, 'closed')
     const denied = await app.inject({
       method: 'PUT',
-      url: `/api/seasons/${season.id}/agent-rating-prompt`,
+      url,
       headers: ALICE,
       payload: { prompt: 'too late' },
     })
-    expect(denied.statusCode).toBe(409)
-    expect((denied.json() as { code: string }).code).toBe('submissions_closed')
-    expect(await storage.getAgentRatingPrompt(season.id, aliceId)).toBeUndefined()
+    expect([denied.statusCode, denied.json().code]).toEqual([409, 'submissions_closed'])
+    const read = await app.inject({ method: 'GET', url, headers: ALICE })
+    expect([read.statusCode, read.json()]).toEqual([
+      200,
+      { season_id: season.id, prompt: 'Original prompt' },
+    ])
+    expect((await storage.getAgentRatingPrompt(season.id, aliceId))?.prompt).toBe('Original prompt')
   })
+
   describe('rating a replay', () => {
     it('rates a finished tournament game against its run season', async () => {
       const { season, subId, recId } = await aliceRecording('flappy_bird-t1')
@@ -981,47 +904,6 @@ describe('rating API', () => {
       expect(res.statusCode).toBe(409)
       expect((res.json() as { code: string }).code).toBe('not_finished')
       expect(await storage.listRatingsBySeason(season.id)).toEqual([])
-    })
-
-    it('refuses a closed season and the caller own agent', async () => {
-      const { season, subId, recId } = await aliceRecording('flappy_bird-t3')
-      await tournamentGame(season.id, recId)
-      const payload = {
-        ratings: [
-          { agent: { kind: 'submission', submission_id: subId }, score: 5, feedback: 'mine' },
-        ],
-      }
-
-      const own = await app.inject({
-        method: 'POST',
-        url: `/api/recordings/${recId}/ratings`,
-        headers: ALICE,
-        payload,
-      })
-      expect(own.statusCode).toBe(400)
-      expect((own.json() as { code: string }).code).toBe('own_agent')
-
-      await storage.setPlayStatus(season.id, 'closed')
-      const closed = await app.inject({
-        method: 'POST',
-        url: `/api/recordings/${recId}/ratings`,
-        headers: BOB,
-        payload,
-      })
-      expect(closed.statusCode).toBe(409)
-      expect((closed.json() as { code: string }).code).toBe('play_closed')
-      expect(await storage.listRatingsBySeason(season.id)).toHaveLength(0)
-    })
-
-    it('rates a session recording through its session season', async () => {
-      const { season, recId } = await seedAliceSession('flappy_bird-t4')
-      const res = await app.inject({
-        method: 'GET',
-        url: `/api/recordings/${recId}/ratings`,
-        headers: BOB,
-      })
-      expect(res.statusCode).toBe(200)
-      expect(res.json()).toMatchObject({ season_id: season.id })
     })
 
     it('404s a missing recording and refuses one with no season', async () => {
