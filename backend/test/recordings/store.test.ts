@@ -17,13 +17,6 @@ const WIN_STATE = JSON.stringify({
   overlay: { leaderboard_scores: [2, 8, 4] },
   timing: { started_at: 2, duration_ms: 1 },
 })
-const TIED_STATE = JSON.stringify({
-  schema_version: 1,
-  tick: 1,
-  agents: {},
-  overlay: { leaderboard_scores: [8, 2, 8] },
-  timing: { started_at: 2, duration_ms: 1 },
-})
 
 describe('recordings store over the volume layout', () => {
   let root: string
@@ -43,14 +36,6 @@ describe('recordings store over the volume layout', () => {
     await writeFile(join(root, id, 'recording.jsonl'), `${lines.join('\n')}\n`, 'utf-8')
   }
 
-  it('lists ids with their parsed headers, id-sorted', async () => {
-    await writeRecording('flappy_bird-b', [HEADER, STATE])
-    await writeRecording('flappy_bird-a', [HEADER])
-    const summaries = await store.list()
-    expect(summaries.map((s) => s.id)).toEqual(['flappy_bird-a', 'flappy_bird-b'])
-    expect(summaries[0]?.header).toMatchObject({ schema_version: 1, environment: 'hearts' })
-  })
-
   it('reads a header whose static overlay spans several read chunks', async () => {
     const map = `${'✓'.repeat(50 * 1024)}${'x'.repeat(100 * 1024)}`
     const header = JSON.stringify({
@@ -62,52 +47,63 @@ describe('recordings store over the volume layout', () => {
     expect((await store.readHeader('static-overlay'))?.overlay_static).toEqual({ map })
   })
 
-  it('skips a directory whose header is missing or invalid', async () => {
-    await writeRecording('good', [HEADER])
-    await writeRecording('empty', [''])
+  it('lists complete headers without letting unreadable neighbors hide valid recordings', async () => {
+    await writeRecording('good-b', [HEADER, STATE])
+    await writeRecording('good-a', [HEADER])
+    await mkdir(join(root, 'missing'))
+    await mkdir(join(root, 'empty'))
+    await writeFile(join(root, 'empty', 'recording.jsonl'), '')
     await writeRecording('garbage', ['not json'])
-    expect((await store.list()).map((s) => s.id)).toEqual(['good'])
+    await writeRecording('invalid', ['{"schema_version":1}'])
+
+    const summaries = (await store.list()).sort((a, b) => a.id.localeCompare(b.id))
+    expect(summaries).toEqual([
+      { id: 'good-a', header: JSON.parse(HEADER), winner_id: null },
+      { id: 'good-b', header: JSON.parse(HEADER), winner_id: null },
+    ])
   })
 
-  it('lists a unique final-state winner and uses -1 for a tie', async () => {
-    await writeRecording('winner', [HEADER, STATE, WIN_STATE])
-    await writeRecording('tie', [HEADER, TIED_STATE])
-
-    const byId = new Map((await store.list()).map((summary) => [summary.id, summary]))
-    expect(byId.get('winner')?.winner_id).toBe('seat_1')
-    expect(byId.get('tie')?.winner_id).toBe(-1)
+  it.each([
+    ['winner', [2, 8, 4], 'seat_1'],
+    ['tie', [8, 2, 8], -1],
+    ['absent', undefined, null],
+    ['incomplete', [2, 8], null],
+  ] as const)('summarizes %s ranking data', async (_name, scores, winner) => {
+    const state = JSON.stringify({ ...JSON.parse(STATE), overlay: { leaderboard_scores: scores } })
+    await writeRecording('ranking', [HEADER, STATE, state])
+    expect((await store.list())[0]?.winner_id).toBe(winner)
   })
 
   it('uses the newest complete state when the recording ends with a partial line', async () => {
-    await writeRecording('partial', [HEADER, WIN_STATE, '{"schema_version":1'])
+    await mkdir(join(root, 'partial'))
+    await writeFile(
+      join(root, 'partial', 'recording.jsonl'),
+      `${HEADER}\n${WIN_STATE}\n{"schema_version":1`,
+    )
     expect((await store.list())[0]?.winner_id).toBe('seat_1')
   })
 
   it('reduces partnership player scores before choosing a winner', async () => {
+    const header = JSON.parse(HEADER)
     const partnershipHeader = JSON.stringify({
-      schema_version: 1,
+      ...header,
       environment: 'spades',
       parameters: { seat_plan: 'partnership' },
-      players: Object.fromEntries(
-        Array.from({ length: 4 }, (_, index) => [
-          `player_${index}`,
-          { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-        ]),
-      ),
+      players: {
+        ...header.players,
+        player_3: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
+      },
       seats: { seat_0: ['player_0', 'player_2'], seat_1: ['player_1', 'player_3'] },
       seat_plan: 'partnership',
     })
     await writeRecording('partnership', [
       partnershipHeader,
       JSON.stringify({
-        schema_version: 1,
-        tick: 1,
-        agents: {},
-        overlay: { leaderboard_scores: [12, 3, 12, 3] },
-        timing: { started_at: 2, duration_ms: 1 },
+        ...JSON.parse(STATE),
+        overlay: { leaderboard_scores: [12, 7, 0, 7] },
       }),
     ])
-    expect((await store.list())[0]?.winner_id).toBe('seat_0')
+    expect((await store.list())[0]?.winner_id).toBe('seat_1')
   })
 
   it('returns no recordings when the volume does not exist yet', async () => {

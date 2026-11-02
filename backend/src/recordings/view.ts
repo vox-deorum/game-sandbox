@@ -126,7 +126,6 @@ export function replaceHeaderLine(
   replacementHeaderLine: string,
 ): Transform {
   let headerDone = false
-  let buffer = ''
   const transform = new Transform({
     transform(chunk, _encoding, callback) {
       if (headerDone) {
@@ -134,15 +133,14 @@ export function replaceHeaderLine(
         callback()
         return
       }
-      buffer += chunk.toString('utf-8')
-      const newline = buffer.indexOf('\n')
+      const newline = chunk.indexOf(0x0a)
       if (newline === -1) {
         callback()
         return
       }
       headerDone = true
-      this.push(`${replacementHeaderLine}\n${buffer.slice(newline + 1)}`)
-      buffer = ''
+      this.push(`${replacementHeaderLine}\n`)
+      this.push(chunk.subarray(newline + 1))
       callback()
     },
     flush(callback) {

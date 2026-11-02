@@ -1,25 +1,11 @@
 import { Readable } from 'node:stream'
-import { maskedAgentLabel } from '@game-sandbox/schema/accounts'
 import { describe, expect, it } from 'vitest'
 
 import type { AuthUser } from '../../src/auth/identity.js'
-import {
-  headerHasSubmittedAgent,
-  isBlindRecording,
-  maskPlayers,
-  replaceHeaderLine,
-} from '../../src/recordings/view.js'
+import { isBlindRecording, maskPlayers, replaceHeaderLine } from '../../src/recordings/view.js'
 
 type Players = NonNullable<import('@game-sandbox/schema').RecordingHeader['players']>
 
-const admin: AuthUser = {
-  id: 'op',
-  name: 'Op',
-  email: 'op@x',
-  image: null,
-  githubUsername: null,
-  status: 'admin',
-}
 const normal: AuthUser = {
   id: 'u1',
   name: 'One',
@@ -28,14 +14,8 @@ const normal: AuthUser = {
   githubUsername: null,
   status: 'normal',
 }
-const guest: AuthUser = {
-  id: 'g1',
-  name: 'Guest',
-  email: 'g1@x',
-  image: null,
-  githubUsername: null,
-  status: 'guest',
-}
+const admin: AuthUser = { ...normal, id: 'op', status: 'admin' }
+const guest: AuthUser = { ...normal, id: 'g1', status: 'guest' }
 
 const submittedPlayers: Players = {
   player_0: { kind: 'agent', label: "alice's agent", user: 'alice', submission_id: 'sub-a' },
@@ -45,91 +25,106 @@ const submittedPlayers: Players = {
 const humanOnlyPlayers: Players = {
   player_0: { kind: 'human', label: 'Bob', user: 'bob' },
 }
-
-async function collect(stream: NodeJS.ReadableStream): Promise<string> {
-  let out = ''
-  for await (const chunk of stream) {
-    out += chunk.toString()
-  }
-  return out
+const builtinPlayers: Players = {
+  player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
 }
 
-describe('headerHasSubmittedAgent', () => {
-  it('is true only when a submitted agent is present', () => {
-    expect(headerHasSubmittedAgent(submittedPlayers)).toBe(true)
-    expect(headerHasSubmittedAgent(undefined)).toBe(false)
-    expect(
-      headerHasSubmittedAgent({
-        player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' },
-      }),
-    ).toBe(false)
-    expect(
-      headerHasSubmittedAgent({ player_0: { kind: 'human', label: 'Bob', user: 'bob' } }),
-    ).toBe(false)
-  })
-})
+async function collect(stream: NodeJS.ReadableStream): Promise<string> {
+  const chunks: Buffer[] = []
+  for await (const chunk of stream) {
+    chunks.push(Buffer.from(chunk))
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
 
 describe('isBlindRecording', () => {
-  it('never blinds an operator', () => {
-    expect(isBlindRecording(admin, 'open', submittedPlayers)).toBe(false)
-  })
-  it('blinds a non-operator (and an anonymous caller) on an open season with a submitted agent', () => {
-    expect(isBlindRecording(normal, 'open', submittedPlayers)).toBe(true)
-    expect(isBlindRecording(null, 'open', submittedPlayers)).toBe(true)
-  })
-  it('does not blind when the season is not open, or there is nothing to hide', () => {
-    expect(isBlindRecording(normal, 'closed', submittedPlayers)).toBe(false)
-    expect(isBlindRecording(normal, undefined, submittedPlayers)).toBe(false)
-    expect(isBlindRecording(null, 'open', undefined)).toBe(false)
-  })
-  it('blinds a masked (anonymous or guest) caller unconditionally over the play window', () => {
-    expect(isBlindRecording(null, 'closed', submittedPlayers)).toBe(true)
-    expect(isBlindRecording(guest, 'closed', submittedPlayers)).toBe(true)
-    // An all-human recording has identities to hide too.
-    expect(isBlindRecording(null, 'closed', humanOnlyPlayers)).toBe(true)
+  it.each([
+    ['operator during play', admin, 'open', submittedPlayers, false],
+    ['participant during play', normal, 'open', submittedPlayers, true],
+    ['anonymous during play', null, 'open', submittedPlayers, true],
+    ['participant after play', normal, 'closed', submittedPlayers, false],
+    ['participant without a season', normal, undefined, submittedPlayers, false],
+    ['anonymous without a header', null, 'open', undefined, false],
+    ['anonymous after play', null, 'closed', submittedPlayers, true],
+    ['guest after play', guest, 'closed', submittedPlayers, true],
+    ['anonymous human-only replay', null, 'closed', humanOnlyPlayers, true],
+    ['participant without a header', normal, 'open', undefined, false],
+    ['participant builtin-only replay', normal, 'open', builtinPlayers, false],
+    ['participant human-only replay', normal, 'open', humanOnlyPlayers, false],
+    ['guest builtin-only replay', guest, 'open', builtinPlayers, false],
+  ] as const)('decides masking for %s', (_name, caller, status, players, blind) => {
+    expect(isBlindRecording(caller, status, players)).toBe(blind)
   })
 })
 
 describe('maskPlayers', () => {
   it('masks other seats, keeps the submission id, and drops the reversible user id', () => {
-    const masked = maskPlayers(submittedPlayers, 'someone-else')
-    expect(masked.player_0).toEqual({
-      kind: 'agent',
-      label: 'Agent',
-      submission_id: 'sub-a',
+    expect(maskPlayers(submittedPlayers, 'someone-else')).toEqual({
+      player_0: { kind: 'agent', label: 'Agent', submission_id: 'sub-a' },
+      player_1: { kind: 'human', label: 'Human' },
     })
-    expect(masked.player_0).not.toHaveProperty('user')
-    expect(masked.player_1).toEqual({ kind: 'human', label: 'Human' })
-    expect(masked.player_1).not.toHaveProperty('user')
-  })
-
-  it("leaves the viewer's own seat untouched so they can still find themselves", () => {
-    const masked = maskPlayers(submittedPlayers, 'alice')
-    expect(masked.player_0).toEqual(submittedPlayers.player_0)
-    expect(masked.player_1).toEqual({ kind: 'human', label: 'Human' })
-  })
-
-  it('writes stable hash labels for a masked viewer, hashing from the pre-strip user id', () => {
-    const masked = maskPlayers(submittedPlayers, 'someone-else', true)
-    expect(masked.player_0).toEqual({
-      kind: 'agent',
-      label: maskedAgentLabel('alice'),
-      submission_id: 'sub-a',
-    })
-    expect(masked.player_0).not.toHaveProperty('user')
-    // A masked human reads with the same Agent prefix, so seat kinds stay indistinguishable.
-    expect(masked.player_1).toEqual({ kind: 'human', label: maskedAgentLabel('bob') })
-    expect(masked.player_1).not.toHaveProperty('user')
-  })
-
-  it('leaves a masked guest own seat untouched', () => {
-    const players: Players = {
-      player_0: { kind: 'human', label: 'Guest', user: 'g1' },
+    expect(maskPlayers(submittedPlayers, 'bob')).toEqual({
+      player_0: { kind: 'agent', label: 'Agent', submission_id: 'sub-a' },
       player_1: { kind: 'human', label: 'Bob', user: 'bob' },
+    })
+    expect(submittedPlayers).toEqual({
+      player_0: { kind: 'agent', label: "alice's agent", user: 'alice', submission_id: 'sub-a' },
+      player_1: { kind: 'human', label: 'Bob', user: 'bob' },
+    })
+  })
+
+  it.each([
+    [
+      'participant',
+      'alice',
+      false,
+      {
+        player_0: { kind: 'agent', label: "alice's agent", user: 'alice', submission_id: 'sub-a' },
+        player_1: { kind: 'human', label: 'Human' },
+      },
+    ],
+    [
+      'guest',
+      'bob',
+      true,
+      {
+        player_0: {
+          kind: 'agent',
+          label: expect.stringMatching(/^Agent [0-9a-f]{6}$/),
+          submission_id: 'sub-a',
+        },
+        player_1: { kind: 'human', label: 'Bob', user: 'bob' },
+      },
+    ],
+  ] as const)('preserves the %s own player', (_name, caller, maskedViewer, expected) => {
+    expect(maskPlayers(submittedPlayers, caller, maskedViewer)).toEqual(expected)
+  })
+
+  it('uses stable owner pseudonyms across controller kinds and display-name changes', () => {
+    const players: Players = {
+      ...submittedPlayers,
+      player_2: { kind: 'human', label: 'Alice', user: 'alice' },
     }
-    const masked = maskPlayers(players, 'g1', true)
-    expect(masked.player_0).toEqual(players.player_0)
-    expect(masked.player_1).toEqual({ kind: 'human', label: maskedAgentLabel('bob') })
+    const masked = maskPlayers(players, undefined, true)
+    expect(masked).toEqual({
+      player_0: {
+        kind: 'agent',
+        label: expect.stringMatching(/^Agent [0-9a-f]{6}$/),
+        submission_id: 'sub-a',
+      },
+      player_1: { kind: 'human', label: expect.stringMatching(/^Agent [0-9a-f]{6}$/) },
+      player_2: { kind: 'human', label: expect.stringMatching(/^Agent [0-9a-f]{6}$/) },
+    })
+    expect(masked.player_0?.label).toBe(masked.player_2?.label)
+    expect(masked.player_0?.label).not.toBe(masked.player_1?.label)
+    players.player_0 = {
+      kind: 'agent',
+      label: 'Renamed agent',
+      user: 'alice',
+      submission_id: 'sub-a',
+    }
+    players.player_1 = { kind: 'human', label: 'Renamed human', user: 'bob' }
+    expect(maskPlayers(players, 'another-viewer', true)).toEqual(masked)
   })
 
   it('leaves the ownerless Naive agent as-is', () => {
@@ -141,16 +136,23 @@ describe('maskPlayers', () => {
 })
 
 describe('replaceHeaderLine', () => {
-  it('rewrites only the first line, leaving the state lines byte-for-byte', async () => {
-    const source = Readable.from(['{"old":true}\n{"tick":0}\n{"tick":1}\n'])
-    const out = await collect(replaceHeaderLine(source, '{"new":true}'))
+  it.each([
+    ['whole header', ['{"old":true}\n{"tick":0}\n{"tick":1}\n']],
+    ['split header', ['{"old"', ':true}\n{"tick"', ':0}\n{"tick":1}\n']],
+  ])('rewrites a %s without changing state lines', async (_name, chunks) => {
+    const out = await collect(replaceHeaderLine(Readable.from(chunks), '{"new":true}'))
     expect(out).toBe('{"new":true}\n{"tick":0}\n{"tick":1}\n')
   })
 
-  it('handles the header arriving split across chunks', async () => {
-    const source = Readable.from(['{"old"', ':true}\n{"tick"', ':0}\n'])
-    const out = await collect(replaceHeaderLine(source, '{"new":true}'))
-    expect(out).toBe('{"new":true}\n{"tick":0}\n')
+  it('preserves state bytes when the header chunk ends inside a UTF-8 character', async () => {
+    const bytes = Buffer.from('{"old":true}\n{"chat":"✓"}\n')
+    const split = bytes.indexOf(Buffer.from('✓')) + 1
+    const source = Readable.from([bytes.subarray(0, split), bytes.subarray(split)])
+    const chunks: Buffer[] = []
+    for await (const chunk of replaceHeaderLine(source, '{"new":true}')) {
+      chunks.push(Buffer.from(chunk))
+    }
+    expect(Buffer.concat(chunks)).toEqual(Buffer.from('{"new":true}\n{"chat":"✓"}\n'))
   })
 
   it('emits the masked header for a degenerate header-only recording (no trailing newline)', async () => {
