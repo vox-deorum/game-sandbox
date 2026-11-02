@@ -1,20 +1,45 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  type PinResult,
   Retention,
   type RetentionConfig,
   reclaimOrphanedOfficialTelemetry,
 } from '../../src/recordings/retention.js'
 import { RecordingsStore } from '../../src/recordings/store.js'
-import type { NewRecordingInput, ScheduledGameInput, Storage } from '../../src/storage/index.js'
+import type {
+  NewRecordingInput,
+  RecordingCleanupClaimResult,
+  Storage,
+} from '../../src/storage/index.js'
 import { DevelopmentLedgerStore, ExecutionTelemetryStore } from '../../src/storage/llm/index.js'
 import { openSqliteStorage } from '../../src/storage/sqlite.js'
 import { createRunOrFail } from '../support/harness.js'
 import { TEST_DISABLED_OFFICIAL_LLM_POLICY } from '../support/llm-options.js'
+
+const CALL_CONTENT = {
+  model: 'small',
+  request: { prompt: 'hello' },
+  completion: { text: 'world' },
+  inputTokens: 1,
+  reasoningTokens: 0,
+  outputTokens: 2,
+  usageEstimated: false,
+  latencyMs: 5,
+  createdAt: '2026-06-11T00:00:00.000Z',
+}
+const OFFICIAL_CALL = {
+  ...CALL_CONTENT,
+  sessionId: 'session-1',
+  player: 'player_0',
+  tick: 0,
+  costWeight: 1,
+  budgetCostUnits: 3,
+}
 
 const DAY = 86_400_000
 // A fixed "now" so window math is deterministic; created_at values are offsets back from it.
@@ -31,6 +56,7 @@ describe('retention', () => {
   let storage: Storage
   let root: string
   let recordings: RecordingsStore
+  let telemetry: ExecutionTelemetryStore
 
   function makeRetention(
     overrides: Partial<RetentionConfig> = {},
@@ -47,7 +73,7 @@ describe('retention', () => {
 
   /** Write a recording directory (a header line is enough for the volume listing to find it). */
   async function writeDir(id: string, env = 'flappy_bird'): Promise<void> {
-    await mkdir(join(root, id), { recursive: true })
+    await mkdir(join(root, 'recordings', id), { recursive: true })
     const header = JSON.stringify({
       schema_version: 1,
       environment: env,
@@ -57,7 +83,7 @@ describe('retention', () => {
       seat_plan: 'solo',
       seed: 0,
     })
-    await writeFile(join(root, id, 'recording.jsonl'), `${header}\n`, 'utf-8')
+    await writeFile(join(root, 'recordings', id, 'recording.jsonl'), `${header}\n`, 'utf-8')
   }
 
   /** Write both the directory and the retention row, the normal post-finalize state. */
@@ -72,26 +98,72 @@ describe('retention', () => {
     }
   }
 
+  async function runWithRecording(
+    seasonId: string,
+    recordingIds: string[],
+    status: 'running' | 'completed',
+  ) {
+    const run = await createRunOrFail(storage, seasonId, 'op', () => ({
+      parametersSnapshot: { players: 1 },
+      scheduledGames: recordingIds.map((_, game_index) => ({
+        match_index: 0,
+        game_index,
+        seed: game_index + 1,
+        seats: [{ kind: 'builtin', name: 'naive' }],
+        seat_plan: 'solo',
+      })),
+      llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
+    }))
+    const games = await storage.listRunGames(run.id)
+    for (const [index, recordingId] of recordingIds.entries()) {
+      const game = games[index]
+      if (game === undefined) throw new Error('expected a scheduled game')
+      await storage.attachRunGameRecording(game.id, recordingId)
+    }
+    await storage.setRunStatus(run.id, status)
+    return run
+  }
+
+  async function writeLlmRecording(): Promise<void> {
+    telemetry.insert('session-1', OFFICIAL_CALL)
+    await writeRecording({
+      id: 'recording-1',
+      user_id: 'alice',
+      env_id: 'flappy_bird',
+      created_at: ago(40),
+      llm_scope_id: 'session-1',
+      llm_session_id: 'session-1',
+    })
+  }
+
+  async function expectRecordings(ids: string[]): Promise<void> {
+    expect((await storage.listRecordings()).map((row) => row.id).sort()).toEqual(ids)
+    expect((await recordings.list()).map((recording) => recording.id).sort()).toEqual(ids)
+    expect((await readdir(join(root, 'recordings'))).sort()).toEqual(ids)
+    expect(await storage.listRecordingCleanupQueue()).toEqual([])
+  }
+
   beforeEach(async () => {
     storage = await openSqliteStorage(':memory:')
     root = mkdtempSync(join(tmpdir(), 'gs-ret-'))
-    recordings = new RecordingsStore(root)
+    await mkdir(join(root, 'recordings'))
+    recordings = new RecordingsStore(join(root, 'recordings'))
+    telemetry = new ExecutionTelemetryStore(join(root, 'llm'))
   })
 
   afterEach(async () => {
+    telemetry.close()
     await storage.close()
     rmSync(root, { recursive: true, force: true })
   })
 
   describe('sweep: LLM telemetry scopes', () => {
-    it('reclaims startup official orphans while preserving references and development ledgers', async () => {
-      const telemetryRoot = mkdtempSync(join(tmpdir(), 'gs-startup-telemetry-'))
-      const telemetry = new ExecutionTelemetryStore(telemetryRoot)
-      const development = new DevelopmentLedgerStore(join(telemetryRoot, 'development'))
+    it('reclaims startup orphans without losing retained official or development calls', async () => {
+      const development = new DevelopmentLedgerStore(join(root, 'llm', 'development'))
       try {
-        telemetry.open('retained-scope')
-        telemetry.open('orphan-scope')
-        development.open('season-1')
+        telemetry.insert('retained-scope', OFFICIAL_CALL)
+        telemetry.insert('orphan-scope', OFFICIAL_CALL)
+        development.record('season-1', { ...CALL_CONTENT, userId: 'alice' })
         await storage.createRecording({
           id: 'retained-recording',
           user_id: 'alice',
@@ -100,40 +172,39 @@ describe('retention', () => {
           llm_scope_id: 'retained-scope',
           llm_session_id: 'session-1',
         })
-
         await reclaimOrphanedOfficialTelemetry(storage, telemetry)
+        telemetry.close()
+        development.close()
 
-        expect(existsSync(telemetry.pathForScope('retained-scope'))).toBe(true)
         expect(existsSync(telemetry.pathForScope('orphan-scope'))).toBe(false)
+        expect(telemetry.readAssociatedCalls('retained-scope', 'session-1')).toEqual([
+          { id: 1, ...OFFICIAL_CALL },
+        ])
         expect(existsSync(development.pathForSeason('season-1'))).toBe(true)
-        expect(telemetry.listCalls('retained-scope')).toEqual([])
+        expect(development.listUserCalls('season-1', 'alice', { limit: 10 })).toEqual({
+          calls: [{ id: 1, ...CALL_CONTENT, userId: 'alice' }],
+          nextCursor: null,
+        })
       } finally {
         development.close()
-        telemetry.close()
-        rmSync(telemetryRoot, { recursive: true, force: true })
       }
     })
 
-    it('deletes a telemetry scope only with the last recording that references it', async () => {
-      const deleted: string[] = []
-      const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
-      // Two games of one workflow run share the scope; a plain recording has none.
-      await writeRecording({
-        id: 'g1',
-        user_id: 'a',
-        env_id: 'flappy_bird',
-        created_at: ago(40),
-        llm_scope_id: 'run-1',
-        llm_session_id: 'g1',
-      })
-      await writeRecording({
-        id: 'g2',
-        user_id: 'a',
-        env_id: 'flappy_bird',
-        created_at: ago(5),
-        llm_scope_id: 'run-1',
-        llm_session_id: 'g2',
-      })
+    it('removes a real telemetry scope only after its final recording is evicted', async () => {
+      telemetry.insert('run-1', { ...OFFICIAL_CALL, sessionId: 'g2' })
+      for (const [id, days] of [
+        ['g1', 40],
+        ['g2', 5],
+      ] as const) {
+        await writeRecording({
+          id,
+          user_id: 'a',
+          env_id: 'flappy_bird',
+          created_at: ago(days),
+          llm_scope_id: 'run-1',
+          llm_session_id: id,
+        })
+      }
       await writeRecording({
         id: 'plain',
         user_id: 'a',
@@ -141,219 +212,209 @@ describe('retention', () => {
         created_at: ago(40),
       })
 
-      // First sweep evicts g1 and plain; g2 still references the scope, so the file survives.
-      await makeRetention({}, reclaimer).sweep()
-      expect(await storage.getRecording('g1')).toBeUndefined()
-      expect(await storage.getRecording('g2')).toBeDefined()
-      expect(deleted).toEqual([])
+      await makeRetention({}, telemetry).sweep()
+      await expectRecordings(['g2'])
+      expect(telemetry.readAssociatedCalls('run-1', 'g2')).toEqual([
+        { id: 1, ...OFFICIAL_CALL, sessionId: 'g2' },
+      ])
 
-      // Tightening the window evicts g2, the last reference, and the scope goes with it.
-      await makeRetention({ recordingRetentionDays: 1 }, reclaimer).sweep()
-      expect(await storage.getRecording('g2')).toBeUndefined()
-      expect(deleted).toEqual(['run-1'])
+      await makeRetention({ recordingRetentionDays: 1 }, telemetry).sweep()
+      expect(existsSync(telemetry.pathForScope('run-1'))).toBe(false)
+      await expectRecordings([])
     })
 
-    it('revalidates active and protected workflow recordings before claiming cleanup', async () => {
-      const deleted: string[] = []
-      const reclaimer = { deleteScope: (id: string) => deleted.push(id) }
+    it('revalidates active and newly protected workflow recordings at the claim boundary', async () => {
       const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
-      const run = await createRunOrFail(storage, season.id, 'operator', () => ({
-        parametersSnapshot: { players: 1 },
-        scheduledGames: [
-          {
-            match_index: 0,
-            game_index: 0,
-            seed: 1,
-            seats: [{ kind: 'builtin', name: 'naive' }],
-            seat_plan: 'solo',
-          },
-          {
-            match_index: 0,
-            game_index: 1,
-            seed: 2,
-            seats: [{ kind: 'builtin', name: 'naive' }],
-            seat_plan: 'solo',
-          },
-        ],
-        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
-      }))
-      const game = (await storage.listRunGames(run.id))[0]
-      if (game === undefined) throw new Error('expected a scheduled game')
-      await storage.setRunStatus(run.id, 'running')
-      await storage.attachRunGameRecording(game.id, 'game-1')
+      const run = await runWithRecording(season.id, ['game-1'], 'running')
       await writeRecording({
         id: 'game-1',
-        user_id: 'operator',
+        user_id: 'op',
         env_id: 'flappy_bird',
         created_at: ago(3),
       })
       await writeRecording({
         id: 'quota-pressure',
-        user_id: 'operator',
+        user_id: 'op',
         env_id: 'flappy_bird',
         created_at: ago(2),
       })
 
-      // This disabled-policy recording has no LLM scope, matching production. The transactional
-      // claim still sees its active workflow association, so neither replay nor metadata is removed.
-      const retention = makeRetention({ recordingUserQuota: 1 }, reclaimer)
-      await retention.sweep()
-      expect(await recordings.exists('game-1')).toBe(true)
-      expect(await storage.getRecording('game-1')).toBeDefined()
-      expect(await storage.listRecordingCleanupQueue()).toEqual([])
-      expect(deleted).toEqual([])
+      await makeRetention({ recordingUserQuota: 1 }).sweep()
+      await expectRecordings(['game-1', 'quota-pressure'])
 
-      // This direct claim represents a sweep whose protected-id snapshot went stale while it was
-      // paused. The database boundary sees the newly completed latest run and refuses cleanup.
+      // A stale candidate must be refused even when its sweep began before this run completed.
       await storage.setRunStatus(run.id, 'completed')
       await expect(storage.claimRecordingCleanup('game-1')).resolves.toBe('protected')
-      expect(await recordings.exists('game-1')).toBe(true)
-      expect(await storage.getRecording('game-1')).toBeDefined()
-      expect(await storage.listRecordingCleanupQueue()).toEqual([])
-      expect(deleted).toEqual([])
+      await expectRecordings(['game-1', 'quota-pressure'])
     })
 
-    it('retries claimed telemetry cleanup independently from recording state', async () => {
-      let attempts = 0
-      const reclaimer = {
-        deleteScope: () => {
-          attempts += 1
-          if (attempts === 1) {
-            throw new Error('unlink failed')
-          }
-        },
+    it.each([
+      { stage: 'directory', directoryRemains: true },
+      { stage: 'telemetry', directoryRemains: false },
+    ])('retries durable $stage cleanup after reopening application storage', async ({
+      stage,
+      directoryRemains,
+    }) => {
+      const database = join(root, 'retention.sqlite')
+      await storage.close()
+      storage = await openSqliteStorage(database)
+      await writeLlmRecording()
+      const failure =
+        stage === 'directory'
+          ? vi
+              .spyOn(recordings, 'delete')
+              .mockRejectedValueOnce(new Error('directory removal failed'))
+          : vi.spyOn(telemetry, 'deleteScope').mockImplementationOnce(() => {
+              throw new Error('unlink failed')
+            })
+      try {
+        await makeRetention({}, telemetry).sweep()
+      } finally {
+        failure.mockRestore()
       }
+      expect(existsSync(join(root, 'recordings', 'recording-1'))).toBe(directoryRemains)
+      expect(await storage.getRecording('recording-1')).toBeUndefined()
+      expect(await storage.listRecordingCleanupQueue()).toEqual([
+        { recording_id: 'recording-1', llm_scope_id: 'session-1' },
+      ])
+      telemetry.close()
+      await storage.close()
+      storage = await openSqliteStorage(database)
+      telemetry = new ExecutionTelemetryStore(join(root, 'llm'))
+      expect(await storage.listRecordingCleanupQueue()).toEqual([
+        { recording_id: 'recording-1', llm_scope_id: 'session-1' },
+      ])
+      expect(telemetry.readAssociatedCalls('session-1', 'session-1')).toEqual([
+        { id: 1, ...OFFICIAL_CALL },
+      ])
+
+      await makeRetention(
+        { recordingRetentionDays: 3650, recordingUserQuota: 100 },
+        telemetry,
+      ).sweep()
+      expect(existsSync(telemetry.pathForScope('session-1'))).toBe(false)
+      await expectRecordings([])
+    })
+
+    it('retains an active live scope until the session becomes terminal', async () => {
       await storage.createSession({
-        id: 'ended-session',
+        id: 'session-1',
         user_id: 'alice',
         env_id: 'flappy_bird',
         parameters: { players: 1 },
         mode: 'human',
-        recording_id: 'ended-recording',
+        recording_id: 'recording-1',
         created_at: ago(40),
       })
-      await storage.markEnded('ended-session', 'terminated', ago(39))
-      await writeRecording({
-        id: 'ended-recording',
-        user_id: 'alice',
-        env_id: 'flappy_bird',
-        created_at: ago(40),
-        llm_scope_id: 'ended-session',
-        llm_session_id: 'ended-session',
-      })
-
-      const retention = makeRetention({}, reclaimer)
-      await retention.sweep()
-      expect(await recordings.exists('ended-recording')).toBe(false)
-      expect(await storage.getRecording('ended-recording')).toBeUndefined()
-      expect(await storage.listRecordingCleanupQueue()).toEqual([
-        { recording_id: 'ended-recording', llm_scope_id: 'ended-session' },
+      await writeLlmRecording()
+      for (const status of ['starting', 'running']) {
+        if (status === 'running') await storage.markRunning('session-1')
+        await expect(storage.claimRecordingCleanup('recording-1')).resolves.toBe('active_scope')
+        expect(await storage.getRecording('recording-1')).toBeDefined()
+        expect(await recordings.exists('recording-1')).toBe(true)
+        expect(await storage.listRecordingCleanupQueue()).toEqual([])
+      }
+      expect(telemetry.readAssociatedCalls('session-1', 'session-1')).toEqual([
+        { id: 1, ...OFFICIAL_CALL },
       ])
-      expect(attempts).toBe(1)
 
-      await retention.sweep()
-      expect(await storage.getRecording('ended-recording')).toBeUndefined()
-      expect(await storage.listRecordingCleanupQueue()).toEqual([])
-      expect(attempts).toBe(2)
+      await storage.markEnded('session-1', 'terminated', ago(1))
+      await makeRetention({}, telemetry).sweep()
+      expect(existsSync(telemetry.pathForScope('session-1'))).toBe(false)
+      await expectRecordings([])
     })
   })
 
-  it('orders pin updates atomically against cleanup claims', async () => {
+  it.each([
+    'pin-first',
+    'claim-first',
+    'concurrent',
+  ] as const)('preserves a consistent pin and cleanup outcome: %s', async (order) => {
+    await writeRecording({ id: 'r', user_id: 'alice', env_id: 'flappy_bird', created_at: ago(40) })
     const retention = makeRetention()
-    for (let index = 0; index < 20; index++) {
-      const id = `pin-claim-${index}`
-      const userId = `owner-${index}`
-      await writeRecording({ id, user_id: userId, env_id: 'flappy_bird', created_at: ago(40) })
-
-      const [claim, pin] = await Promise.all([
-        storage.claimRecordingCleanup(id),
-        retention.pin(id, userId),
-      ])
-      if (pin.ok) {
-        expect(claim).toBe('pinned')
-        expect(await storage.getRecording(id)).toMatchObject({ pinned: 1 })
-        await storage.setRecordingPinned(id, false)
-        await expect(storage.claimRecordingCleanup(id)).resolves.toBe('claimed')
-      } else {
-        expect(pin.reason).toBe('not_found')
-        expect(claim).toBe('claimed')
-        expect(await storage.getRecording(id)).toBeUndefined()
-      }
-      await storage.completeRecordingCleanup(id)
+    const pin = () => retention.pin('r', 'alice')
+    const claim = () => storage.claimRecordingCleanup('r')
+    let pinResult: PinResult
+    let claimResult: RecordingCleanupClaimResult
+    if (order === 'pin-first') {
+      pinResult = await pin()
+      claimResult = await claim()
+    } else if (order === 'claim-first') {
+      claimResult = await claim()
+      pinResult = await pin()
+    } else {
+      ;[claimResult, pinResult] = await Promise.all([claim(), pin()])
     }
+    const pinWins = { claim: 'pinned', pin: { ok: true }, pinned: 1, queue: [] }
+    const claimWins = {
+      claim: 'claimed',
+      pin: { ok: false, reason: 'not_found' },
+      pinned: undefined,
+      queue: [{ recording_id: 'r', llm_scope_id: null }],
+    }
+    const allowed =
+      order === 'pin-first'
+        ? [pinWins]
+        : order === 'claim-first'
+          ? [claimWins]
+          : [pinWins, claimWins]
+    expect(allowed).toContainEqual({
+      claim: claimResult,
+      pin: pinResult,
+      pinned: (await storage.getRecording('r'))?.pinned,
+      queue: await storage.listRecordingCleanupQueue(),
+    })
+    await retention.unpin('r', 'alice')
+    await retention.sweep()
+    await expectRecordings([])
   })
 
   describe('sweep: window', () => {
-    it('evicts an unpinned recording older than the window and keeps a recent one', async () => {
-      await writeRecording({ id: 'old', user_id: 'a', env_id: 'flappy_bird', created_at: ago(40) })
-      await writeRecording({ id: 'new', user_id: 'a', env_id: 'flappy_bird', created_at: ago(5) })
-      await makeRetention().sweep()
-      expect(await storage.getRecording('old')).toBeUndefined()
-      expect(await storage.getRecording('new')).toBeDefined()
-      expect(await recordings.exists('old')).toBe(false)
-      expect(await recordings.exists('new')).toBe(true)
-    })
-
-    it('never evicts a pinned recording past the window', async () => {
-      await writeRecording({
-        id: 'pin',
+    it('evicts expired unpinned rows, including missing directories, and retains recent rows and pins', async () => {
+      for (const [id, days, pinned] of [
+        ['old', 40, false],
+        ['new', 5, false],
+        ['pin', 90, true],
+      ] as const) {
+        await writeRecording({
+          id,
+          user_id: 'a',
+          env_id: 'flappy_bird',
+          created_at: ago(days),
+          pinned,
+        })
+      }
+      await storage.createRecording({
+        id: 'missing-dir',
         user_id: 'a',
         env_id: 'flappy_bird',
-        created_at: ago(90),
-        pinned: true,
+        created_at: ago(99),
       })
       await makeRetention().sweep()
-      expect(await storage.getRecording('pin')).toBeDefined()
-      expect(await recordings.exists('pin')).toBe(true)
+      await expectRecordings(['new', 'pin'])
     })
   })
 
   describe('sweep: quota', () => {
-    it('evicts oldest-unpinned-first until the user is back within quota', async () => {
-      for (const [id, days] of [
-        ['r1', 4],
-        ['r2', 3],
-        ['r3', 2],
-        ['r4', 1],
+    it('counts pins and evicts oldest unpinned recordings within each user quota', async () => {
+      for (const [id, user, days, pinned] of [
+        ['a-pin', 'a', 9, true],
+        ['a-new', 'a', 1, false],
+        ['b-old', 'b', 3, false],
+        ['a-old', 'a', 4, false],
+        ['a-middle', 'a', 2, false],
+        ['b-new', 'b', 1, false],
       ] as const) {
-        await writeRecording({ id, user_id: 'a', env_id: 'flappy_bird', created_at: ago(days) })
+        await writeRecording({
+          id,
+          user_id: user,
+          env_id: 'flappy_bird',
+          created_at: ago(days),
+          pinned,
+        })
       }
       await makeRetention({ recordingUserQuota: 2 }).sweep()
-      // The two oldest go; the two newest survive.
-      expect(await storage.getRecording('r1')).toBeUndefined()
-      expect(await storage.getRecording('r2')).toBeUndefined()
-      expect(await storage.getRecording('r3')).toBeDefined()
-      expect(await storage.getRecording('r4')).toBeDefined()
-    })
-
-    it('keeps users independent for the quota', async () => {
-      await writeRecording({ id: 'a1', user_id: 'a', env_id: 'flappy_bird', created_at: ago(3) })
-      await writeRecording({ id: 'a2', user_id: 'a', env_id: 'flappy_bird', created_at: ago(2) })
-      await writeRecording({ id: 'b1', user_id: 'b', env_id: 'flappy_bird', created_at: ago(3) })
-      await makeRetention({ recordingUserQuota: 1 }).sweep()
-      expect(await storage.getRecording('a1')).toBeUndefined()
-      expect(await storage.getRecording('a2')).toBeDefined()
-      expect(await storage.getRecording('b1')).toBeDefined()
-    })
-
-    it('a pinned recording survives a quota sweep that evicts its unpinned neighbor', async () => {
-      await writeRecording({
-        id: 'pinned',
-        user_id: 'a',
-        env_id: 'flappy_bird',
-        created_at: ago(9),
-        pinned: true,
-      })
-      await writeRecording({
-        id: 'unpinned',
-        user_id: 'a',
-        env_id: 'flappy_bird',
-        created_at: ago(1),
-      })
-      // Quota 1: the user is over by one (pinned counts), so the lone unpinned recording is evicted.
-      await makeRetention({ recordingUserQuota: 1 }).sweep()
-      expect(await storage.getRecording('pinned')).toBeDefined()
-      expect(await storage.getRecording('unpinned')).toBeUndefined()
+      await expectRecordings(['a-new', 'a-pin', 'b-new', 'b-old'])
     })
   })
 
@@ -370,98 +431,29 @@ describe('retention', () => {
         pinned: false,
       })
     })
-
-    it('tolerates a row whose directory is already gone', async () => {
-      // A row with no directory (a crash deleted the dir but not the row): the next sweep removes
-      // the row without throwing.
-      await storage.createRecording({
-        id: 'rowless-dir',
-        user_id: 'a',
-        env_id: 'flappy_bird',
-        created_at: ago(99),
-      })
-      await expect(makeRetention().sweep()).resolves.toBeUndefined()
-      expect(await storage.getRecording('rowless-dir')).toBeUndefined()
-    })
   })
 
   describe('sweep: leaderboard protection', () => {
-    const NAIVE_GAME: ScheduledGameInput[] = [
-      {
-        match_index: 0,
-        game_index: 0,
-        seed: 1,
-        seats: [{ kind: 'builtin', name: 'naive' }],
-        seat_plan: 'solo',
-      },
-    ]
-
-    /** Drive a completed run for a season whose single game points at a recording id. */
-    async function completedRunWithRecording(seasonId: string, recordingId: string): Promise<void> {
-      const run = await createRunOrFail(storage, seasonId, 'op', () => ({
-        parametersSnapshot: { players: 1 },
-        scheduledGames: NAIVE_GAME,
-        llmPolicy: TEST_DISABLED_OFFICIAL_LLM_POLICY,
-      }))
-      const game = (await storage.listRunGames(run.id))[0]
-      if (game === undefined) {
-        throw new Error('expected a scheduled game')
+    it.each([
+      'released',
+      'unreleased',
+    ] as const)('exempts the current %s board from age and quota while reclaiming superseded and expired live recordings', async (release) => {
+      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
+      await storage.setReleaseStatus(season.id, release)
+      for (const [id, days] of [
+        ['lb-superseded', 90],
+        ['lb-current-old', 90],
+        ['lb-current-new', 1],
+        ['live-old', 40],
+        ['live-new', 5],
+      ] as const) {
+        await writeRecording({ id, user_id: 'op', env_id: 'flappy_bird', created_at: ago(days) })
       }
-      await storage.attachRunGameRecording(game.id, recordingId)
-      await storage.setRunStatus(run.id, 'completed')
-    }
+      await runWithRecording(season.id, ['lb-superseded'], 'completed')
+      await runWithRecording(season.id, ['lb-current-old', 'lb-current-new'], 'completed')
 
-    it('exempts the current run, reclaims a superseded run, leaves live sessions on the window', async () => {
-      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
-      // An earlier completed run (superseded) and the latest completed run, both old enough that the
-      // window would evict their recordings if they were not leaderboard-protected.
-      await writeRecording({
-        id: 'lb-superseded',
-        user_id: 'op',
-        env_id: 'flappy_bird',
-        created_at: ago(90),
-      })
-      await completedRunWithRecording(season.id, 'lb-superseded')
-      await writeRecording({
-        id: 'lb-current',
-        user_id: 'op',
-        env_id: 'flappy_bird',
-        created_at: ago(90),
-      })
-      await completedRunWithRecording(season.id, 'lb-current')
-      // Live-session recordings: one past the window, one inside it.
-      await writeRecording({
-        id: 'live-old',
-        user_id: 'op',
-        env_id: 'flappy_bird',
-        created_at: ago(40),
-      })
-      await writeRecording({
-        id: 'live-new',
-        user_id: 'op',
-        env_id: 'flappy_bird',
-        created_at: ago(5),
-      })
-
-      await makeRetention().sweep()
-
-      expect(await storage.getRecording('lb-current')).toBeDefined() // protected, survives the window
-      expect(await storage.getRecording('lb-superseded')).toBeUndefined() // superseded, reclaimable
-      expect(await storage.getRecording('live-old')).toBeUndefined() // live window evicts it
-      expect(await storage.getRecording('live-new')).toBeDefined()
-    })
-
-    it('a protected leaderboard recording does not count toward the owner quota', async () => {
-      const season = await storage.createSeason({ env_id: 'flappy_bird', deps_version: 1 })
-      await writeRecording({ id: 'lb', user_id: 'op', env_id: 'flappy_bird', created_at: ago(1) })
-      await completedRunWithRecording(season.id, 'lb')
-      await writeRecording({ id: 'live', user_id: 'op', env_id: 'flappy_bird', created_at: ago(1) })
-
-      // Quota 1: if the protected recording counted, the owner would be over quota and the live
-      // recording would be evicted. It is filtered out before the quota pass, so the live one survives.
       await makeRetention({ recordingUserQuota: 1 }).sweep()
-      expect(await storage.getRecording('lb')).toBeDefined()
-      expect(await storage.getRecording('live')).toBeDefined()
+      await expectRecordings(['lb-current-new', 'lb-current-old', 'live-new'])
     })
   })
 
