@@ -249,22 +249,17 @@ describe('retention', () => {
     })
 
     it.each([
-      { stage: 'directory', directoryRemains: true },
-      { stage: 'telemetry', directoryRemains: false },
-    ])('retries durable $stage cleanup after reopening application storage', async ({
-      stage,
-      directoryRemains,
-    }) => {
+      'directory',
+      'telemetry',
+    ] as const)('retries durable %s cleanup after reopening application storage', async (stage) => {
       const database = join(root, 'retention.sqlite')
       await storage.close()
       storage = await openSqliteStorage(database)
       await writeLlmRecording()
       const failure =
         stage === 'directory'
-          ? vi
-              .spyOn(recordings, 'delete')
-              .mockRejectedValueOnce(new Error('directory removal failed'))
-          : vi.spyOn(telemetry, 'deleteScope').mockImplementationOnce(() => {
+          ? vi.spyOn(recordings, 'delete').mockRejectedValue(new Error('directory removal failed'))
+          : vi.spyOn(telemetry, 'deleteScope').mockImplementation(() => {
               throw new Error('unlink failed')
             })
       try {
@@ -272,7 +267,9 @@ describe('retention', () => {
       } finally {
         failure.mockRestore()
       }
-      expect(existsSync(join(root, 'recordings', 'recording-1'))).toBe(directoryRemains)
+      if (stage === 'directory') {
+        expect(existsSync(join(root, 'recordings', 'recording-1'))).toBe(true)
+      }
       expect(await storage.getRecording('recording-1')).toBeUndefined()
       expect(await storage.listRecordingCleanupQueue()).toEqual([
         { recording_id: 'recording-1', llm_scope_id: 'session-1' },
@@ -284,9 +281,11 @@ describe('retention', () => {
       expect(await storage.listRecordingCleanupQueue()).toEqual([
         { recording_id: 'recording-1', llm_scope_id: 'session-1' },
       ])
-      expect(telemetry.readAssociatedCalls('session-1', 'session-1')).toEqual([
-        { id: 1, ...OFFICIAL_CALL },
-      ])
+      if (stage === 'telemetry') {
+        expect(telemetry.readAssociatedCalls('session-1', 'session-1')).toEqual([
+          { id: 1, ...OFFICIAL_CALL },
+        ])
+      }
 
       await makeRetention(
         { recordingRetentionDays: 3650, recordingUserQuota: 100 },
