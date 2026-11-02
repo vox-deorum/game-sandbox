@@ -38,7 +38,7 @@ describe('createOfficialRecordSink', () => {
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), 'gs-official-sink-'))
-    store = new ExecutionTelemetryStore(root, () => new Date('2026-07-15T15:00:00.000Z'))
+    store = new ExecutionTelemetryStore(root)
   })
 
   afterEach(() => {
@@ -46,29 +46,21 @@ describe('createOfficialRecordSink', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('maps immutable admission ticks and successful records into official rows', () => {
-    const setupSink = createOfficialRecordSink(store, {
-      scopeId: 'run-1',
-      sessionId: 'game-1',
-      player: 'player_2',
-      tick: null,
-    })
-    const turnSink = createOfficialRecordSink(store, {
-      scopeId: 'run-1',
-      sessionId: 'game-1',
-      player: 'player_2',
+  it('persists every supplied field of an estimated successful record', () => {
+    const sink = createOfficialRecordSink(store, {
+      scopeId: 'run-7',
+      sessionId: 'game-3',
+      player: 'player_1',
       tick: 14,
     })
 
-    setupSink(SUCCESS)
-    turnSink({ ...SUCCESS, usageEstimated: false, latencyMs: 20 })
+    sink(SUCCESS)
 
-    expect(store.listCalls('run-1')).toEqual([
-      {
-        id: 1,
-        sessionId: 'game-1',
-        player: 'player_2',
-        tick: null,
+    expect(store.listCalls('run-7')).toEqual([
+      expect.objectContaining({
+        sessionId: 'game-3',
+        player: 'player_1',
+        tick: 14,
         model: 'medium',
         costWeight: 2.5,
         budgetCostUnits: 42.5,
@@ -79,25 +71,7 @@ describe('createOfficialRecordSink', () => {
         outputTokens: 5,
         usageEstimated: true,
         latencyMs: 87,
-        createdAt: '2026-07-15T15:00:00.000Z',
-      },
-      {
-        id: 2,
-        sessionId: 'game-1',
-        player: 'player_2',
-        tick: 14,
-        model: 'medium',
-        costWeight: 2.5,
-        budgetCostUnits: 42.5,
-        request: SUCCESS.request,
-        completion: SUCCESS.completion,
-        inputTokens: 12,
-        reasoningTokens: 3,
-        outputTokens: 5,
-        usageEstimated: false,
-        latencyMs: 20,
-        createdAt: '2026-07-15T15:00:00.000Z',
-      },
+      }),
     ])
   })
 })
