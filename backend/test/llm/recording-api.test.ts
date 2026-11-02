@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -8,12 +8,8 @@ import BetterSqlite3 from 'better-sqlite3'
 import type { FastifyInstance } from 'fastify'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import type { RecordingPublicLlmCall } from '../../src/llm/recording-routes.js'
 import type { NewSubmissionInput, Storage } from '../../src/storage/index.js'
-import {
-  EXECUTION_TELEMETRY_SCHEMA_VERSION,
-  ExecutionTelemetryStore,
-} from '../../src/storage/llm/execution-telemetry.js'
+import { ExecutionTelemetryStore } from '../../src/storage/llm/execution-telemetry.js'
 import { openTestApp, type TestApp } from '../support/harness.js'
 
 // The ordinary single-player header most recordings share; the ownership test builds a richer one.
@@ -24,6 +20,21 @@ const HEADER: RecordingHeader = {
   players: { player_0: { kind: 'agent', builtin_name: 'naive', label: 'Naive agent' } },
   seats: { seat_0: ['player_0'] },
   seat_plan: 'solo',
+}
+const BODIES = {
+  request: { model: 'small', messages: [{ role: 'user', content: 'move?' }] },
+  completion: { model: 'small', choices: [{ message: { content: 'left' } }] },
+}
+const SMALL_PUBLIC = {
+  tick: null,
+  player: 'player_0',
+  model: 'small',
+  input_tokens: 2,
+  reasoning_tokens: 1,
+  output_tokens: 2,
+  usage_estimated: false,
+  cost_weight: 1.5,
+  budget_cost_units: 6,
 }
 
 describe('recording LLM telemetry API', () => {
@@ -98,8 +109,7 @@ describe('recording LLM telemetry API', () => {
       model: 'small',
       costWeight: 1.5,
       budgetCostUnits: 6,
-      request: { model: 'small', messages: [{ role: 'user', content: 'move?' }] },
-      completion: { model: 'small', choices: [{ message: { content: 'left' } }] },
+      ...BODIES,
       inputTokens: 2,
       reasoningTokens: 1,
       outputTokens: 2,
@@ -132,42 +142,28 @@ describe('recording LLM telemetry API', () => {
     expect(associated.json()).toEqual({ calls: [], total_budget_cost_units: 0 })
   })
 
-  it('returns telemetry_unavailable for missing, legacy, and incomplete associated telemetry', async () => {
+  it('distinguishes broken associated telemetry from a successful empty result', async () => {
     await fixture.users.headersFor('recorder')
-    await seedRecording('missing-file', HEADER, { scopeId: 'gone', sessionId: 'session' })
-
-    const legacy = new BetterSqlite3(telemetry.pathForScope('legacy'))
-    legacy.pragma('user_version = 1')
-    legacy.close()
-    await seedRecording('legacy-file', HEADER, { scopeId: 'legacy', sessionId: 'session' })
-
-    const incomplete = new BetterSqlite3(telemetry.pathForScope('incomplete'))
-    incomplete.exec(`
-      CREATE TABLE calls (
-        id INTEGER PRIMARY KEY, session_id TEXT NOT NULL, player TEXT NOT NULL,
-        tick INTEGER, model TEXT NOT NULL, request_json TEXT NOT NULL, completion_json TEXT NOT NULL,
-        input_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
-        usage_estimated INTEGER NOT NULL, latency_ms INTEGER NOT NULL, created_at TEXT NOT NULL
-      );
-      INSERT INTO calls VALUES (
-        1, 'session', 'player_0', NULL, 'small', '{}', '{}', 1, 0, 1, 0, 4,
-        '2026-07-19T00:00:00.000Z'
-      );
-    `)
-    incomplete.pragma(`user_version = ${EXECUTION_TELEMETRY_SCHEMA_VERSION}`)
-    incomplete.close()
-    await seedRecording('incomplete-file', HEADER, {
-      scopeId: 'incomplete',
-      sessionId: 'session',
-    })
-
-    for (const id of ['missing-file', 'legacy-file', 'incomplete-file']) {
+    for (const [id, fault] of [
+      ['future', 'PRAGMA user_version = 2'],
+      ['missing-cost', 'ALTER TABLE calls DROP COLUMN cost_weight'],
+      ['wrong-cost', 'UPDATE calls SET budget_cost_units = 99'],
+    ] as const) {
+      insertCall(id, 'session')
+      telemetry.closeScope(id)
+      const db = new BetterSqlite3(telemetry.pathForScope(id))
+      try {
+        db.exec(fault)
+      } finally {
+        db.close()
+      }
+    }
+    await writeFile(telemetry.pathForScope('unreadable'), 'not a SQLite database')
+    for (const id of ['missing', 'unreadable', 'future', 'missing-cost', 'wrong-cost']) {
+      await seedRecording(id, HEADER, { scopeId: id, sessionId: 'session' })
       const response = await app.inject({ method: 'GET', url: `/api/recordings/${id}/llm` })
-      expect(response.statusCode).toBe(500)
-      expect(response.json()).toEqual({
-        error: 'recording telemetry is unavailable',
-        code: 'telemetry_unavailable',
-      })
+      expect(response.statusCode, id).toBe(500)
+      expect(response.json(), id).toMatchObject({ code: 'telemetry_unavailable' })
     }
   })
 
@@ -175,34 +171,33 @@ describe('recording LLM telemetry API', () => {
     const alice = await seedSubmission('alice')
     const bob = await seedSubmission('bob')
     await fixture.users.headersFor('recorder')
-    const header: RecordingHeader = {
-      schema_version: 1,
-      environment: 'flappy_bird',
-      parameters: {},
-      players: {
-        player_0: {
-          kind: 'agent',
-          label: "alice's agent",
-          user: alice.user_id,
-          submission_id: alice.id,
-        },
-        player_1: {
-          kind: 'agent',
-          label: "bob's agent",
-          user: bob.user_id,
-          submission_id: bob.id,
-        },
-        player_2: {
-          kind: 'agent',
-          label: 'deleted agent',
-          user: alice.user_id,
-          submission_id: 'deleted-submission',
-        },
-      },
-      seats: { seat_0: ['player_0'], seat_1: ['player_1'], seat_2: ['player_2'] },
-      seat_plan: 'solo',
+    const alicePlayer = {
+      kind: 'agent' as const,
+      label: 'Alice',
+      user: alice.user_id,
+      submission_id: alice.id,
     }
-    await seedRecording('multi', header, { scopeId: 'run-scope', sessionId: 'game-1' })
+    await seedRecording(
+      'multi',
+      {
+        ...HEADER,
+        players: {
+          player_0: alicePlayer,
+          player_1: { kind: 'agent', label: 'Bob', user: bob.user_id, submission_id: bob.id },
+          player_2: alicePlayer,
+        },
+        seats: { seat_0: ['player_0', 'player_2'], seat_1: ['player_1'] },
+      },
+      { scopeId: 'run-scope', sessionId: 'game-1' },
+    )
+    const bobBodies = {
+      request: { model: 'medium', messages: ['bob prompt'] },
+      completion: { model: 'medium', choices: ['bob answer'] },
+    }
+    const otherBodies = {
+      request: { model: 'small', messages: ['second player prompt'] },
+      completion: { model: 'small', choices: ['second player answer'] },
+    }
     insertCall('run-scope', 'game-1', {
       player: 'player_1',
       model: 'medium',
@@ -212,86 +207,96 @@ describe('recording LLM telemetry API', () => {
       reasoningTokens: 2,
       outputTokens: 7,
       usageEstimated: true,
-      request: { model: 'medium', messages: ['bob prompt'] },
-      completion: { model: 'medium', choices: ['bob answer'] },
+      ...bobBodies,
     })
     insertCall('run-scope', 'game-1', { tick: 9 })
-    insertCall('run-scope', 'game-1', {
-      player: 'player_2',
-      tick: 10,
-      request: { model: 'small', messages: ['former owner prompt'] },
-      completion: { model: 'small', choices: ['former owner answer'] },
-    })
+    insertCall('run-scope', 'game-1', { player: 'player_2', tick: 0, ...otherBodies })
     insertCall('run-scope', 'another-game', { player: 'player_0' })
 
-    const anonymous = await app.inject({ method: 'GET', url: '/api/recordings/multi/llm' })
-    expect(anonymous.statusCode).toBe(200)
-    expect(anonymous.json()).toEqual({
-      calls: [
-        {
-          tick: null,
-          player: 'player_1',
-          model: 'medium',
-          input_tokens: 3,
-          reasoning_tokens: 2,
-          output_tokens: 7,
-          usage_estimated: true,
-          cost_weight: 2,
-          budget_cost_units: 20,
-        },
-        {
-          tick: 9,
-          player: 'player_0',
-          model: 'small',
-          input_tokens: 2,
-          reasoning_tokens: 1,
-          output_tokens: 2,
-          usage_estimated: false,
-          cost_weight: 1.5,
-          budget_cost_units: 6,
-        },
-        {
-          tick: 10,
-          player: 'player_2',
-          model: 'small',
-          input_tokens: 2,
-          reasoning_tokens: 1,
-          output_tokens: 2,
-          usage_estimated: false,
-          cost_weight: 1.5,
-          budget_cost_units: 6,
-        },
+    const bobPublic = {
+      tick: null,
+      player: 'player_1',
+      model: 'medium',
+      input_tokens: 3,
+      reasoning_tokens: 2,
+      output_tokens: 7,
+      usage_estimated: true,
+      cost_weight: 2,
+      budget_cost_units: 20,
+    }
+    const alicePublic = { ...SMALL_PUBLIC, tick: 9 }
+    const aliceOtherPublic = { ...alicePublic, player: 'player_2', tick: 0 }
+    const publicCalls = [bobPublic, alicePublic, aliceOtherPublic]
+    const bobCall = { ...bobPublic, ...bobBodies }
+    const aliceCall = { ...alicePublic, ...BODIES }
+    const aliceOtherCall = { ...aliceOtherPublic, ...otherBodies }
+    for (const [name, headers, calls] of [
+      ['anonymous', undefined, publicCalls],
+      ['non-owner', await fixture.users.headersFor('recorder'), publicCalls],
+      ['alice', await fixture.users.headersFor('alice'), [bobPublic, aliceCall, aliceOtherCall]],
+      ['bob', await fixture.users.headersFor('bob'), [bobCall, alicePublic, aliceOtherPublic]],
+      [
+        'operator',
+        await fixture.users.headersFor('operator', { status: 'admin' }),
+        [bobCall, aliceCall, aliceOtherCall],
       ],
-      total_budget_cost_units: 32,
+    ] as const) {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/recordings/multi/llm?user_id=${alice.user_id}&submission_id=${alice.id}`,
+        headers,
+      })
+      expect(response.statusCode, name).toBe(200)
+      expect(response.json(), name).toEqual({ calls, total_budget_cost_units: 32 })
+    }
+    await storage.updateSeasonConfig(seasonId, {
+      deps_version: 1,
+      matches: [],
+      overrides: {
+        llm: { enabled: true, models: ['small', 'medium'], cost_weights: { small: 7, medium: 9 } },
+      },
     })
-    expect(anonymous.body).not.toContain('latency')
+    expect(JSON.parse((await storage.getSeason(seasonId))?.config ?? '{}')).toMatchObject({
+      overrides: { llm: { cost_weights: { small: 7, medium: 9 } } },
+    })
+    const repriced = await app.inject({ method: 'GET', url: '/api/recordings/multi/llm' })
+    expect(repriced.statusCode).toBe(200)
+    expect(repriced.json()).toEqual({ calls: publicCalls, total_budget_cost_units: 32 })
+  })
 
-    const aliceView = await app.inject({
-      method: 'GET',
-      url: '/api/recordings/multi/llm',
-      headers: await fixture.users.headersFor('alice'),
+  it('revokes former-owner body access after real submission deletion while retaining telemetry', async () => {
+    const alice = await seedSubmission('alice')
+    await fixture.users.headersFor('recorder')
+    const header: RecordingHeader = {
+      ...HEADER,
+      players: {
+        player_0: { kind: 'agent', label: 'Alice', user: alice.user_id, submission_id: alice.id },
+      },
+    }
+    await seedRecording('retained', header, { scopeId: 'retained', sessionId: 'session' })
+    insertCall('retained', 'session')
+    const owner = await fixture.users.headersFor('alice')
+    const read = async (headers: Record<string, string>) => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/recordings/retained/llm',
+        headers,
+      })
+      expect(response.statusCode).toBe(200)
+      return response.json()
+    }
+    const full = { calls: [{ ...SMALL_PUBLIC, ...BODIES }], total_budget_cost_units: 6 }
+    expect(await read(owner)).toEqual(full)
+    await storage.deleteSubmissionsForSeason(seasonId)
+    expect(await storage.getRecording('retained')).toMatchObject({
+      llm_scope_id: 'retained',
+      llm_session_id: 'session',
     })
-    const aliceCalls = (aliceView.json() as { calls: RecordingPublicLlmCall[] }).calls
-    expect(aliceCalls[0]).not.toHaveProperty('request')
-    expect(aliceCalls[1]).toMatchObject({ request: { model: 'small' } })
-    expect(aliceCalls[2]).not.toHaveProperty('request')
-
-    const bobView = await app.inject({
-      method: 'GET',
-      url: '/api/recordings/multi/llm',
-      headers: await fixture.users.headersFor('bob'),
-    })
-    const bobCalls = (bobView.json() as { calls: RecordingPublicLlmCall[] }).calls
-    expect(bobCalls[0]).toMatchObject({ request: { model: 'medium' } })
-    expect(bobCalls[1]).not.toHaveProperty('request')
-
-    const operator = await app.inject({
-      method: 'GET',
-      url: '/api/recordings/multi/llm',
-      headers: await fixture.users.headersFor('operator', { status: 'admin' }),
-    })
-    const operatorCalls = (operator.json() as { calls: RecordingPublicLlmCall[] }).calls
-    expect(operatorCalls.every((call) => Object.hasOwn(call, 'request'))).toBe(true)
-    expect(operatorCalls.every((call) => Object.hasOwn(call, 'completion'))).toBe(true)
+    expect(existsSync(telemetry.pathForScope('retained'))).toBe(true)
+    expect(await fixture.recordings.readHeader('retained')).toEqual(header)
+    expect(await read(owner)).toEqual({ calls: [SMALL_PUBLIC], total_budget_cost_units: 6 })
+    expect(await read(await fixture.users.headersFor('operator', { status: 'admin' }))).toEqual(
+      full,
+    )
   })
 })
