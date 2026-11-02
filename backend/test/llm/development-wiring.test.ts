@@ -1,33 +1,17 @@
-/**
- * Stage 9.7 wiring coverage for the public development route. Unlike the unit route suite this
- * talks through the real OpenAI client to the same deterministic HTTP upstream used by workflows.
- */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
-
-import type { EnvironmentRegistry } from '../../src/environments/registry.js'
-import {
-  DevelopmentKeyService,
-  type DevelopmentKeyStorage,
-} from '../../src/llm/development-keys.js'
+import { DevelopmentKeyService } from '../../src/llm/development-keys.js'
 import { LlmHandler } from '../../src/llm/handler.js'
 import { LlmMeter } from '../../src/llm/meter.js'
 import { UpstreamCaller } from '../../src/llm/upstream.js'
 import type { Storage } from '../../src/storage/index.js'
 import { DevelopmentLedgerStore } from '../../src/storage/llm/development-ledger/index.js'
-import { makeConfig, openTestApp, type TestApp } from '../support/harness.js'
+import { makeConfig, openTestApp } from '../support/harness.js'
 import { llmEnvironments, llmMeta, makeTestLlmOptions } from '../support/llm-options.js'
-import { createLlmUpstreamStub, RETRY_SUCCESS_ATTEMPTS } from '../support/llm-upstream.js'
-
-/** The second season's environment (`llm_env_other`) alongside the shared `llm_env` fixture. */
-function environments(): EnvironmentRegistry {
-  return llmEnvironments(
-    llmMeta({ env_id: 'llm_env_other', display_name: 'Other LLM Environment' }),
-  )
-}
+import { createLlmUpstreamStub } from '../support/llm-upstream.js'
 
 describe('development LLM HTTP wiring', () => {
   const cleanup: Array<() => Promise<void> | void> = []
@@ -36,242 +20,247 @@ describe('development LLM HTTP wiring', () => {
     for (const dispose of cleanup.splice(0).reverse()) await dispose()
   })
 
-  it('isolates participant-season keys and usage, rotates without forgiveness, and forwards only the upstream credential', async () => {
+  async function fixture(tokenBudget = 100, rateLimit = 10) {
     const upstream = createLlmUpstreamStub()
-    const upstreamAddress = await upstream.listen()
+    let upstreamTime = 0
+    upstream.app.addHook('preSerialization', async (_request, _reply, payload) => {
+      upstreamTime += 25
+      return payload
+    })
+    const address = await upstream.listen()
     cleanup.push(() => upstream.close())
-    const root = mkdtempSync(join(tmpdir(), 'gs-development-integration-'))
+    const root = mkdtempSync(join(tmpdir(), 'gs-development-wiring-'))
     cleanup.push(() => rmSync(root, { recursive: true, force: true }))
     const ledger = new DevelopmentLedgerStore(join(root, 'ledger'))
-    const meter = new LlmMeter()
     cleanup.push(() => ledger.close())
+    const clock = { now: 1_000 }
+    const environments = llmEnvironments(llmMeta({ env_id: 'llm_env_other' }))
     const llm = {
       ...makeTestLlmOptions(),
-      upstreamUrl: `${upstreamAddress}/v1`,
+      upstreamUrl: `${address}/v1`,
       upstreamKey: 'upstream-secret',
-      upstreamMaxRetries: 2,
-      models: { small: { upstream: 'provider-small', costWeight: 1 } },
-      developmentLimits: { tokenBudget: 100, requestsPerMinute: 10 },
+      models: { small: { upstream: 'provider-small', costWeight: 2 } },
+      developmentLimits: { tokenBudget, requestsPerMinute: rateLimit },
     }
-    let storage: Storage | undefined
-    const keyStorage: DevelopmentKeyStorage = {
-      getSeason: (id) => requireStorage(storage).getSeason(id),
-      rotateDevelopmentKey: (input) => requireStorage(storage).rotateDevelopmentKey(input),
-      getDevelopmentKeyByKeyId: (id) => requireStorage(storage).getDevelopmentKeyByKeyId(id),
-    }
-    const statuses = new Map<string, 'normal'>()
-    let randomByte = 0
+    let storage: Storage
+    const active = new Set<string>()
     const keys = new DevelopmentKeyService({
-      storage: keyStorage,
-      environments: environments(),
+      storage: {
+        getSeason: (id) => storage.getSeason(id),
+        rotateDevelopmentKey: (input) => storage.rotateDevelopmentKey(input),
+        getDevelopmentKeyByKeyId: (id) => storage.getDevelopmentKeyByKeyId(id),
+      },
+      environments,
       llm,
       ledger,
       publicOrigin: 'https://sandbox.test',
-      readUserStatus: async (id) => statuses.get(id) ?? null,
-      random: (bytes) => Buffer.alloc(bytes, ++randomByte),
+      readUserStatus: async (id) => (active.has(id) ? 'normal' : null),
     })
     const handler = new LlmHandler({
-      meter,
+      meter: new LlmMeter({ now: () => clock.now }),
       tokenizer: { countRequest: () => 2, countCompletion: () => 1 },
       upstream: new UpstreamCaller({
         baseURL: llm.upstreamUrl,
         apiKey: llm.upstreamKey,
         timeoutMs: 5_000,
-        maxRetries: llm.upstreamMaxRetries,
+        maxRetries: 2,
+        now: () => upstreamTime,
       }),
       options: { defaultMaxOutputTokens: 3, maxOutputTokens: 8 },
     })
     const testApp = await openTestApp({
-      environments: environments(),
+      environments,
       config: makeConfig({ llm }),
       llmDevelopment: { keys, handler, ledger },
     })
     storage = testApp.storage
     cleanup.push(() => testApp.close())
+    const policy = (id: string, budget = tokenBudget) =>
+      storage.updateSeasonConfig(id, {
+        deps_version: 1,
+        matches: [],
+        overrides: {
+          llm: {
+            enabled: true,
+            models: ['small'],
+            development: { token_budget: budget, rate_limit_rpm: rateLimit },
+          },
+        },
+      })
+    const season = async (env = 'llm_env') => {
+      const row = await storage.createSeason({ env_id: env, deps_version: 1 })
+      await policy(row.id)
+      await storage.setSubmissionStatus(row.id, 'open')
+      return row.id
+    }
+    const issue = async (id: string, user: string) => {
+      const headers = await testApp.users.headersFor(user)
+      active.add(testApp.users.idOf(user))
+      const response = await testApp.app.inject({
+        method: 'POST',
+        url: `/api/seasons/${id}/llm-development-key`,
+        headers,
+      })
+      expect(response.statusCode).toBe(200)
+      return response.json().api_key as string
+    }
+    const call = (key: string, content = 'hello') =>
+      testApp.app.inject({
+        method: 'POST',
+        url: '/api/llm/v1/chat/completions',
+        headers: { authorization: `Bearer ${key}` },
+        payload: { model: 'small', messages: [{ role: 'user', content }] },
+      })
+    return { upstream, ledger, testApp, clock, policy, season, issue, call }
+  }
 
-    const seasonA = await enabledSeason(testApp, 'A')
-    const seasonB = await enabledSeason(testApp, 'B', 5, 'llm_env_other')
-    const alice = await issue(testApp, statuses, seasonA, 'alice')
-    const bob = await issue(testApp, statuses, seasonA, 'bob')
-    const aliceOtherSeason = await issue(testApp, statuses, seasonB, 'alice')
-
-    await complete(testApp, alice, '[stub:retry-success:alice-a-1] hello', 'max_tokens')
-    await complete(testApp, bob, 'hello', 'max_completion_tokens')
-    await complete(testApp, aliceOtherSeason, 'hello', undefined)
-
-    expect(upstream.requests).toHaveLength(5)
-    expect(upstream.requests.map((request) => request.model)).toEqual([
-      'provider-small',
-      'provider-small',
-      'provider-small',
-      'provider-small',
-      'provider-small',
-    ])
+  it.each([
+    ['token', 16, 10, 400, 'budget_exceeded'],
+    ['rate', 100, 2, 429, 'rate_limit_exceeded'],
+  ] as const)('preserves %s limits across rotation and isolates participant-season pairs', async (_kind, budget, rpm, status, code) => {
+    const { upstream, ledger, testApp, clock, policy, season, issue, call } = await fixture(
+      budget,
+      rpm,
+    )
+    const id = await season()
+    const otherId = await season('llm_env_other')
+    const alice = await issue(id, 'alice')
+    const bob = await issue(id, 'bob')
+    const aliceOther = await issue(otherId, 'alice')
+    expect((await call(alice, '[stub:retry-success:first] hello')).statusCode).toBe(200)
+    expect((await call(alice)).statusCode).toBe(200)
+    expect(upstream.requests).toHaveLength(4)
+    const rotated = await issue(id, 'alice')
+    const old = await call(alice)
+    expect(old.statusCode).toBe(401)
+    expect(old.json()).toMatchObject({ error: { code: 'invalid_api_key' } })
+    const limited = await call(rotated)
+    expect(limited.statusCode).toBe(status)
+    expect(limited.json()).toMatchObject({ error: { code } })
+    expect(upstream.requests).toHaveLength(4)
+    expect((await call(bob)).statusCode).toBe(200)
+    expect((await call(aliceOther)).statusCode).toBe(200)
+    expect(ledger.readUserUsageByModel(id, testApp.users.idOf('alice'))).toEqual({
+      small: { calls: 2, inputTokens: 4, reasoningTokens: 0, outputTokens: 2 },
+    })
+    for (const [seasonId, userId] of [
+      [id, testApp.users.idOf('bob')],
+      [otherId, testApp.users.idOf('alice')],
+    ] as const) {
+      expect(ledger.readUserUsageByModel(seasonId, userId)).toEqual({
+        small: { calls: 1, inputTokens: 2, reasoningTokens: 0, outputTokens: 1 },
+      })
+    }
+    await testApp.storage.setSubmissionStatus(id, 'closed')
+    const closed = await call(rotated)
+    expect(closed.statusCode).toBe(403)
+    expect(closed.json()).toMatchObject({ error: { code: 'development_closed' } })
+    const rotateClosed = await testApp.app.inject({
+      method: 'POST',
+      url: `/api/seasons/${id}/llm-development-key`,
+      headers: await testApp.users.headersFor('alice'),
+    })
+    expect(rotateClosed.statusCode).toBe(403)
+    expect(rotateClosed.json()).toMatchObject({ error: { code: 'development_closed' } })
+    expect(upstream.requests).toHaveLength(6)
+    clock.now += 61_000
+    await policy(id, 40)
+    await testApp.storage.setSubmissionStatus(id, 'open')
+    expect((await call(rotated)).statusCode).toBe(200)
     expect(
       upstream.requests.every((request) => request.authorization === 'Bearer upstream-secret'),
     ).toBe(true)
-    expect(upstream.requests.at(0)?.body.max_tokens).toBe(3)
-    expect(upstream.requests.at(3)?.body.max_completion_tokens).toBe(3)
-    expect(upstream.requests.at(4)?.body.max_completion_tokens).toBe(3)
-    const retryRequests = upstream.requests.filter(
-      (request) => request.logicalRequestId === 'alice-a-1',
-    )
-    expect(retryRequests).toHaveLength(RETRY_SUCCESS_ATTEMPTS)
+    expect(upstream.requests.every((request) => request.model === 'provider-small')).toBe(true)
+  })
 
-    expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('alice'))).toMatchObject({
-      small: { calls: 1 },
+  it.each([
+    ['non-retryable', 400, 'stub_400', 1],
+    ['retry-exhausted', 503, 'stub_503', 3],
+  ] as const)('releases development capacity after %s upstream failure', async (scenario, status, code, attempts) => {
+    const { upstream, ledger, testApp, season, issue, call } = await fixture(10, 1)
+    const id = await season()
+    const key = await issue(id, 'alice')
+    const userId = testApp.users.idOf('alice')
+    const failed = await call(key, `[stub:${scenario}] rejected`)
+    expect(failed.statusCode).toBe(status)
+    expect(failed.json()).toMatchObject({ error: { code, type: 'stub_error' } })
+    expect(upstream.requests).toHaveLength(attempts)
+    expect(ledger.listUserCalls(id, userId, { limit: 1 }).calls).toEqual([])
+    expect(ledger.readUserUsageByModel(id, userId)).toEqual({})
+    expect((await call(key)).statusCode).toBe(200)
+    expect(upstream.requests).toHaveLength(attempts + 1)
+    expect(ledger.listUserCalls(id, userId, { limit: 2 }).calls).toHaveLength(1)
+    expect(ledger.readUserUsageByModel(id, userId)).toEqual({
+      small: { calls: 1, inputTokens: 2, reasoningTokens: 0, outputTokens: 1 },
     })
-    expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('bob'))).toMatchObject({
-      small: { calls: 1 },
-    })
-    expect(ledger.readUserUsageByModel(seasonB, testApp.users.idOf('alice'))).toMatchObject({
-      small: { calls: 1 },
-    })
-    // This HTTP case now exhausts season B's 5-token budget. The meter's per-pair 429 rate-limit
-    // path remains covered by the independent-accounting test in test/llm/core.test.ts.
-    const attemptsBeforeTokenBudget = upstream.requests.length
-    expect(
-      (await completionResponse(testApp, aliceOtherSeason, 'over token budget')).statusCode,
-    ).toBe(400)
-    expect(upstream.requests).toHaveLength(attemptsBeforeTokenBudget)
-    expect(
-      (await completionResponse(testApp, bob, 'season A pair remains admitted')).statusCode,
-    ).toBe(200)
+  })
 
-    const rotated = await issue(testApp, statuses, seasonA, 'alice')
-    expect(rotated).not.toBe(alice)
-    expect((await completionResponse(testApp, alice, 'old key')).statusCode).toBe(401)
-    expect(ledger.readUserUsageByModel(seasonA, testApp.users.idOf('alice'))).toMatchObject({
-      small: { calls: 1 },
+  it('persists estimated usage and the exact canonical completion returned by the public route', async () => {
+    const { ledger, testApp, season, issue, call } = await fixture()
+    const id = await season()
+    const key = await issue(id, 'alice')
+    const estimated = await call(key, '[stub:missing-usage] estimate')
+    const canonical = await call(key, '[stub:provider-metadata] canonical')
+    expect(estimated.statusCode).toBe(200)
+    expect(canonical.statusCode).toBe(200)
+    expect(canonical.json()).toMatchObject({
+      model: 'small',
+      choices: [
+        expect.objectContaining({
+          message: { role: 'assistant', content: 'Play the lowest legal card.' },
+        }),
+      ],
     })
-
-    await testApp.storage.setSubmissionStatus(seasonA, 'closed')
-    const beforeClosure = upstream.requests.length
-    expect((await completionResponse(testApp, rotated, 'closed')).statusCode).toBe(403)
-    const closedRotation = await testApp.app.inject({
-      method: 'POST',
-      url: `/api/seasons/${seasonA}/llm-development-key`,
+    expect(canonical.json()).not.toHaveProperty('provider')
+    expect(ledger.listUserCalls(id, testApp.users.idOf('alice'), { limit: 10 })).toEqual({
+      calls: [
+        expect.objectContaining({
+          userId: testApp.users.idOf('alice'),
+          model: 'small',
+          request: {
+            model: 'small',
+            max_completion_tokens: 3,
+            messages: [{ role: 'user', content: '[stub:provider-metadata] canonical' }],
+          },
+          completion: canonical.json(),
+          inputTokens: 2,
+          reasoningTokens: 0,
+          outputTokens: 1,
+          usageEstimated: false,
+          latencyMs: 25,
+        }),
+        expect.objectContaining({
+          userId: testApp.users.idOf('alice'),
+          model: 'small',
+          request: {
+            model: 'small',
+            max_completion_tokens: 3,
+            messages: [{ role: 'user', content: '[stub:missing-usage] estimate' }],
+          },
+          completion: estimated.json(),
+          inputTokens: 2,
+          reasoningTokens: 0,
+          outputTokens: 1,
+          usageEstimated: true,
+          latencyMs: 25,
+        }),
+      ],
+      nextCursor: null,
+    })
+    const summary = await testApp.app.inject({
+      method: 'GET',
+      url: `/api/seasons/${id}/llm-development`,
       headers: await testApp.users.headersFor('alice'),
     })
-    expect(closedRotation.statusCode).toBe(403)
-    expect(upstream.requests).toHaveLength(beforeClosure)
-    await testApp.storage.setSubmissionStatus(seasonA, 'open')
-    expect((await completionResponse(testApp, rotated, 'reopened')).statusCode).toBe(200)
-
-    const beforeFailures = upstream.requests.length
-    expect(
-      (await completionResponse(testApp, rotated, '[stub:non-retryable] nope')).statusCode,
-    ).toBe(400)
-    expect(
-      (await completionResponse(testApp, rotated, '[stub:retry-exhausted] nope')).statusCode,
-    ).toBe(503)
-    expect(upstream.requests).toHaveLength(beforeFailures + 4)
-    expect(
-      ledger.listUserCalls(seasonA, testApp.users.idOf('alice'), { limit: 25 }).calls,
-    ).toHaveLength(2)
-
-    const cases = [
-      { scenario: 'missing-usage', estimated: true },
-      { scenario: 'malformed-usage', estimated: true },
-      { scenario: 'special-tokens', estimated: false },
-      { scenario: 'provider-metadata', estimated: false },
-      { scenario: 'delayed-success', estimated: false },
-    ] as const
-    for (const item of cases) {
-      const response = await completionResponse(testApp, rotated, `[stub:${item.scenario}] payload`)
-      expect(response.statusCode).toBe(200)
-      const body = response.json() as Record<string, unknown>
-      expect(body.model).toBe('small')
-      expect(body).not.toHaveProperty('provider')
-      const call = ledger.listUserCalls(seasonA, testApp.users.idOf('alice'), { limit: 1 }).calls[0]
-      expect(call?.usageEstimated).toBe(item.estimated)
-      if (item.scenario === 'special-tokens') {
-        expect(JSON.stringify(body)).toContain('<|endoftext|> ordinary completion content')
-      }
-      if (item.scenario === 'provider-metadata') {
-        expect(JSON.stringify(body)).toContain('Play the lowest legal card.')
-      }
-      if (item.scenario === 'delayed-success') expect(call?.latencyMs).toBeGreaterThanOrEqual(140)
-    }
-    expect(await testApp.storage.listSessions()).toEqual([])
-    expect(await testApp.storage.listRecordings()).toEqual([])
-    expect(await testApp.storage.listRunsBySeason(seasonA)).toEqual([])
+    expect(summary.statusCode).toBe(200)
+    expect(summary.json()).toMatchObject({
+      successful_calls: 2,
+      usage_estimated: true,
+      budget_cost_units_used: 12,
+      budget_cost_units_remaining: 88,
+      usage_by_model: {
+        small: { calls: 2, input_tokens: 4, reasoning_tokens: 0, output_tokens: 2 },
+      },
+    })
   })
 })
-
-function requireStorage(storage: Storage | undefined): Storage {
-  if (storage === undefined) throw new Error('test storage is not ready')
-  return storage
-}
-
-async function enabledSeason(
-  testApp: TestApp,
-  label: string,
-  tokenBudget = 100,
-  environmentId = 'llm_env',
-): Promise<string> {
-  const season = await testApp.storage.createSeason({
-    env_id: environmentId,
-    deps_version: 1,
-    label,
-  })
-  await testApp.storage.updateSeasonConfig(season.id, {
-    deps_version: 1,
-    matches: [],
-    overrides: {
-      llm: {
-        enabled: true,
-        models: ['small'],
-        development: { token_budget: tokenBudget, rate_limit_rpm: 10 },
-      },
-    },
-  })
-  const opened = await testApp.storage.setSubmissionStatus(season.id, 'open')
-  expect(opened).toMatchObject({ ok: true })
-  return season.id
-}
-
-async function issue(
-  testApp: TestApp,
-  statuses: Map<string, 'normal'>,
-  seasonId: string,
-  user: string,
-): Promise<string> {
-  const headers = await testApp.users.headersFor(user)
-  statuses.set(testApp.users.idOf(user), 'normal')
-  const response = await testApp.app.inject({
-    method: 'POST',
-    url: `/api/seasons/${seasonId}/llm-development-key`,
-    headers,
-  })
-  expect(response.statusCode).toBe(200)
-  return (response.json() as { api_key: string }).api_key
-}
-
-async function complete(
-  testApp: TestApp,
-  key: string,
-  content: string,
-  limit: 'max_tokens' | 'max_completion_tokens' | undefined,
-): Promise<void> {
-  const response = await completionResponse(testApp, key, content, limit)
-  expect(response.statusCode).toBe(200)
-}
-
-function completionResponse(
-  testApp: TestApp,
-  key: string,
-  content: string,
-  limit?: 'max_tokens' | 'max_completion_tokens',
-) {
-  return testApp.app.inject({
-    method: 'POST',
-    url: '/api/llm/v1/chat/completions',
-    headers: { authorization: `Bearer ${key}` },
-    payload: {
-      model: 'small',
-      messages: [{ role: 'user', content }],
-      ...(limit === undefined ? {} : { [limit]: 3 }),
-    },
-  })
-}

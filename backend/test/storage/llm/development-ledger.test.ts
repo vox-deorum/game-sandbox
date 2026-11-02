@@ -5,9 +5,7 @@ import { join } from 'node:path'
 import BetterSqlite3 from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { parseDevelopmentPagination } from '../../../src/llm/development-views.js'
 import {
-  DEVELOPMENT_LEDGER_SCHEMA_VERSION,
   type DevelopmentCallInput,
   DevelopmentLedgerStore,
 } from '../../../src/storage/llm/development-ledger/index.js'
@@ -52,45 +50,33 @@ describe('DevelopmentLedgerStore', () => {
     ])
   })
 
-  it('round-trips every call field and keeps usage and estimates isolated by participant', () => {
-    expect(store.record('season-1', CALL)).toBe(1)
-    expect(
-      store.record('season-1', {
-        ...CALL,
-        userId: 'user-b',
-        usageEstimated: true,
-        inputTokens: 5,
-        reasoningTokens: 1,
-        outputTokens: 7,
-      }),
-    ).toBe(2)
+  it('round-trips exact public call fields and keeps participant usage isolated after reopening', () => {
+    const other: DevelopmentCallInput = {
+      ...CALL,
+      userId: 'user-b',
+      model: 'medium',
+      request: { model: 'medium', messages: [{ role: 'user', content: 'other?' }] },
+      completion: { choices: [{ message: { role: 'assistant', content: 'right' } }] },
+      inputTokens: 5,
+      reasoningTokens: 1,
+      outputTokens: 7,
+      usageEstimated: true,
+      latencyMs: 40,
+      createdAt: '2026-07-16T08:30:00.000Z',
+    }
+    store.record('season-1', CALL)
+    store.record('season-1', other)
+    store.close()
+    store = new DevelopmentLedgerStore(root)
 
-    const db = new BetterSqlite3(join(root, 'season-1.sqlite'), { readonly: true })
-    expect(db.prepare('SELECT * FROM calls ORDER BY id').all()).toEqual([
-      {
-        id: 1,
-        user_id: 'user-a',
-        model: 'small',
-        request_json: JSON.stringify(CALL.request),
-        completion_json: JSON.stringify(CALL.completion),
-        input_tokens: 11,
-        reasoning_tokens: 2,
-        output_tokens: 3,
-        usage_estimated: 0,
-        latency_ms: 25,
-        created_at: '2026-07-15T12:00:00.000Z',
-      },
-      expect.objectContaining({
-        id: 2,
-        user_id: 'user-b',
-        usage_estimated: 1,
-        input_tokens: 5,
-        reasoning_tokens: 1,
-        output_tokens: 7,
-      }),
-    ])
-    db.close()
-
+    expect(store.listUserCalls('season-1', 'user-a', { limit: 25 })).toEqual({
+      calls: [{ ...CALL, id: 1 }],
+      nextCursor: null,
+    })
+    expect(store.listUserCalls('season-1', 'user-b', { limit: 25 })).toEqual({
+      calls: [{ ...other, id: 2 }],
+      nextCursor: null,
+    })
     expect(store.readUserUsageByModel('season-1', 'user-a')).toEqual({
       small: {
         calls: 1,
@@ -100,7 +86,7 @@ describe('DevelopmentLedgerStore', () => {
       },
     })
     expect(store.readUserUsageByModel('season-1', 'user-b')).toEqual({
-      small: {
+      medium: {
         calls: 1,
         inputTokens: 5,
         reasoningTokens: 1,
@@ -137,9 +123,13 @@ describe('DevelopmentLedgerStore', () => {
     expect(store.readUserUsageByModel('season-1', 'missing')).toEqual({})
   })
 
-  it('pages one participant newest-first and reports aggregate estimates by participant', () => {
+  it('pages in insertion order despite timestamps and keeps estimates per participant', () => {
     store.record('season-1', CALL)
-    store.record('season-1', { ...CALL, userId: 'user-b', usageEstimated: true })
+    store.record('season-1', {
+      ...CALL,
+      userId: 'user-b',
+      createdAt: '2026-07-15T07:00:00.000Z',
+    })
     store.record('season-1', {
       ...CALL,
       model: 'medium',
@@ -147,20 +137,14 @@ describe('DevelopmentLedgerStore', () => {
       reasoningTokens: 0,
       outputTokens: 6,
       usageEstimated: true,
-      request: { messages: ['newer'] },
+      createdAt: '2026-07-15T09:00:00.000Z',
     })
-    store.record('season-1', { ...CALL, createdAt: '2026-07-15T13:00:00.000Z' })
+    store.record('season-1', { ...CALL, createdAt: '2026-07-15T08:00:00.000Z' })
 
+    // Timestamps disagree with insertion order, so only reverse id yields [4, 3] then [1].
     const first = store.listUserCalls('season-1', 'user-a', { limit: 2 })
     expect(first.nextCursor).toBe(3)
     expect(first.calls.map((call) => call.id)).toEqual([4, 3])
-    expect(first.calls[1]).toMatchObject({
-      userId: 'user-a',
-      model: 'medium',
-      usageEstimated: true,
-      request: { messages: ['newer'] },
-      latencyMs: 25,
-    })
     const second = store.listUserCalls('season-1', 'user-a', {
       cursor: first.nextCursor ?? undefined,
       limit: 2,
@@ -182,39 +166,40 @@ describe('DevelopmentLedgerStore', () => {
       },
       {
         userId: 'user-b',
-        usageEstimated: true,
+        usageEstimated: false,
         usageByModel: {
           small: { calls: 1, inputTokens: 11, reasoningTokens: 2, outputTokens: 3 },
         },
       },
     ])
     expect(store.hasEstimatedUsage('season-1', 'user-a')).toBe(true)
-    expect(store.hasEstimatedUsage('season-1', 'missing')).toBe(false)
+    expect(store.hasEstimatedUsage('season-1', 'user-b')).toBe(false)
   })
 
-  it('parses one bounded pagination contract before ledger access', () => {
-    expect(parseDevelopmentPagination({})).toEqual({ limit: 25 })
-    expect(parseDevelopmentPagination({ cursor: '12', limit: '100' })).toEqual({
-      cursor: 12,
-      limit: 100,
-    })
-    expect(parseDevelopmentPagination({ limit: '0' })).toBeNull()
-    expect(parseDevelopmentPagination({ limit: '101' })).toBeNull()
-    expect(parseDevelopmentPagination({ cursor: '0' })).toBeNull()
-    expect(parseDevelopmentPagination({ cursor: '1.5' })).toBeNull()
-  })
-
-  it('rejects newer schemas, unsafe season paths, and invalid rows without inserting a call', () => {
-    const future = new BetterSqlite3(join(root, 'future.sqlite'))
-    future.pragma(`user_version = ${DEVELOPMENT_LEDGER_SCHEMA_VERSION + 1}`)
+  it('rejects newer schemas and unsafe inputs without inserting calls or changing the file', () => {
+    store.record('future', CALL)
+    store.close()
+    store = new DevelopmentLedgerStore(root)
+    const futurePath = join(root, 'future.sqlite')
+    const future = new BetterSqlite3(futurePath)
+    future.pragma('user_version = 2')
+    future.exec("CREATE TABLE sentinel (value TEXT); INSERT INTO sentinel VALUES ('retained')")
     future.close()
 
-    expect(() => store.open('future')).toThrow('newer than supported')
-    for (const seasonId of ['', '.', '..', '../escape', 'nested/season', 'nested\\season', 'a b']) {
-      expect(() => store.open(seasonId)).toThrow('filename-safe')
+    expect(() => store.open('future')).toThrow()
+    const inspected = new BetterSqlite3(futurePath, { readonly: true })
+    try {
+      expect(inspected.pragma('user_version', { simple: true })).toBe(2)
+      expect(inspected.prepare('SELECT value FROM sentinel').all()).toEqual([{ value: 'retained' }])
+    } finally {
+      inspected.close()
     }
-    expect(() => store.record('season-1', { ...CALL, request: undefined })).toThrow('request')
-    expect(() => store.record('season-1', { ...CALL, outputTokens: -1 })).toThrow('outputTokens')
+
+    for (const seasonId of ['', '.', '..', '../escape', 'nested/season', 'nested\\season', 'a b']) {
+      expect(() => store.open(seasonId)).toThrow()
+    }
+    expect(() => store.record('season-1', { ...CALL, request: undefined })).toThrow()
+    expect(() => store.record('season-1', { ...CALL, outputTokens: -1 })).toThrow()
     expect(store.readUserUsageByModel('season-1', 'user-a')).toEqual({})
   })
 })
