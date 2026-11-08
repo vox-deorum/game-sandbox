@@ -51,6 +51,8 @@ The process stops at the first failure and shows the reason. Validation does not
 
 Extra files are welcome. Your agent can include more Python modules or data files it loads, as long as the counted project files stay under the size limit: 25 MB by default. Source and data files count. `.git`, `.venv`, `node_modules`, `build`, `dist`, caches, and compiled Python bytecode do not. A season can change the limit. If a repository is too large, the static check reports its measured size and the limit.
 
+Training output is the usual reason a repository goes over. The template's `.gitignore` already keeps common output folders out of Git: `runs/`, `logs/`, `checkpoints/`, `wandb/`, and `lightning_logs/`, plus `*.ckpt` files. Save logs and intermediate checkpoints there, and commit only the final model file your agent loads. Removing a large file in a new commit is enough, because Git history does not count.
+
 The server stores its own copy of your code as soon as your submission passes static validation. Changing or deleting your repository afterward does not affect that submission.
 
 ## Manifest problems

@@ -43,7 +43,7 @@ The takeaway is that an empty quota field keeps the deployment default, which th
 `environments/skirmish_crane/examples/imitation/` is a published worked example (branch `examples/skirmish_crane/imitation`) in which a teacher agent's choices train a small PyTorch attention policy. It came from the course's imitation learning assignment and was adapted to the platform's example layout.
 
 - **Learner.** `agent.py`, `encoder.py`, and `imitation_model.py` form the submitted agent. It loads `imitation-policy.pt` beside it and plays on one CPU thread. `routes.py` supports the README's route-cost exercise and is unused until a student adds that feature.
-- **Experiment.** `imitation/` holds the offline collect, train, and evaluate scripts, run as `python -m imitation.<script>`. They write to `runs/`, which the example's `.gitignore` excludes. The learner never imports them.
+- **Experiment.** `imitation/` holds the offline collect, train, and evaluate scripts, run as `python -m imitation.<script>`. They write to `runs/`, which the template's `.gitignore` excludes. The learner never imports them.
 - **Stand-in teacher.** `teacher.py` and `blocks.py` are verbatim copies of the published Banner example's `agent.py` and `blocks.py`, so the branch runs before a student brings their own agent. The duplication is deliberate: compose overlays one example directory, and the copies need not track later Banner changes.
 - **Season.** `season.json` carries the Season 4 parameters Banner was built for. Under the default parameters Banner loses every seat-0 match against Naive, which makes a poor teacher.
 - **Torch pin.** `requirements.extra.txt` adds `torch==2.14.1`, the same pin [Getting Started](../docs/students/getting-started.md#optional-use-pytorch) asks for.

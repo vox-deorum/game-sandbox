@@ -1,9 +1,30 @@
 # Local virtual environment created by `python -m sandbox setup`.
 .venv/
+venv/
 
 # Local secrets for the LLM example (copy .env.example to .env).
 .env
 
-# Python caches.
+# Python and tool caches.
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Training outputs: logs, reports, recorded data, and intermediate checkpoints.
+# These count toward the submission size limit if committed. Keep them here and
+# commit only the final model file your agent loads, such as model.pt.
+runs/
+logs/
+checkpoints/
+wandb/
+lightning_logs/
+*.ckpt
+
+# Editors and operating systems.
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
