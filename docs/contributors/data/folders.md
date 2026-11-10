@@ -49,6 +49,7 @@ These Git-ignored outputs are not `DATA_DIR`:
 | --- | --- |
 | `build/templates/`, `build/examples/` | Template and example composition |
 | `build/publish/` | Publish dry run and publication staging |
-| `frontend/dist/`, `frontend/dist-local/` | Browser and local-export builds |
+| `build/local-web/` | Per-environment local browser bundles built for publication |
+| `frontend/dist/`, `frontend/dist-local/` | Browser and all-renderer local-play builds |
 | `site/` | Documentation build |
 | `frontend/test-results/`, `frontend/playwright-report/`, `frontend/blob-report/` | Frontend test results and reports |

@@ -26,7 +26,7 @@ Composition replaces whole files. The only merged file is `requirements.extra.tx
 
 The [`PUBLISHED_EXAMPLES` allowlist](template-and-examples.md#hand-authored-layers) selects which examples the publish step turns into public branches.
 
-Compose copies the canonical `environments/<env>/environment.md` guide into each composed template as `environment.md`, alongside the shared LLM guide as `llm.md`. It rewrites `{{DOCS_URL}}` and fails if a required guide or token is missing. The local browser bundle is added only to a release or dry-run staging tree.
+Compose copies the canonical `environments/<env>/environment.md` guide into each composed template as `environment.md`, alongside the shared LLM guide as `llm.md`. It rewrites `{{DOCS_URL}}` and fails if a required guide or token is missing. Each environment's local browser bundle is added only to a release or dry-run staging tree, and each staged kit contains only its own environment's renderer and assets.
 
 ## Versioned dependency set
 
@@ -68,7 +68,7 @@ A typical release dispatches the Publish Template workflow from `main` with the 
 | Same `N`, `republish: true` | Refreshes an already-tagged release from the current `main`, force-pushing the student repository. Use it to publish an environment merged after `template-v<N>` shipped. |
 | Lower `N` | Refused. |
 
-The workflow verifies the selected commit, builds the local frontend once, and uses the same composition path as local checks. It publishes the default template to the student repository's `main` branch, environment templates to `templates/<env>`, and selected examples to `examples/<env>/<name>`. After pushing every desired branch, a real publish removes generated `examples/*` branches that are no longer in `PUBLISHED_EXAMPLES`. It leaves all other branches unaffected.
+The workflow verifies the selected commit, builds one local frontend bundle per environment, and uses the same composition path as local checks. It publishes the default template to the student repository's `main` branch, environment templates to `templates/<env>`, and selected examples to `examples/<env>/<name>`. After pushing every desired branch, a real publish removes generated `examples/*` branches that are no longer in `PUBLISHED_EXAMPLES`. It leaves all other branches unaffected.
 
 The two release forms differ only in their final steps:
 

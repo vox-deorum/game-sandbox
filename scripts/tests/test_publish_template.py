@@ -21,31 +21,30 @@ def _composed_output(root: Path, name: str) -> Path:
     return output
 
 
-def test_publish_builds_once_and_replaces_bundle_in_every_output(
+def test_publish_builds_one_bundle_per_environment_for_its_outputs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    bundle = tmp_path / "frontend" / "dist-local"
-    assets = bundle / "assets"
-    assets.mkdir(parents=True)
-    (bundle / "local.html").write_text("<main>stale</main>\n", encoding="utf-8")
-    (assets / "stale.js").write_text("console.log('stale')\n", encoding="utf-8")
+    local_web = tmp_path / "build" / "local-web"
     outputs = {
         "flappy_bird": _composed_output(tmp_path / "composed", "template-flappy"),
         "hearts": _composed_output(tmp_path / "composed", "template-hearts"),
         "flappy_bird/hello": _composed_output(tmp_path / "composed", "example-hello"),
         "hearts/oracle": _composed_output(tmp_path / "composed", "example-oracle"),
     }
-    calls: list[tuple[list[str], Path]] = []
+    calls: list[tuple[list[str], Path, str]] = []
 
-    def fake_run(command: list[str], *, cwd: Path, check: bool) -> None:
-        calls.append((command, cwd))
+    def fake_run(command: list[str], *, cwd: Path, check: bool, env: dict[str, str]) -> None:
+        selected = env["GAME_SANDBOX_LOCAL_ENV"]
+        calls.append((command, cwd, selected))
+        bundle = Path(command[command.index("--outDir") + 1])
+        assert bundle == local_web / selected
         assert not bundle.exists()
         fresh_assets = bundle / "assets"
         fresh_assets.mkdir(parents=True)
-        (bundle / "local.html").write_text("<main>fresh</main>\n", encoding="utf-8")
-        (fresh_assets / "fresh.js").write_text("console.log('fresh')\n", encoding="utf-8")
+        (bundle / "local.html").write_text(f"<main>{selected}</main>\n", encoding="utf-8")
+        (fresh_assets / f"{selected}.js").write_text(f"console.log('{selected}')\n", encoding="utf-8")
 
-    monkeypatch.setattr(publisher, "FRONTEND_LOCAL_DIST_DIR", bundle)
+    monkeypatch.setattr(publisher, "LOCAL_WEB_BUILD_DIR", local_web)
     monkeypatch.setattr(publisher, "BUILD_DIR", tmp_path / "build")
     monkeypatch.setattr(publisher, "list_envs", lambda: ["flappy_bird", "hearts"])
     monkeypatch.setattr(
@@ -68,52 +67,59 @@ def test_publish_builds_once_and_replaces_bundle_in_every_output(
         dry_run=True,
     )
 
-    assert calls == [
-        (
-            [
-                "npm.cmd" if sys.platform == "win32" else "npm",
-                "run",
-                "build:local",
-                "--workspace",
-                "@game-sandbox/frontend",
-            ],
-            publisher.REPO_ROOT,
-        )
+    npm_command = [
+        "npm.cmd" if sys.platform == "win32" else "npm",
+        "run",
+        "build:local",
+        "--workspace",
+        "@game-sandbox/frontend",
+        "--",
+        "--outDir",
     ]
-    for output in outputs.values():
-        web = output / "sandbox" / "web"
-        assert (web / "local.html").read_text(encoding="utf-8") == "<main>fresh</main>\n"
-        assert (web / "assets" / "fresh.js").is_file()
+    assert calls == [
+        ([*npm_command, str(local_web / "flappy_bird")], publisher.REPO_ROOT, "flappy_bird"),
+        ([*npm_command, str(local_web / "hearts")], publisher.REPO_ROOT, "hearts"),
+    ]
+
+    cases = [
+        ("flappy_bird", "flappy_bird", "hearts"),
+        ("flappy_bird/hello", "flappy_bird", "hearts"),
+        ("hearts", "hearts", "flappy_bird"),
+        ("hearts/oracle", "hearts", "flappy_bird"),
+    ]
+    for name, selected, other in cases:
+        web = outputs[name] / "sandbox" / "web"
+        assert (web / "local.html").read_text(encoding="utf-8") == f"<main>{selected}</main>\n"
+        assert (web / "assets" / f"{selected}.js").is_file()
+        assert not (web / "assets" / f"{other}.js").exists()
         assert not (web / "stale.txt").exists()
-        assert not (web / "assets" / "stale.js").exists()
 
     snapshots = [
-        tmp_path / "build" / "publish" / "main",
-        tmp_path / "build" / "publish" / "templates" / "flappy_bird",
-        tmp_path / "build" / "publish" / "templates" / "hearts",
-        tmp_path / "build" / "publish" / "examples" / "flappy_bird" / "hello",
-        tmp_path / "build" / "publish" / "examples" / "hearts" / "oracle",
+        (tmp_path / "build" / "publish" / "main", "flappy_bird"),
+        (tmp_path / "build" / "publish" / "templates" / "flappy_bird", "flappy_bird"),
+        (tmp_path / "build" / "publish" / "templates" / "hearts", "hearts"),
+        (tmp_path / "build" / "publish" / "examples" / "flappy_bird" / "hello", "flappy_bird"),
+        (tmp_path / "build" / "publish" / "examples" / "hearts" / "oracle", "hearts"),
     ]
-    for snapshot in snapshots:
+    for snapshot, selected in snapshots:
         web = snapshot / "sandbox" / "web"
-        assert (web / "local.html").read_text(encoding="utf-8") == "<main>fresh</main>\n"
-        assert (web / "assets" / "fresh.js").is_file()
+        assert (web / "local.html").read_text(encoding="utf-8") == f"<main>{selected}</main>\n"
+        assert (web / "assets" / f"{selected}.js").is_file()
         assert not (web / "stale.txt").exists()
-        assert not (web / "assets" / "stale.js").exists()
 
-    assert not (bundle / "assets" / "stale.js").exists()
     assert "would exclude source example hearts/hidden from publication" in capsys.readouterr().out
 
 
 def test_local_frontend_build_requires_local_html(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    bundle = tmp_path / "frontend" / "dist-local"
+    local_web = tmp_path / "build" / "local-web"
+    bundle = local_web / "flappy_bird"
     bundle.mkdir(parents=True)
     (bundle / "local.html").write_text("<main>stale</main>\n", encoding="utf-8")
-    monkeypatch.setattr(publisher, "FRONTEND_LOCAL_DIST_DIR", bundle)
+    monkeypatch.setattr(publisher, "LOCAL_WEB_BUILD_DIR", local_web)
     monkeypatch.setattr(publisher.subprocess, "run", lambda *args, **kwargs: None)
 
     with pytest.raises(publisher.PublishError, match=r"did not produce .*local\.html"):
-        publisher._build_local_frontend()
+        publisher._build_local_frontend("flappy_bird")
 
     assert not bundle.exists()
 
@@ -183,7 +189,7 @@ def test_failed_desired_example_push_does_not_start_cleanup(tmp_path: Path, monk
     monkeypatch.setattr(publisher, "BUILD_DIR", tmp_path / "build")
     monkeypatch.setattr(publisher, "list_envs", lambda: ["flappy_bird"])
     monkeypatch.setattr(publisher, "list_published_examples", lambda: [("flappy_bird", "hello")])
-    monkeypatch.setattr(publisher, "_build_local_frontend", lambda: tmp_path / "bundle")
+    monkeypatch.setattr(publisher, "_build_local_frontend", lambda _env: tmp_path / "bundle")
     monkeypatch.setattr(publisher, "compose_template", lambda _: template)
     monkeypatch.setattr(publisher, "compose_example", lambda *_: example)
     monkeypatch.setattr(publisher, "_inject_local_frontend", lambda *_: None)

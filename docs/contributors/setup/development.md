@@ -73,7 +73,7 @@ The backend, sessions, and Docker-gated checks need a running Docker daemon; see
 
 Rerun the demo after e2e or fixture changes, or when its fixture is incomplete. Its e2e database is disposable, so after a schema or harness-launch change, recreate that fixture database, recompose templates and examples, and rebuild the session image because these outputs are tied to the current checkout. Do not recreate a deployed `sandbox.db`; follow [Storage](../runtime/backend.md#storage) for deployed schema updates. See [Data folders](../data/folders.md) and [Template product and releases](../environments/templates.md).
 
-The local browser export is release-only output. A release or publish dry run builds `frontend/dist-local/` and adds it to staged templates and examples, so publication requires Node while ordinary generation and source composition do not.
+`npm run build:local` builds `frontend/dist-local/` with every renderer, which local play and the browser tests use. A release or publish dry run builds a separate bundle per environment under `build/local-web/<env>/` with `GAME_SANDBOX_LOCAL_ENV` set, and copies it into that environment's staged template and examples, so each kit carries only its own renderer and assets. Publication requires Node while ordinary generation and source composition do not.
 
 ## Windows and WSL
 

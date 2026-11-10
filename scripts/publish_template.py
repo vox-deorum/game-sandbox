@@ -37,8 +37,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from _paths import BUILD_DIR, DEFAULT_TEMPLATE_ENV, FRONTEND_LOCAL_DIST_DIR, REPO_ROOT
+from _paths import BUILD_DIR, DEFAULT_TEMPLATE_ENV, REPO_ROOT
 from compose import compose_example, compose_template, list_envs, list_examples, list_published_examples
+
+# Publication builds each environment's bundle here, keeping frontend/dist-local/ all-renderer.
+LOCAL_WEB_BUILD_DIR = BUILD_DIR / "local-web"
 
 DEFAULT_TARGET_REPO = "vox-deorum/game-agent-template"
 _TAG_PATTERN = re.compile(r"^(?:refs/tags/)?template-v(\d+)$")
@@ -78,23 +81,25 @@ def _remote_url(target_repo: str, token: str | None) -> str:
     return f"https://github.com/{target_repo}.git"
 
 
-def _build_local_frontend() -> Path:
-    """Build and validate the local browser bundle used only in published snapshots."""
-    if FRONTEND_LOCAL_DIST_DIR.exists():
-        if FRONTEND_LOCAL_DIST_DIR.is_dir():
-            shutil.rmtree(FRONTEND_LOCAL_DIST_DIR)
+def _build_local_frontend(env: str) -> Path:
+    """Build and validate the local browser bundle with only ``env``'s renderer."""
+    out_dir = LOCAL_WEB_BUILD_DIR / env
+    if out_dir.exists():
+        if out_dir.is_dir():
+            shutil.rmtree(out_dir)
         else:
-            FRONTEND_LOCAL_DIST_DIR.unlink()
+            out_dir.unlink()
     npm = "npm.cmd" if sys.platform == "win32" else "npm"
     subprocess.run(
-        [npm, "run", "build:local", "--workspace", "@game-sandbox/frontend"],
+        [npm, "run", "build:local", "--workspace", "@game-sandbox/frontend", "--", "--outDir", str(out_dir)],
         cwd=REPO_ROOT,
         check=True,
+        env={**os.environ, "GAME_SANDBOX_LOCAL_ENV": env},
     )
-    local_html = FRONTEND_LOCAL_DIST_DIR / "local.html"
+    local_html = out_dir / "local.html"
     if not local_html.is_file():
         raise PublishError(f"local frontend build did not produce {local_html}")
-    return FRONTEND_LOCAL_DIST_DIR
+    return out_dir
 
 
 def _inject_local_frontend(bundle: Path, destinations: list[Path]) -> None:
@@ -187,10 +192,17 @@ def publish(
             f"default environment {DEFAULT_TEMPLATE_ENV!r} has no template layer; found {envs or '(none)'}."
         )
     examples = list_published_examples()
-    local_bundle = _build_local_frontend()
     templates = {env: compose_template(env) for env in envs}
     composed = {(env, name): compose_example(env, name) for env, name in examples}
-    _inject_local_frontend(local_bundle, [*templates.values(), *composed.values()])
+    for env in templates:
+        bundle = _build_local_frontend(env)
+        _inject_local_frontend(
+            bundle,
+            [
+                templates[env],
+                *(out for (example_env, _), out in composed.items() if example_env == env),
+            ],
+        )
     print(f"composed {len(templates)} template(s): {', '.join(templates) or '(none)'}")
     print(f"composed {len(composed)} example(s): {', '.join(f'{e}/{n}' for e, n in composed) or '(none)'}")
 

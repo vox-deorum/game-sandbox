@@ -3,7 +3,7 @@
 import { createApp } from 'vue'
 
 import LocalPlayPage from './LocalPlayPage.vue'
-import '../renderers/index.js'
+import 'virtual:local-renderers'
 import '../styles/tokens.css'
 import '../styles/base.css'
 import '../styles/app.css'

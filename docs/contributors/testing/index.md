@@ -55,7 +55,7 @@ Verification jobs expose `scripts/ci.py` entry points for local use. The Docs wo
 | `examples` | Compose every example source tree in a fresh environment and run pytest, skipping the slow examples |
 | `examples-slow` | The same for the slow examples (those that pin `torch`), with CPU-only torch |
 | `docs` | `mkdocs build --strict` |
-| `publish-dry-run` | Build the local frontend once, stage runnable student repositories, and do not push |
+| `publish-dry-run` | Build one local frontend bundle per environment, stage runnable student repositories, and do not push |
 | `backend-integration` | Real Docker backend suite |
 | `frontend-e2e` | Real backend, built frontend, Playwright Chromium (narrow it with `--group` or `--fast`) |
 | `compose-smoke` | Build the app and proxy images and boot `compose.yaml` against a real Linux daemon |
